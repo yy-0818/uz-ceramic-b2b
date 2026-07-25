@@ -13,6 +13,7 @@ import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
+import { bootstrapError } from '@/lib/supabase'
 import CardDescription from '@/components/ui/CardDescription.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
@@ -107,6 +108,14 @@ const switchLang = (lang: 'ru' | 'uz' | 'zh') => setLocale(lang)
             </div>
 
             <p
+              v-if="bootstrapError"
+              class="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
+              role="alert"
+            >
+              {{ bootstrapError }}
+            </p>
+
+            <p
               v-if="errorMsg"
               class="text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2"
               role="alert"
@@ -114,7 +123,7 @@ const switchLang = (lang: 'ru' | 'uz' | 'zh') => setLocale(lang)
               {{ errorMsg }}
             </p>
 
-            <Button type="submit" class="w-full h-11 text-base font-medium" :disabled="!canSubmit || submitting">
+            <Button type="submit" class="w-full h-11 text-base font-medium" :disabled="!canSubmit || submitting || !!bootstrapError">
               <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
               {{ submitting ? t('auth.logging') : t('auth.login') }}
             </Button>

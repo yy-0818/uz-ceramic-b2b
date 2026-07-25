@@ -91,6 +91,7 @@ export function useAuth() {
         .from('users').select('*').eq('id', uid).single()
       if (uErr) throw uErr
       appUser.value = userRow as AppUser
+      try { localStorage.setItem('appUser', JSON.stringify(userRow)) } catch {}
 
       const { data: accRow, error: aErr } = await supabase
         .from('accounts').select('*').eq('id', (userRow as AppUser).account_id).single()
@@ -101,6 +102,15 @@ export function useAuth() {
     }
   }
 
+  /** 初始化时尝试从 localStorage 读出上次角色，让 onMounted 中的路由守卫立刻可用 */
+  const cachedUser: AppUser | null = (() => {
+    try {
+      const raw = localStorage.getItem('appUser')
+      return raw ? (JSON.parse(raw) as AppUser) : null
+    } catch { return null }
+  })()
+  if (cachedUser && !appUser.value) appUser.value = cachedUser
+
   const signIn = async (email: string, password: string) => {
     const { error: e } = await supabase.auth.signInWithPassword({ email, password })
     if (e) throw e
@@ -110,6 +120,7 @@ export function useAuth() {
     await supabase.auth.signOut()
     appUser.value = null
     account.value = null
+    try { localStorage.removeItem('appUser') } catch {}
   }
 
   /** 是否拥有指定权限（支持数组表示 AND 关系） */

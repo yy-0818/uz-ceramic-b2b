@@ -52,6 +52,25 @@ const cycleLocale = () => {
   const next = locale.value === 'ru' ? 'uz' : locale.value === 'uz' ? 'zh' : 'ru'
   setLocale(next as any)
 }
+
+// 按角色自动落到对应首页（避免管理员登录后落在客户式浏览页）
+const homeByRole = (role: string | undefined) => {
+  switch (role) {
+    case 'admin':     return '/admin/import'
+    case 'checker':   return '/audit'
+    case 'finance':   return '/finance'
+    case 'warehouse': return '/warehouse'
+    case 'customer':  return '/catalog'
+    default:          return '/orders'
+  }
+}
+import { onMounted } from 'vue'
+onMounted(() => {
+  if (route.path === '/' || route.path === '/catalog') {
+    const target = homeByRole(appUser.value?.role)
+    if (target !== route.path) router.replace(target)
+  }
+})
 </script>
 
 <template>
