@@ -105,15 +105,22 @@ export function useProducts() {
     console.log('[import] step 1 done: upserted products', { count: upserted.length, sample: upserted[0] })
 
     // 2. 删除已有色号 + 重新插入（简化的"覆盖"语义）
+    // 注意：DELETE ?product_id=in.(...) 拼成 URL 会被 Cloudflare 截断（520），
+    //       当 product 数 > 500 时 URL 超过 50KB。必须分批，每批 200 个。
     const modelSet = new Set(products.map((p) => p.model))
     const upsertedIds = upserted.filter((u) => modelSet.has(u.model)).map((u) => u.id)
     if (upsertedIds.length > 0) {
-      const { error: delErr } = await supabase
-        .from('stock_colors')
-        .delete()
-        .in('product_id', upsertedIds)
-      if (delErr) { error.value = delErr.message; throw delErr }
-      console.log('[import] step 2: deleted old stock_colors', { count: upsertedIds.length })
+      const CHUNK = 200
+      for (let i = 0; i < upsertedIds.length; i += CHUNK) {
+        const slice = upsertedIds.slice(i, i + CHUNK)
+        const { error: delErr } = await supabase
+          .from('stock_colors')
+          .delete()
+          .in('product_id', slice)
+        if (delErr) { error.value = delErr.message; throw delErr }
+        console.log('[import] step 2: deleted chunk', { from: i, to: i + slice.length })
+      }
+      console.log('[import] step 2 done: deleted old stock_colors', { count: upsertedIds.length })
     }
 
     // 3. 插入 stock_colors
@@ -139,13 +146,21 @@ export function useProducts() {
     })
     console.log('[import] step 3: insert stock_colors', { count: colorRows.length, sample: colorRows.slice(0, 3) })
     if (colorRows.length > 0) {
-      const { error: cErr, data: cData } = await supabase
-        .from('stock_colors')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .upsert(colorRows as any, { onConflict: 'product_id,color_code,stock_level' })
-        .select('id')
-      if (cErr) { error.value = cErr.message; throw cErr }
-      console.log('[import] step 3 done: inserted stock_colors', { returned: cData?.length ?? 0 })
+      // 同样分批：避免单次请求 body > 1MB 限制
+      const CHUNK = 1000
+      let inserted = 0
+      for (let i = 0; i < colorRows.length; i += CHUNK) {
+        const slice = colorRows.slice(i, i + CHUNK)
+        const { error: cErr, data: cData } = await supabase
+          .from('stock_colors')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .upsert(slice as any, { onConflict: 'product_id,color_code,stock_level' })
+          .select('id')
+        if (cErr) { error.value = cErr.message; throw cErr }
+        inserted += cData?.length ?? 0
+        console.log('[import] step 3: inserted chunk', { from: i, to: i + slice.length, returned: cData?.length })
+      }
+      console.log('[import] step 3 done: inserted stock_colors', { returned: inserted })
     }
 
     // 4. 写入 account_products 白名单
@@ -172,12 +187,17 @@ export function useProducts() {
         }
       })
       if (apRows.length > 0) {
-        const { error: apErr } = await supabase
-          .from('account_products')
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          .upsert(apRows as any, { onConflict: 'account_id,product_id' })
-        if (apErr) { error.value = apErr.message; throw apErr }
+        const CHUNK = 1000
+        for (let i = 0; i < apRows.length; i += CHUNK) {
+          const slice = apRows.slice(i, i + CHUNK)
+          const { error: apErr } = await supabase
+            .from('account_products')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .upsert(slice as any, { onConflict: 'account_id,product_id' })
+          if (apErr) { error.value = apErr.message; throw apErr }
+        }
         whiteRows = apRows.length
+        console.log('[import] step 4 done: account_products', { count: apRows.length })
       }
     }
 
