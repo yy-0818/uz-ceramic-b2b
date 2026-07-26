@@ -36,10 +36,12 @@ const loading = ref(false)
 
 const refresh = async () => {
   loading.value = true
+  console.log('[catalog] refresh, role=', useAuth().appUser.value?.role, 'isAdmin=', isAdmin.value)
   // admin 视角：直接拉全部商品（用 view，不走白名单）
   if (isAdmin.value) {
     try {
       allProducts.value = await productsApi.fetchAllWithColors()
+      console.log('[catalog] admin fetched products', { count: allProducts.value.length })
       ap.items.value = allProducts.value.map((p) => ({
         account_id: '',
         product_id: p.product_id,
@@ -61,9 +63,11 @@ const refresh = async () => {
     return
   }
   // 客户/审核员视角：拉白名单
-  await ap.fetchForCurrentAccount()
+  const apRes = await ap.fetchForCurrentAccount()
+  console.log('[catalog] customer fetched whitelist', { count: apRes.length, err: ap.error.value })
   try {
     allProducts.value = await productsApi.fetchAllWithColors()
+    console.log('[catalog] all products', { count: allProducts.value.length })
   } finally {
     loading.value = false
   }
@@ -191,8 +195,26 @@ const cartTotalM2 = computed(() => cart.totalM2())
 
     <!-- 第 1 级：分类网格 -->
     <div v-else-if="view === 'categories'">
-      <div v-if="categoriesWithCount.length === 0" class="text-center text-sm text-muted-foreground py-10">
-        {{ t('customer.catalog.empty') }}
+      <!-- 智能空状态：区分"全库空" vs "白名单空" vs "分类未映射" -->
+      <div v-if="categoriesWithCount.length === 0" class="space-y-3 py-10">
+        <!-- admin：库里压根没商品 -->
+        <div v-if="isAdmin && allProducts.length === 0"
+          class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
+          <p class="font-medium text-foreground">库里还没有商品</p>
+          <p class="mt-1">先去 <code class="bg-muted px-1 rounded">/admin/import</code> 导入一次 CSV。</p>
+        </div>
+        <!-- admin：有商品 → admin 视角下理论上能看到全部 -->
+        <div v-else-if="isAdmin && allProducts.length > 0"
+          class="text-center text-sm text-amber-800 border border-amber-200 bg-amber-50 rounded-lg p-6">
+          <p class="font-medium">⚠ admin 视角本应看到全部 {{ allProducts.length }} 个商品，但白名单聚合为空</p>
+          <p class="mt-1 text-xs">检查 console 的 <code>[catalog]</code> 日志</p>
+        </div>
+        <!-- 客户：白名单为空 -->
+        <div v-else
+          class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
+          <p class="font-medium text-foreground">你的账号还没有可见商品</p>
+          <p class="mt-1">请联系管理员把客户组关联到你的账号，或者让你被加入某些商品的白名单。</p>
+        </div>
       </div>
       <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
         <Card
