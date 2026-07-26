@@ -119,8 +119,15 @@ const totalM2 = computed(() =>
           <CardTitle>{{ t('orders.detail.account') }}</CardTitle>
         </CardHeader>
         <CardContent class="text-sm space-y-1">
-          <p>{{ order.account?.account_name }}</p>
+          <p class="font-medium">{{ order.account?.account_name }}</p>
           <p class="text-muted-foreground">{{ order.account?.company_name }}</p>
+          <div v-if="order.sub_account" class="mt-2 pt-2 border-t">
+            <p class="text-xs text-muted-foreground">下单子账号</p>
+            <p class="font-mono">{{ order.sub_account.account_name }}</p>
+            <p v-if="order.sub_account.inn && order.sub_account.inn !== '-'" class="text-xs text-muted-foreground">
+              INN: {{ order.sub_account.inn }}
+            </p>
+          </div>
         </CardContent>
       </Card>
 

@@ -26,6 +26,7 @@ export interface Database {
           contract_date: string | null
           balance: number
           status: AccountStatus
+          is_main: boolean
           created_at: string
           updated_at: string
         }
@@ -144,6 +145,7 @@ export interface Database {
           id: string
           order_no: string
           account_id: string
+          sub_account_id: string | null
           created_by: string | null
           audited_by: string | null
           accounted_by: string | null
@@ -159,6 +161,7 @@ export interface Database {
         Insert: {
           order_no: string
           account_id: string
+          sub_account_id?: string | null
           created_by?: string | null
           status?: 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'
           remark?: string | null

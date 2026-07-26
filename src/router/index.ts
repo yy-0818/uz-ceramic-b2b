@@ -38,6 +38,8 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['admin'] } },
       { path: 'admin/accounts', name: 'admin.accounts', component: () => import('@/views/admin/AccountsAdminPage.vue'),
         meta: { roles: ['admin'] } },
+      { path: 'admin/accounts/import', name: 'admin.accounts.import', component: () => import('@/views/admin/AccountsImportPage.vue'),
+        meta: { roles: ['admin'] } },
 
       // 审核员
       { path: 'audit', name: 'audit', component: () => import('@/views/checker/AuditListPage.vue'),

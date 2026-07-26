@@ -79,6 +79,7 @@ const statusVariant = (s: string) => {
             <TableRow>
               <TableHead>{{ t('orders.colNo') }}</TableHead>
               <TableHead>{{ t('orders.colDate') }}</TableHead>
+              <TableHead>子账户</TableHead>
               <TableHead>{{ t('orders.colItems') }}</TableHead>
               <TableHead>{{ t('orders.colM2') }}</TableHead>
               <TableHead>{{ t('orders.colStatus') }}</TableHead>
@@ -89,6 +90,10 @@ const statusVariant = (s: string) => {
             <TableRow v-for="o in ordersApi.items.value" :key="o.id">
               <TableCell class="font-mono text-sm">{{ o.order_no }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ fmtDate(o.created_at) }}</TableCell>
+              <TableCell>
+                <span v-if="o.sub_account" class="font-mono text-xs">{{ o.sub_account.account_name }}</span>
+                <span v-else class="text-xs text-muted-foreground italic">—</span>
+              </TableCell>
               <TableCell>{{ o.items?.length ?? 0 }}</TableCell>
               <TableCell>
                 {{ (o.items ?? []).reduce((s, i) => s + Number(i.m2_total ?? 0), 0).toFixed(2) }} м²

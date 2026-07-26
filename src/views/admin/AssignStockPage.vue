@@ -62,15 +62,17 @@ const searchAccount = ref('')
 
 const filteredAccounts = computed(() => {
   const q = searchAccount.value.trim().toLowerCase()
-  if (!q) return accounts.items.value
-  return accounts.items.value.filter((a) =>
+  const parents = accounts.items.value.filter((a) => a.parent_id === null)
+  if (!q) return parents
+  return parents.filter((a) =>
     a.account_name.toLowerCase().includes(q) ||
     a.company_name.toLowerCase().includes(q),
   )
 })
 
 const onInit = async () => {
-  await Promise.all([products.fetchAll(), accounts.fetchAll()])
+  await products.fetchAll()
+  await accounts.fetchTree()  // 填好 items.value（包含父 + 子）
 }
 
 const toggleAccount = (id: string) => {

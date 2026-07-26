@@ -16,6 +16,7 @@ export interface OrderRow {
   id: string
   order_no: string
   account_id: string
+  sub_account_id: string | null
   status: OrderStatus
   remark: string | null
   created_at: string
@@ -23,6 +24,7 @@ export interface OrderRow {
   accounted_at: string | null
   shipped_at: string | null
   account?: { account_name: string; company_name: string }
+  sub_account?: { id: string; account_name: string; inn: string }
   items?: OrderItemRow[]
   total_amount?: number
 }
@@ -58,12 +60,12 @@ export function useOrders() {
     items.value.reduce((s, o) => s + (o.total_amount ?? 0), 0),
   )
 
-  /** 客户：拉自己的订单 */
+  /** 客户：拉自己的订单（含子账户信息） */
   const fetchMine = async () => {
     loading.value = true
     const { data, error: e } = await supabase
       .from('orders')
-      .select('*, account:accounts(account_name, company_name), items:order_items(*, product:products(model, category, conversion_rate))')
+      .select('*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))')
       .order('created_at', { ascending: false })
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []).map(decorateOrder)
@@ -76,7 +78,7 @@ export function useOrders() {
     loading.value = true
     let q = supabase
       .from('orders')
-      .select('*, account:accounts(account_name, company_name), items:order_items(*, product:products(model, category, conversion_rate))')
+      .select('*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))')
       .order('created_at', { ascending: false })
     if (status) q = q.eq('status', status)
     const { data, error: e } = await q
@@ -104,6 +106,7 @@ export function useOrders() {
     accountId: string,
     cartItems: CartItemForSubmit[],
     remark: string | null = null,
+    subAccountId: string | null = null,
   ): Promise<OrderRow> => {
     if (cartItems.length === 0) throw new Error('购物车为空')
 
@@ -113,12 +116,13 @@ export function useOrders() {
     const no = String(orderNo ?? '').trim()
     if (!no) throw new Error('生成单号失败')
 
-    // 2. 插入主表
+    // 2. 插入主表（account_id = 主账号，sub_account_id = 下单子账号）
     const { data: order, error: oErr } = await supabase
       .from('orders')
       .insert({
         order_no: no,
         account_id: accountId,
+        sub_account_id: subAccountId,
         status: 'pending',
         remark,
       } as any)

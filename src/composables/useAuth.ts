@@ -23,6 +23,7 @@ export interface Account {
   contract_date: string | null
   balance: number
   status: 'active' | 'inactive'
+  is_main: boolean
 }
 
 export interface AppUser {
