@@ -1,14 +1,14 @@
 <!--
   src/views/customer/ProductBrowsePage.vue
-  客户"盲价列表" —— 移动端优先
-  - 不显示单价
-  - 按"整箱"下单（每箱 = conversion_rate 平方米）
-  - 自动计算总面积 / 箱数
-  - 加入购物车 → 进入下单确认
+  客户"盲价列表" —— 移动端优先 + 三级导航
+  - 第 1 级：瓷砖分类 (12J / 12P / 12F ...)
+  - 第 2 级：型号 (A12P001)
+  - 第 3 级：色号 (D1 D2 ... A1 ...) + 该色号箱数
+  - 不显示单价；按"整箱"下单；每箱 = conversion_rate 平方米
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Search, Plus, Minus, ShoppingCart, Package } from 'lucide-vue-next'
+import { ref, computed, onMounted } from 'vue'
+import { ChevronLeft, Search, Plus, Minus, ShoppingCart, Package } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -20,34 +20,94 @@ import Badge from '@/components/ui/Badge.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 
 import { useAccountProducts } from '@/composables/useAccountProducts'
+import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart } from '@/composables/useCart'
 
 const { t } = useI18n()
 const router = useRouter()
 const ap = useAccountProducts()
+const productsApi = useProducts()
 const cart = useCart()
 
+const allProducts = ref<ProductWithColors[]>([])
+const loading = ref(false)
+
+const refresh = async () => {
+  loading.value = true
+  // 拉客户可见白名单（account_products join product）
+  await ap.fetchForCurrentAccount()
+  // 同时拉所有 product + 色号视图
+  try {
+    allProducts.value = await productsApi.fetchAllWithColors()
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(refresh)
+
+// 三级状态
+const view = ref<'categories' | 'models' | 'colors'>('categories')
+const selectedCategory = ref<string>('')
+const selectedModel = ref<ProductWithColors | null>(null)
 const search = ref('')
-const category = ref<string>('all')
 const showCart = ref(false)
 
-const refresh = async () => ap.fetchForCurrentAccount()
-
-const categories = computed(() => {
-  const set = new Set<string>()
-  ap.items.value.forEach((it) => it.product?.category && set.add(it.product.category))
-  return ['all', ...Array.from(set).sort()]
+// 第 1 级：分类列表（按白名单聚合）
+const categoriesWithCount = computed(() => {
+  const map = new Map<string, number>()
+  for (const row of ap.items.value) {
+    if (!row.product) continue
+    const cat = row.product.category
+    map.set(cat, (map.get(cat) ?? 0) + 1)
+  }
+  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
 })
 
-const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  return ap.items.value.filter((it) => {
-    if (!it.product) return false
-    if (category.value !== 'all' && it.product.category !== category.value) return false
-    if (q && !it.product.model.toLowerCase().includes(q)) return false
-    return true
-  })
+// 第 2 级：选定分类下的型号列表（join 色号视图）
+const modelsInCategory = computed(() => {
+  if (!selectedCategory.value) return []
+  const apMap = new Map<string, number>()  // product_id -> stock_level_1 + stock_level_2
+  for (const row of ap.items.value) {
+    if (!row.product) continue
+    if (row.product.category !== selectedCategory.value) continue
+    apMap.set(row.product.id, row.stock_level_1 + row.stock_level_2)
+  }
+  return allProducts.value
+    .filter((p) => p.category === selectedCategory.value && apMap.has(p.product_id))
+    .map((p) => ({
+      ...p,
+      availableBoxes: apMap.get(p.product_id) ?? 0,
+    }))
+    .sort((a, b) => a.model.localeCompare(b.model))
 })
+
+// 第 3 级：当前选中型号的所有色号
+const colorsInModel = computed(() => {
+  if (!selectedModel.value) return []
+  return (selectedModel.value.colors ?? []).filter((c) => c.boxes > 0)
+})
+
+const openCategory = (cat: string) => {
+  selectedCategory.value = cat
+  search.value = ''
+  view.value = 'models'
+}
+
+const openModel = (p: ProductWithColors) => {
+  selectedModel.value = p
+  view.value = 'colors'
+}
+
+const back = () => {
+  if (view.value === 'colors') {
+    selectedModel.value = null
+    view.value = 'models'
+  } else if (view.value === 'models') {
+    selectedCategory.value = ''
+    view.value = 'categories'
+  }
+}
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
   const cur = cart.qtyOf(productId)
@@ -62,18 +122,27 @@ const cartTotalM2 = computed(() => cart.totalM2())
 </script>
 
 <template>
-  <div class="space-y-4" @vue:mounted="refresh">
-    <!-- 头部 -->
-    <header class="flex items-center justify-between sticky top-0 bg-background/95 backdrop-blur z-10 py-2">
-      <div>
-        <h1 class="text-lg font-semibold tracking-tight">{{ t('customer.catalog.title') }}</h1>
-        <p class="text-xs text-muted-foreground">{{ t('customer.catalog.subtitle') }}</p>
+  <div class="space-y-3">
+    <!-- 头部：面包屑 + 购物车 -->
+    <header class="flex items-center justify-between gap-2 sticky top-0 bg-background/95 backdrop-blur z-10 py-2">
+      <div class="flex items-center gap-2 min-w-0">
+        <Button v-if="view !== 'categories'" size="icon" variant="ghost" class="h-8 w-8" @click="back">
+          <ChevronLeft class="h-5 w-5" />
+        </Button>
+        <div class="min-w-0">
+          <h1 class="text-base font-semibold truncate">
+            <span v-if="view === 'categories'">{{ t('customer.catalog.title') }}</span>
+            <span v-else-if="view === 'models'">{{ selectedCategory }}</span>
+            <span v-else class="font-mono">{{ selectedModel?.model }}</span>
+          </h1>
+          <p class="text-xs text-muted-foreground truncate">
+            <span v-if="view === 'categories'">{{ t('customer.catalog.subtitle') }}</span>
+            <span v-else-if="view === 'models'">{{ modelsInCategory.length }} {{ t('customer.catalog.modelsUnit') }}</span>
+            <span v-else>{{ selectedModel?.category }} · {{ selectedModel?.conversion_rate }} м²/ящ</span>
+          </p>
+        </div>
       </div>
-      <Button
-        size="icon"
-        class="relative"
-        @click="showCart = true"
-      >
+      <Button size="icon" class="relative shrink-0" @click="showCart = true">
         <ShoppingCart class="h-5 w-5" />
         <span
           v-if="cartTotalBoxes > 0"
@@ -84,93 +153,141 @@ const cartTotalM2 = computed(() => cart.totalM2())
       </Button>
     </header>
 
-    <!-- 搜索 + 类别 -->
-    <div class="flex gap-2">
-      <div class="relative flex-1">
-        <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input v-model="search" :placeholder="t('customer.catalog.search')" class="pl-9 h-10" />
-      </div>
-    </div>
-    <div class="flex gap-2 overflow-x-auto pb-1 -mx-4 px-4">
-      <Button
-        v-for="c in categories"
-        :key="c"
-        size="sm"
-        :variant="category === c ? 'default' : 'outline'"
-        class="shrink-0"
-        @click="category = c"
-      >
-        {{ c === 'all' ? t('customer.catalog.allCategory') : c }}
-      </Button>
+    <!-- 搜索（仅 models 视图需要） -->
+    <div v-if="view === 'models'" class="relative">
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Input v-model="search" :placeholder="t('customer.catalog.search')" class="pl-9 h-10" />
     </div>
 
-    <!-- 商品列表 -->
-    <div v-if="ap.loading.value" class="text-center text-sm text-muted-foreground py-10">
+    <!-- 加载中 -->
+    <div v-if="loading" class="text-center text-sm text-muted-foreground py-10">
       {{ t('common.loading') }}
     </div>
 
-    <div v-else-if="filtered.length === 0" class="text-center text-sm text-muted-foreground py-10">
-      {{ t('customer.catalog.empty') }}
+    <!-- 第 1 级：分类网格 -->
+    <div v-else-if="view === 'categories'">
+      <div v-if="categoriesWithCount.length === 0" class="text-center text-sm text-muted-foreground py-10">
+        {{ t('customer.catalog.empty') }}
+      </div>
+      <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        <Card
+          v-for="[cat, count] in categoriesWithCount"
+          :key="cat"
+          class="hover:bg-muted/50 transition cursor-pointer"
+          @click="openCategory(cat)"
+        >
+          <CardContent class="p-3 text-center">
+            <div class="text-lg font-mono font-semibold">{{ cat }}</div>
+            <div class="text-xs text-muted-foreground mt-1">
+              {{ count }} {{ t('customer.catalog.modelsUnit') }}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
 
-    <ul v-else class="space-y-3">
-      <li v-for="it in filtered" :key="it.account_id + it.product_id">
-        <Card class="overflow-hidden">
+    <!-- 第 2 级：型号列表 -->
+    <ul v-else-if="view === 'models'" class="space-y-2">
+      <li v-for="p in modelsInCategory" :key="p.product_id">
+        <Card
+          class="overflow-hidden hover:bg-muted/30 cursor-pointer"
+          @click="openModel(p)"
+        >
           <CardContent class="p-3">
             <div class="flex items-start gap-3">
-              <div class="h-12 w-12 rounded-md bg-muted flex items-center justify-center shrink-0">
-                <Package class="h-5 w-5 text-muted-foreground" />
+              <div class="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0">
+                <Package class="h-4 w-4 text-muted-foreground" />
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="font-mono font-medium truncate">{{ it.product?.model }}</p>
-                  <Badge variant="secondary">{{ it.product?.category }}</Badge>
+                  <p class="font-mono font-medium truncate">{{ p.model }}</p>
+                  <Badge variant="outline" class="shrink-0 text-[10px]">{{ p.category }}</Badge>
                 </div>
-                <p v-if="it.product?.remark" class="text-xs text-muted-foreground truncate">
-                  {{ it.product.remark }}
-                </p>
+                <p v-if="p.remark" class="text-xs text-muted-foreground truncate">{{ p.remark }}</p>
                 <div class="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{{ t('customer.catalog.box') }}: {{ it.product?.conversion_rate }} м²</span>
-                  <span>{{ t('customer.catalog.stock') }}:
-                    <span class="font-medium text-foreground">{{ it.stock_level_1 + it.stock_level_2 }}</span>
+                  <span>{{ p.conversion_rate }} м²/ящ</span>
+                  <span>
+                    {{ t('customer.catalog.stock') }}:
+                    <span class="font-medium text-foreground">{{ p.availableBoxes }}</span>
+                  </span>
+                  <span v-if="p.colors?.length" class="ml-auto text-emerald-600">
+                    {{ p.colors.length }} {{ t('customer.catalog.colorsUnit') }}
                   </span>
                 </div>
-              </div>
-            </div>
-
-            <!-- 数量步进器 -->
-            <div class="mt-3 flex items-center justify-between">
-              <span class="text-xs text-muted-foreground">
-                {{ t('customer.catalog.boxesTo', { n: cart.qtyOf(it.product!.id) }) }}
-              </span>
-              <div class="flex items-center gap-1">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  class="h-9 w-9"
-                  :disabled="cart.qtyOf(it.product!.id) === 0"
-                  @click="onQty(it.product!.id, it.product!.model, it.product!.conversion_rate, -1)"
-                >
-                  <Minus class="h-4 w-4" />
-                </Button>
-                <div class="w-10 text-center font-medium">
-                  {{ cart.qtyOf(it.product!.id) }}
-                </div>
-                <Button
-                  size="icon"
-                  variant="outline"
-                  class="h-9 w-9"
-                  :disabled="cart.qtyOf(it.product!.id) >= (it.stock_level_1 + it.stock_level_2)"
-                  @click="onQty(it.product!.id, it.product!.model, it.product!.conversion_rate, 1)"
-                >
-                  <Plus class="h-4 w-4" />
-                </Button>
               </div>
             </div>
           </CardContent>
         </Card>
       </li>
+      <li v-if="modelsInCategory.length === 0" class="text-center text-sm text-muted-foreground py-10">
+        {{ t('customer.catalog.empty') }}
+      </li>
     </ul>
+
+    <!-- 第 3 级：色号列表 -->
+    <div v-else-if="view === 'colors' && selectedModel">
+      <Card class="mb-3">
+        <CardContent class="p-3">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="font-mono font-semibold text-lg">{{ selectedModel.model }}</p>
+              <p class="text-xs text-muted-foreground">
+                {{ selectedModel.category }} ·
+                {{ selectedModel.conversion_rate }} м²/ящ ·
+                {{ t('customer.catalog.totalBoxes') }}: {{ selectedModel.total_boxes_level1 + selectedModel.total_boxes_level2 }}
+              </p>
+            </div>
+            <Badge>{{ colorsInModel.length }} {{ t('customer.catalog.colorsUnit') }}</Badge>
+          </div>
+        </CardContent>
+      </Card>
+
+      <ul class="space-y-2">
+        <li v-for="c in colorsInModel" :key="c.color_code + c.stock_level">
+          <Card>
+            <CardContent class="p-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex items-center gap-2">
+                    <span class="font-mono font-semibold text-lg">{{ c.color_code }}</span>
+                    <Badge variant="outline" class="text-[10px]">
+                      L{{ c.stock_level }}
+                    </Badge>
+                  </div>
+                  <p class="text-xs text-muted-foreground mt-1">
+                    {{ t('customer.catalog.box') }}: {{ c.boxes }} ·
+                    ≈ {{ fmtM2(c.boxes * selectedModel.conversion_rate) }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    class="h-9 w-9"
+                    :disabled="cart.qtyOf(selectedModel.product_id) === 0"
+                    @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
+                  >
+                    <Minus class="h-4 w-4" />
+                  </Button>
+                  <div class="w-10 text-center font-medium">
+                    {{ cart.qtyOf(selectedModel.product_id) }}
+                  </div>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    class="h-9 w-9"
+                    :disabled="cart.qtyOf(selectedModel.product_id) >= c.boxes"
+                    @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
+                  >
+                    <Plus class="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </li>
+      </ul>
+    </div>
 
     <!-- 购物车抽屉 -->
     <Dialog v-model:open="showCart" :title="t('customer.cart.title')">

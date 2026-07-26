@@ -6,7 +6,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, Globe, FileText, ClipboardCheck, Landmark, Truck } from 'lucide-vue-next'
+import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, Globe, FileText, ClipboardCheck, Landmark, Truck, Link2 } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import { setLocale } from '@/lib/i18n'
@@ -26,6 +26,7 @@ const navItems = computed(() => {
   }
   if (isAdmin.value) {
     items.push({ name: t('nav.import'), to: '/admin/import', icon: Upload })
+    items.push({ name: t('nav.customerGroups'), to: '/admin/customer-groups', icon: Link2 })
     items.push({ name: t('nav.assign'), to: '/admin/assign', icon: Filter })
   }
   if (appUser.value?.role === 'checker' || isAdmin.value) {

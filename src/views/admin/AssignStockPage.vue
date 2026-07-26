@@ -117,7 +117,7 @@ const buildAssignments = () => {
       const product = products.items.value.find((p) => p.id === productId)
       if (!product) continue
 
-      const candidate = csv.candidates.value.find((c) => c.model === product.model)
+      const candidate = csv.products.value.find((c) => c.model === product.model)
       if (!candidate) {
         out.push({
           account_id: accountId, product_id: productId,
@@ -127,10 +127,11 @@ const buildAssignments = () => {
       }
 
       let l1 = 0, l2 = 0
-      for (const g of candidate.groups) {
-        if (groupToAccount.value[g.customerGroup] === accountId) {
-          l1 += g.stock_level_1
-          l2 += g.stock_level_2
+      for (const g of candidate.customerGroups) {
+        if (groupToAccount.value[g] === accountId) {
+          l1 += candidate.totalLevel1
+          l2 += candidate.totalLevel2
+          break
         }
       }
       out.push({

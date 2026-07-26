@@ -30,6 +30,8 @@ const routes: RouteRecordRaw[] = [
       // 后台
       { path: 'admin/import', name: 'admin.import', component: () => import('@/views/admin/ProductImportPage.vue'),
         meta: { roles: ['admin'] } },
+      { path: 'admin/customer-groups', name: 'admin.customerGroups', component: () => import('@/views/admin/CustomerGroupMappingPage.vue'),
+        meta: { roles: ['admin'] } },
       { path: 'admin/assign', name: 'admin.assign', component: () => import('@/views/admin/AssignStockPage.vue'),
         meta: { roles: ['admin'] } },
 
