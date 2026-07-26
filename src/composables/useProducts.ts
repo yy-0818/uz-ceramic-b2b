@@ -10,6 +10,8 @@ export interface Product {
   category: string
   conversion_rate: number
   remark: string | null
+  image_url: string | null
+  display_order: number
 }
 
 export interface ProductColor {
@@ -27,6 +29,8 @@ export interface ProductWithColors {
   category: string
   conversion_rate: number
   remark: string | null
+  image_url: string | null
+  display_order: number
   total_boxes_level1: number
   total_boxes_level2: number
   colors: Array<{ color_code: string; stock_level: number; boxes: number }>

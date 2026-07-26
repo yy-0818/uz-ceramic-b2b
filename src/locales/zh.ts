@@ -123,6 +123,7 @@ export default {
       statL1: '1级总: {n}',
       statL2: '2级总: {n}',
       statColors: '色号行: {n}',
+      statWithImage: '已配图: {n}',
       search: '搜索',
       searchPh: '型号 / 分类 / 色号 / 备注',
       onlyWithStock: '只显示有库存',

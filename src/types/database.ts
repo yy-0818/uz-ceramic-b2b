@@ -70,6 +70,8 @@ export interface Database {
           category: string
           conversion_rate: number
           remark: string | null
+          image_url: string | null
+          display_order: number
           created_at: string
           updated_at: string
         }
@@ -78,6 +80,8 @@ export interface Database {
           category: string
           conversion_rate: number
           remark?: string | null
+          image_url?: string | null
+          display_order?: number
         }
         Update: Partial<Database['public']['Tables']['products']['Row']>
       }
@@ -98,6 +102,42 @@ export interface Database {
           stock_level_2?: number
         }
         Update: Partial<Database['public']['Tables']['account_products']['Row']>
+      }
+      stock_colors: {
+        Row: {
+          id: string
+          product_id: string
+          color_code: string
+          stock_level: number
+          boxes: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          product_id: string
+          color_code: string
+          stock_level: number
+          boxes?: number
+        }
+        Update: Partial<Database['public']['Tables']['stock_colors']['Row']>
+      }
+      customer_group_mappings: {
+        Row: {
+          id: string
+          customer_group: string
+          account_id: string
+          is_active: boolean
+          remark: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          customer_group: string
+          account_id: string
+          is_active?: boolean
+          remark?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['customer_group_mappings']['Row']>
       }
       orders: {
         Row: {

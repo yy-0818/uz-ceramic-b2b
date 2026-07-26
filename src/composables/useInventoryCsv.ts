@@ -111,7 +111,11 @@ function parseRowByIndex(
   const customerGroup = val(idx.groupIdx)
   const model = val(idx.modelIdx)
   const category = val(idx.categoryIdx)
+  // 跳过合计行：model 为 "合计" 或 category 为空
   if (!customerGroup || !model || !category) return null
+  if (model === '合计' || category === '合计') return null
+  // 防御：跳过类型列含中文合计关键字的行
+  if (/合计|总计|小计/.test(model) || /合计|总计|小计/.test(category)) return null
 
   const level1 = toNum(val(idx.level1Idx))
   const level2 = toNum(val(idx.level2Idx))

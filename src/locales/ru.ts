@@ -123,6 +123,7 @@ export default {
       statL1: 'Ур.1: {n}',
       statL2: 'Ур.2: {n}',
       statColors: 'Цветов: {n}',
+      statWithImage: 'С фото: {n}',
       search: 'Поиск',
       searchPh: 'Модель / категория / цвет',
       onlyWithStock: 'Только с остатком',
