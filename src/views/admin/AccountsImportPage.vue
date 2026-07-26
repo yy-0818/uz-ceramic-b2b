@@ -25,7 +25,7 @@ const invalidRows = ref<Array<{ raw: any; reason: string }>>([])
 const preview = ref<ImportPreview | null>(null)
 const fileName = ref<string>('')
 const phase = ref<'idle' | 'parsed' | 'importing' | 'done'>('idle')
-const result = ref<{ parentsAdded: number; subsAdded: number; mappingsAdded: number } | null>(null)
+const result = ref<{ parentsAdded: number; subsAdded: number; subsUpdated: number; mappingsAdded: number } | null>(null)
 const errMsg = ref<string | null>(null)
 
 const handlePick = () => fileInput.value?.click()
@@ -238,10 +238,15 @@ const reset = () => {
         <p class="text-lg font-medium">导入完成</p>
         <div class="flex justify-center gap-2 text-sm flex-wrap">
           <Badge variant="secondary">父账号新增: {{ result.parentsAdded }}</Badge>
-          <Badge variant="secondary">子账号写入: {{ result.subsAdded }}</Badge>
+          <Badge variant="secondary">子账号新增: {{ result.subsAdded }}</Badge>
+          <Badge v-if="result.subsUpdated > 0" class="bg-amber-100 text-amber-800">
+            子账号更新: {{ result.subsUpdated }}
+          </Badge>
           <Badge variant="secondary">客户组映射: {{ result.mappingsAdded }}</Badge>
         </div>
-        <p class="text-xs text-muted-foreground">重复导入同一份 Excel 不会产生重复记录</p>
+        <p class="text-xs text-muted-foreground">
+          重复导入仅增量 + 同步状态变化（停用之类）；不覆盖账户名
+        </p>
         <div class="flex justify-center gap-2 pt-2">
           <Button variant="outline" @click="router.push('/admin/accounts')">
             <ChevronRight class="mr-1 h-4 w-4" />前往账号管理

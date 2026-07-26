@@ -274,18 +274,20 @@ export function useAccounts() {
   }
 
   /**
-   * 从 Excel 行批量导入：upsert 父 + 写子 + 写客户组映射
+   * 从 Excel 行批量导入：upsert 父 + upsert 子 + upsert 客户组映射
    * 策略：
-   *   - 父：按 category 名 upsert（不指定 id，让数据库生成），
-   *     后续 import 同一 category 会拿到不同的 id —— 我们用先拉再匹配的策略
-   *   - 子：(parent_id, account_name) 唯一（migration 已建），重复则覆盖 inn/status/type
+   *   - 父：按 category 名 upsert（同名父已存在则跳过；不会重复 create）
+   *   - 子：(parent_id, account_name) 唯一（migration 已建）；
+   *         新增时 insert；重复时按新 Excel 的 inn / type / status 覆盖
+   *         （不覆盖 account_name，因为 Excel 的 "客户名称" 是不变的）
    *   - customer_group_mappings：customer_group=category, account_id=父.id
-   *
-   * 注意：父的去重需要 select 一次再决定 insert。
+   *     —— 不会被新文件"关掉 is_active"，因为白名单分配由 admin 在
+   *     单独页面手动管。导入只确保映射存在。
+   *   - 返回值：parentsAdded / subsAdded / subsUpdated / mappingsAdded
    */
   const importFromExcel = async (
     preview: ImportPreview,
-  ): Promise<{ parentsAdded: number; subsAdded: number; mappingsAdded: number }> => {
+  ): Promise<{ parentsAdded: number; subsAdded: number; subsUpdated: number; mappingsAdded: number }> => {
     loading.value = true
     try {
       // 1. 先查所有已存在的父（同名 → 复用 id）
@@ -308,7 +310,8 @@ export function useAccounts() {
         parentsAdded.push(created)
       }
 
-      // 3. 子 → 按父批量插入
+      // 3. 子 → 按父批量 upsert
+      // 先按父聚合子行
       const subsByParent = new Map<string, typeof preview.subs>()
       for (const s of preview.subs) {
         const parent = byName.get(s.category)
@@ -316,34 +319,90 @@ export function useAccounts() {
         if (!subsByParent.has(parent.id)) subsByParent.set(parent.id, [])
         subsByParent.get(parent.id)!.push(s)
       }
+
+      // 3a. 拉当前所有子账号（按父聚合）以做 diff
+      const { data: allSubs, error: subsErr } = await supabase
+        .from('accounts')
+        .select('*')
+        .not('parent_id', 'is', null)
+      if (subsErr) throw subsErr
+      const existingByParent = new Map<string, Map<string, Account>>()
+      for (const s of (allSubs ?? []) as Account[]) {
+        if (!existingByParent.has(s.parent_id!)) existingByParent.set(s.parent_id!, new Map())
+        existingByParent.get(s.parent_id!)!.set(s.account_name, s)
+      }
+
       let subsAdded = 0
+      let subsUpdated = 0
+      const CHUNK = 200
+
       for (const [parentId, subs] of subsByParent.entries()) {
-        const rows = subs.map((s) => ({
-          parent_id: parentId,
-          account_name: s.name,
-          account_type: s.type,
-          inn: s.inn || '-',
-          is_main: false,
-          status: s.status,
-          company_name: s.name,
-          address: '-',
-          bank: '-',
-          bank_account: '-',
-          mfo: '-',
-          director: '-',
-          balance: 0,
-        }))
-        // chunked insert (PostgREST body 1MB 限制)
-        const CHUNK = 200
-        for (let i = 0; i < rows.length; i += CHUNK) {
-          const slice = rows.slice(i, i + CHUNK)
+        const existingMap = existingByParent.get(parentId) ?? new Map<string, Account>()
+        const insertRows: any[] = []
+        const updateRows: Array<{ id: string; patch: any }> = []
+
+        for (const s of subs) {
+          const existing = existingMap.get(s.name)
+          if (existing) {
+            // 已存在 → 仅当 inn / type / status 任一变化时更新
+            const patch: any = {}
+            if ((existing.inn || '') !== (s.inn || '')) patch.inn = s.inn || '-'
+            if (existing.status !== s.status) patch.status = s.status
+            if (existing.account_type !== s.type) patch.account_type = s.type
+            if (Object.keys(patch).length > 0) {
+              updateRows.push({ id: existing.id, patch })
+            }
+          } else {
+            insertRows.push({
+              parent_id: parentId,
+              account_name: s.name,
+              account_type: s.type,
+              inn: s.inn || '-',
+              is_main: false,
+              status: s.status,
+              company_name: s.name,
+              address: '-',
+              bank: '-',
+              bank_account: '-',
+              mfo: '-',
+              director: '-',
+              balance: 0,
+            })
+          }
+        }
+
+        // chunked insert
+        for (let i = 0; i < insertRows.length; i += CHUNK) {
+          const slice = insertRows.slice(i, i + CHUNK)
           const { error: e } = await (supabase.from('accounts') as any).insert(slice)
           if (e) throw e
           subsAdded += slice.length
         }
+        // chunked update
+        for (let i = 0; i < updateRows.length; i += CHUNK) {
+          const slice = updateRows.slice(i, i + CHUNK)
+          // 用 in(...) 走一次 roundtrip
+          const ids = slice.map((r) => r.id)
+          const merged: Record<string, any> = {}
+          for (const r of slice) {
+            for (const [k, v] of Object.entries(r.patch)) {
+              if (!(k in merged)) merged[k] = {}
+              // 简化：每条都设自己的；如果不同 id 不同 patch，需要逐条 update
+            }
+          }
+          // 为正确性逐条 update
+          for (const r of slice) {
+            const { error: e } = await (supabase.from('accounts') as any)
+              .update(r.patch)
+              .eq('id', r.id)
+            if (e) throw e
+            subsUpdated += 1
+          }
+        }
       }
 
       // 4. 客户组映射（category → 父.id，is_active=true，remark=来源）
+      //    注：不要覆盖 is_active（=false）。只确保映射存在。
       const mappingRows = preview.groupMappings
         .map((m) => byName.get(m.category))
         .filter((p): p is Account => !!p)
@@ -367,6 +426,7 @@ export function useAccounts() {
       return {
         parentsAdded: parentsAdded.length,
         subsAdded,
+        subsUpdated,
         mappingsAdded,
       }
     } finally {
