@@ -100,7 +100,9 @@ export function useProducts() {
       conversion_rate: p.conversionRate,
       remark: p.remark,
     }))
+    console.log('[import] step 1: upsert products', { count: productRows.length })
     const upserted = await bulkUpsert(productRows)
+    console.log('[import] step 1 done: upserted products', { count: upserted.length, sample: upserted[0] })
 
     // 2. 删除已有色号 + 重新插入（简化的"覆盖"语义）
     const modelSet = new Set(products.map((p) => p.model))
@@ -111,6 +113,7 @@ export function useProducts() {
         .delete()
         .in('product_id', upsertedIds)
       if (delErr) { error.value = delErr.message; throw delErr }
+      console.log('[import] step 2: deleted old stock_colors', { count: upsertedIds.length })
     }
 
     // 3. 插入 stock_colors
@@ -134,12 +137,15 @@ export function useProducts() {
         }
       })
     })
+    console.log('[import] step 3: insert stock_colors', { count: colorRows.length, sample: colorRows.slice(0, 3) })
     if (colorRows.length > 0) {
-      const { error: cErr } = await supabase
+      const { error: cErr, data: cData } = await supabase
         .from('stock_colors')
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .upsert(colorRows as any, { onConflict: 'product_id,color_code,stock_level' })
+        .select('id')
       if (cErr) { error.value = cErr.message; throw cErr }
+      console.log('[import] step 3 done: inserted stock_colors', { returned: cData?.length ?? 0 })
     }
 
     // 4. 写入 account_products 白名单

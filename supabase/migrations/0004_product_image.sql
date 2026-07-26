@@ -41,7 +41,8 @@ create policy "product_images admin write"
   );
 
 -- 同步更新 view，让后台商品页直接拿到 image_url
-create or replace view public.v_products_with_colors as
+drop view if exists public.v_products_with_colors;
+create view public.v_products_with_colors as
 select
   p.id           as product_id,
   p.model,
@@ -64,3 +65,5 @@ select
 from public.products p
 left join public.stock_colors sc on sc.product_id = p.id
 group by p.id, p.model, p.category, p.conversion_rate, p.remark, p.image_url, p.display_order;
+
+grant select on public.v_products_with_colors to anon, authenticated;
