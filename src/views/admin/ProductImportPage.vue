@@ -111,6 +111,7 @@ const onImport = async () => {
         totalLevel1: p.totalLevel1,
         totalLevel2: p.totalLevel2,
         colors: p.colors,
+        stockGroup: p.customerGroups[0] ?? null,
       }))
     const accountIds = involvedAccountIds.value
     const result = await products.bulkImportWithColors(toImport, accountIds)

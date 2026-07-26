@@ -14,7 +14,7 @@ import { useRouter } from 'vue-router'
 import {
   Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
   Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
-  MoreHorizontal, Folder, Check,
+  MoreHorizontal, Folder, Check, Mail, KeyRound, Copy,
   Database, CheckCircle2, Eye, EyeOff, Filter,
 } from 'lucide-vue-next'
 
@@ -30,9 +30,13 @@ import Label from '@/components/ui/Label.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 
 import { useAccounts, type Account, type AccountType } from '@/composables/useAccounts'
+import { useStockGroups, type StockGroup } from '@/composables/useStockGroups'
+import { useCustomerAuth } from '@/composables/useCustomerAuth'
 
 const router = useRouter()
 const acc = useAccounts()
+const stockGroups = useStockGroups()
+const customerAuth = useCustomerAuth()
 
 const parents = ref<Account[]>([])
 const subsByParent = ref<Record<string, Account[]>>({})
@@ -60,7 +64,13 @@ const subEditTarget = ref<Account | null>(null)
 const assignOpen = ref(false)
 const assignTarget = ref<Account | null>(null)
 const assignCategoriesState = ref<string[]>([])
-const allProductCategories = ref<string[]>([])
+const allStockGroups = ref<StockGroup[]>([])
+const inviteOpen = ref(false)
+const inviteTarget = ref<Account | null>(null)
+const inviteResult = ref<{ url: string } | null>(null)
+const resetOpen = ref(false)
+const resetTarget = ref<Account | null>(null)
+const resetTempPassword = ref<string | null>(null)
 
 const accountTypes: Array<{ value: AccountType; label: string; desc: string; class: string }> = [
   { value: '1_public', label: '1 公户', desc: '对公大客户', class: 'bg-blue-100 text-blue-800 border-blue-200' },
@@ -309,16 +319,16 @@ const setMain = async (parentId: string, sub: Account) => {
   await load()
 }
 
-// ============ 分配库存分类 ============
+// ============ 分配库存组 ============
 const openAssign = async (parent: Account) => {
   openMenuId.value = null
   assignTarget.value = parent
   loading.value = true
   try {
-    if (allProductCategories.value.length === 0) {
-      allProductCategories.value = await acc.fetchProductCategories()
+    if (allStockGroups.value.length === 0) {
+      allStockGroups.value = await stockGroups.fetchAll()
     }
-    assignCategoriesState.value = await acc.fetchAssignedCategories(parent.id)
+    assignCategoriesState.value = await stockGroups.fetchAssignedForParent(parent.id)
     assignOpen.value = true
   } finally {
     loading.value = false
@@ -328,7 +338,7 @@ const submitAssign = async () => {
   if (!assignTarget.value) return
   loading.value = true
   try {
-    await acc.assignCategories(assignTarget.value.id, assignCategoriesState.value)
+    await stockGroups.assignForParent(assignTarget.value.id, assignCategoriesState.value)
     assignOpen.value = false
   } catch (e: any) {
     error.value = e.message ?? String(e)
@@ -343,30 +353,90 @@ const toggleCategory = (cat: string) => {
     assignCategoriesState.value = [...assignCategoriesState.value, cat]
   }
 }
+const selectAllAssigned = () => {
+  assignCategoriesState.value = allStockGroups.value.map((g) => g.code)
+}
+const selectNoneAssigned = () => {
+  assignCategoriesState.value = []
+}
+
+// ============ 邀请 / 重置密码 ============
+const openInvite = (parent: Account) => {
+  openMenuId.value = null
+  inviteTarget.value = parent
+  inviteResult.value = null
+  inviteOpen.value = true
+}
+const submitInvite = async () => {
+  if (!inviteTarget.value) return
+  loading.value = true
+  try {
+    const { url } = await customerAuth.createInvite(inviteTarget.value.id)
+    inviteResult.value = { url }
+  } catch (e: any) {
+    error.value = e.message ?? String(e)
+  } finally {
+    loading.value = false
+  }
+}
+const copyInviteUrl = async () => {
+  if (!inviteResult.value) return
+  try {
+    await navigator.clipboard.writeText(inviteResult.value.url)
+    alert('已复制邀请链接')
+  } catch {
+    prompt('复制这一行：', inviteResult.value.url)
+  }
+}
+
+const copyTempPassword = async () => {
+  if (!resetTempPassword.value) return
+  try {
+    await navigator.clipboard.writeText(resetTempPassword.value)
+    alert('已复制临时密码')
+  } catch {
+    prompt('复制这一行：', resetTempPassword.value)
+  }
+}
+
+const openReset = (parent: Account) => {
+  openMenuId.value = null
+  resetTarget.value = parent
+  resetTempPassword.value = null
+  resetOpen.value = true
+}
+const submitReset = async () => {
+  if (!resetTarget.value) return
+  loading.value = true
+  try {
+    resetTempPassword.value = await customerAuth.resetPassword(resetTarget.value.id)
+  } catch (e: any) {
+    error.value = e.message ?? String(e)
+  } finally {
+    loading.value = false
+  }
+}
 
 // ============ 批量操作 ============
 const batchAssign = async () => {
   const ids = Array.from(selected.value)
   if (ids.length === 0) return
-  if (allProductCategories.value.length === 0) {
-    allProductCategories.value = await acc.fetchProductCategories()
+  if (allStockGroups.value.length === 0) {
+    allStockGroups.value = await stockGroups.fetchAll()
   }
   // 用第一个选中做初始值
   const first = ids[0]
-  assignCategoriesState.value = await acc.fetchAssignedCategories(first)
+  assignCategoriesState.value = await stockGroups.fetchAssignedForParent(first)
   assignTarget.value = null
   assignOpen.value = true
-  // 提交时遍历 ids
-  ;(assignOpen as any)._batch = true
 }
 const submitBatchAssign = async () => {
   loading.value = true
   try {
     for (const id of selected.value) {
-      await acc.assignCategories(id, assignCategoriesState.value)
+      await stockGroups.assignForParent(id, assignCategoriesState.value)
     }
     assignOpen.value = false
-    ;(assignOpen as any)._batch = false
     clearSelection()
   } catch (e: any) {
     error.value = e.message ?? String(e)
@@ -644,13 +714,24 @@ const goImport = () => router.push('/admin/accounts/import')
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
               <div v-if="openMenuId === p.id"
-                class="absolute right-0 top-full mt-1 w-40 bg-popover border rounded-md shadow-lg z-20 py-1"
+                class="absolute right-0 top-full mt-1 w-48 bg-popover border rounded-md shadow-lg z-20 py-1"
                 @click.stop>
                 <button
                   class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
                   @click="openParentEdit(p)">
                   <Edit class="h-3.5 w-3.5" />编辑
                 </button>
+                <button
+                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  @click="openInvite(p)">
+                  <Mail class="h-3.5 w-3.5" />邀请客户登录
+                </button>
+                <button
+                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  @click="openReset(p)">
+                  <KeyRound class="h-3.5 w-3.5" />重置密码
+                </button>
+                <div class="my-1 border-t" />
                 <button
                   class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
                   @click="toggleParent(p)">
@@ -810,28 +891,36 @@ const goImport = () => router.push('/admin/accounts/import')
       </form>
     </Dialog>
 
-    <!-- ============ 分配库存分类 ============ -->
+    <!-- ============ 分配库存组 ============ -->
     <Dialog v-model:open="assignOpen"
-      :title="assignTarget ? `分配库存分类：${assignTarget.account_name}` : '批量分配库存分类'"
-      :description="assignTarget ? '勾选该主账号能看到的商品分类' : `将 ${selected.size} 个主账号绑定到相同分类`">
-      <div v-if="allProductCategories.length === 0" class="text-sm text-muted-foreground">
-        库里还没有任何商品，无法分配
+      :title="assignTarget ? `分配库存组：${assignTarget.account_name}` : '批量分配库存组'"
+      :description="assignTarget ? '勾选该主账号能看到的库存组（= 库存表 A 列客户组）' : `将 ${selected.size} 个主账号绑定到相同库存组`">
+      <div v-if="allStockGroups.length === 0" class="text-sm text-muted-foreground">
+        还没有库存组 —— 请先在"库存表上传"页面导入库存表
       </div>
       <div v-else class="space-y-2">
-        <p class="text-xs text-muted-foreground">
-          已分配: <strong>{{ assignCategoriesState.length }}</strong> / {{ allProductCategories.length }}
-        </p>
+        <div class="flex items-center justify-between">
+          <p class="text-xs text-muted-foreground">
+            已分配: <strong>{{ assignCategoriesState.length }}</strong> / {{ allStockGroups.length }}
+            <span class="ml-2">触及 SKU 总数: <strong>{{ assignCategoriesState.reduce((s, c) => s + (allStockGroups.find(g => g.code === c)?.sku_count ?? 0), 0) }}</strong></span>
+          </p>
+          <div class="flex gap-1">
+            <Button size="sm" variant="ghost" class="h-7 text-xs" @click="selectAllAssigned">全选</Button>
+            <Button size="sm" variant="ghost" class="h-7 text-xs" @click="selectNoneAssigned">清空</Button>
+          </div>
+        </div>
         <div class="flex flex-wrap gap-2 max-h-80 overflow-y-auto border rounded-md p-3">
-          <button v-for="cat in allProductCategories" :key="cat"
+          <button v-for="g in allStockGroups" :key="g.id"
             type="button"
             class="text-sm px-2.5 py-1 rounded-md border transition"
-            :class="assignCategoriesState.includes(cat)
+            :class="assignCategoriesState.includes(g.code)
               ? 'bg-primary text-primary-foreground border-primary'
               : 'hover:bg-muted hover:border-muted-foreground/30'"
-            @click="toggleCategory(cat)">
+            @click="toggleCategory(g.code)">
             <span class="inline-flex items-center gap-1">
-              <Check v-if="assignCategoriesState.includes(cat)" class="h-3 w-3" />
-              {{ cat }}
+              <Check v-if="assignCategoriesState.includes(g.code)" class="h-3 w-3" />
+              {{ g.code }}
+              <span class="text-xs opacity-70">·{{ g.sku_count }} SKU</span>
             </span>
           </button>
         </div>
@@ -841,6 +930,72 @@ const goImport = () => router.push('/admin/accounts/import')
             <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
             {{ assignTarget ? '保存' : `应用到 ${selected.size} 个主账号` }}
           </Button>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- ============ 邀请链接 ============ -->
+    <Dialog v-model:open="inviteOpen"
+      :title="`邀请客户登录：${inviteTarget?.account_name ?? ''}`"
+      description="为客户生成 7 天有效的一次性邀请链接。客户打开链接后自己设置密码。">
+      <div class="space-y-3">
+        <div v-if="!inviteResult" class="space-y-2">
+          <p class="text-xs text-muted-foreground">
+            链接 7 天过期，只能用一次。客户点链接 → 设密码 → 登录成功。
+          </p>
+          <div class="flex justify-end gap-2 pt-2">
+            <Button variant="outline" @click="inviteOpen = false">取消</Button>
+            <Button @click="submitInvite" :disabled="loading">
+              <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
+              <Mail class="mr-2 h-4 w-4" />
+              生成邀请链接
+            </Button>
+          </div>
+        </div>
+        <div v-else class="space-y-2">
+          <div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
+            链接已生成。请复制后发送给客户（微信 / 邮件）。
+          </div>
+          <div class="flex items-center gap-2">
+            <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
+            <Button size="sm" variant="outline" @click="copyInviteUrl">
+              <Copy class="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div class="flex justify-end gap-2 pt-2">
+            <Button variant="outline" @click="inviteResult = null">再生成一个</Button>
+            <Button @click="inviteOpen = false">完成</Button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- ============ 重置密码 ============ -->
+    <Dialog v-model:open="resetOpen"
+      :title="`重置密码：${resetTarget?.account_name ?? ''}`"
+      description="生成一个临时密码，请通过其他渠道（微信 / 电话）告知客户。客户首次登录后应自行修改。">
+      <div class="space-y-3">
+        <div v-if="!resetTempPassword" class="flex justify-end gap-2 pt-2">
+          <Button variant="outline" @click="resetOpen = false">取消</Button>
+          <Button @click="submitReset" :disabled="loading">
+            <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
+            <KeyRound class="mr-2 h-4 w-4" />
+            生成临时密码
+          </Button>
+        </div>
+        <div v-else class="space-y-2">
+          <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            临时密码已生成。请复制后告知客户。
+          </div>
+          <div class="flex items-center gap-2">
+            <Input :value="resetTempPassword" readonly class="font-mono text-sm h-9" />
+            <Button size="sm" variant="outline" @click="copyTempPassword">
+              <Copy class="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div class="flex justify-end gap-2 pt-2">
+            <Button @click="resetOpen = false">完成</Button>
+          </div>
         </div>
       </div>
     </Dialog>

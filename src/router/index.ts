@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
     meta: { public: true },
   },
   {
+    path: '/customer-invite',
+    name: 'customerInvite',
+    component: () => import('@/views/CustomerInvitePage.vue'),
+    meta: { public: true },
+  },
+  {
     path: '/',
     component: () => import('@/views/layout/AppLayout.vue'),
     children: [

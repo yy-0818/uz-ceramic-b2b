@@ -86,6 +86,8 @@ export function useProducts() {
       totalLevel1: number
       totalLevel2: number
       colors: Array<{ colorCode: string; stockLevel: 1 | 2; boxes: number }>
+      /** 该产品在哪些库存组出现（取第一个有值的即可，写入 stock_group） */
+      stockGroup?: string
     }>,
     accountIds: string[] = [],
   ): Promise<{ products: number; colors: number; whiteRows: number }> => {
@@ -99,6 +101,7 @@ export function useProducts() {
       category: p.category,
       conversion_rate: p.conversionRate,
       remark: p.remark,
+      stock_group: p.stockGroup ?? null,
     }))
     console.log('[import] step 1: upsert products', { count: productRows.length })
     const upserted = await bulkUpsert(productRows)

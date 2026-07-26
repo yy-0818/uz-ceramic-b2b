@@ -23,6 +23,7 @@ import { useAccountProducts } from '@/composables/useAccountProducts'
 import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
+import { supabase } from '@/lib/supabase'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -37,7 +38,7 @@ const loading = ref(false)
 const refresh = async () => {
   loading.value = true
   console.log('[catalog] refresh, role=', useAuth().appUser.value?.role, 'isAdmin=', isAdmin.value)
-  // admin 视角：直接拉全部商品（用 view，不走白名单）
+  // admin 视角：直接拉全部商品
   if (isAdmin.value) {
     try {
       allProducts.value = await productsApi.fetchAllWithColors()
@@ -62,12 +63,47 @@ const refresh = async () => {
     }
     return
   }
-  // 客户/审核员视角：拉白名单
-  const apRes = await ap.fetchForCurrentAccount()
-  console.log('[catalog] customer fetched whitelist', { count: apRes.length, err: ap.error.value })
+  // 客户/审核员视角：按 stock_group 白名单
   try {
+    // 1. 拿到当前父账号绑定的所有库存组
+    const { data: groups } = await supabase
+      .from('customer_group_mappings')
+      .select('customer_group')
+      .eq('is_active', true)
+    const myGroups = (groups ?? []).map((r: any) => r.customer_group)
+    console.log('[catalog] my stock groups', myGroups)
+    if (myGroups.length === 0) {
+      ap.items.value = []
+      allProducts.value = []
+      loading.value = false
+      return
+    }
+    // 2. 拉这些组的所有 product
+    const { data: prods } = await supabase
+      .from('products')
+      .select('*')
+      .in('stock_group', myGroups)
+    console.log('[catalog] whitelisted products by stock_group', { count: prods?.length })
+    // 3. 拉全量带色号（view）
     allProducts.value = await productsApi.fetchAllWithColors()
-    console.log('[catalog] all products', { count: allProducts.value.length })
+    // 4. 把可白名单的产品按 AccountProductRow 装（合成）
+    const allowedIds = new Set((prods ?? []).map((p: any) => p.id))
+    const allowedFull = allProducts.value.filter((p) => allowedIds.has(p.product_id))
+    ap.items.value = allowedFull.map((p) => ({
+      account_id: '',
+      product_id: p.product_id,
+      is_visible: true,
+      stock_level_1: p.total_boxes_level1,
+      stock_level_2: p.total_boxes_level2,
+      updated_at: '',
+      product: {
+        id: p.product_id,
+        model: p.model,
+        category: p.category,
+        conversion_rate: p.conversion_rate,
+        remark: p.remark,
+      },
+    }))
   } finally {
     loading.value = false
   }

@@ -88,16 +88,56 @@ export function useAuth() {
 
   const loadProfile = async (uid: string) => {
     try {
-      const { data: userRow, error: uErr } = await supabase
-        .from('users').select('*').eq('id', uid).single()
-      if (uErr) throw uErr
-      appUser.value = userRow as AppUser
+      // 1. 先尝试直接拿 users 行（内部员工路径）
+      let userRow = (await supabase
+        .from('users').select('*').eq('id', uid).single()).data as AppUser | null
+
+      // 2. 拿不到 → 客户登录路径：accounts.user_id = uid
+      if (!userRow) {
+        const { data: accRow } = await supabase
+          .from('accounts').select('*').eq('user_id', uid).single()
+        if (accRow) {
+          const a = accRow as any
+          account.value = a as Account
+          // 客户角色：is_main = true（自动主联系）；
+          // account_id = 父账号.id（无需 sub 选择 — 但保留下单时选子）
+          userRow = {
+            id: uid,
+            account_id: a.id,
+            role: 'customer',
+            is_main: true,
+            full_name: a.account_name,
+            phone: null,
+          } as AppUser
+          // 同步写 users 行（下次能直接命中）。upsert 避免重复。
+          try {
+            await (supabase.from('users') as any).upsert({
+              id: uid,
+              account_id: a.id,
+              role: 'customer',
+              is_main: true,
+              full_name: a.account_name,
+            })
+          } catch {
+            // 忽略：可能 RLS 拒绝，client 不能写 users（service_role 才能）
+            // 但最起码内存态可用
+          }
+        }
+      }
+
+      if (!userRow) {
+        throw new Error('未找到用户档案。请联系管理员。')
+      }
+      appUser.value = userRow
       try { localStorage.setItem('appUser', JSON.stringify(userRow)) } catch {}
 
-      const { data: accRow, error: aErr } = await supabase
-        .from('accounts').select('*').eq('id', (userRow as AppUser).account_id).single()
-      if (aErr) throw aErr
-      account.value = accRow as Account
+      // 3. 拿父账号（兼容 customer 路径：acc 已经在前面拿到）
+      if (!account.value) {
+        const { data: accRow, error: aErr } = await supabase
+          .from('accounts').select('*').eq('id', (userRow as AppUser).account_id).single()
+        if (aErr) throw aErr
+        account.value = accRow as Account
+      }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'profile load failed'
     }

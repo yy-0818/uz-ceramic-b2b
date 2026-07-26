@@ -434,57 +434,14 @@ export function useAccounts() {
     }
   }
 
-  /** 父账号绑定到哪些产品分类（用于白名单） */
-  const assignCategories = async (
-    parentId: string,
-    categories: string[],
-  ): Promise<void> => {
-    loading.value = true
-    try {
-      // 1. 删除该父原有的所有分类映射
-      const { error: delErr } = await supabase
-        .from('customer_group_mappings')
-        .delete()
-        .eq('account_id', parentId)
-      if (delErr) throw delErr
-
-      // 2. 写入新映射（category → 父）
-      if (categories.length === 0) return
-      const rows = categories.map((cat) => ({
-        customer_group: cat,
-        account_id: parentId,
-        is_active: true,
-        remark: 'admin 在 AccountsAdminPage 手动分配',
-      }))
-      const { error: e } = await (supabase
-        .from('customer_group_mappings') as any)
-        .upsert(rows, { onConflict: 'customer_group' })
-      if (e) throw e
-    } finally {
-      loading.value = false
-    }
-  }
-
-  /** 查父绑定的所有分类（来自 customer_group_mappings） */
-  const fetchAssignedCategories = async (parentId: string): Promise<string[]> => {
-    const { data, error: e } = await supabase
-      .from('customer_group_mappings')
-      .select('customer_group')
-      .eq('account_id', parentId)
-    if (e) return []
-    return ((data ?? []) as Array<{ customer_group: string }>).map((r) => r.customer_group)
-  }
-
-  /** 拉所有 products 的 category（用于分配 UI） */
+  /** 拉所有 stock_groups（向后兼容名）；推荐用 useStockGroups.fetchAll */
   const fetchProductCategories = async (): Promise<string[]> => {
     const { data, error: e } = await supabase
-      .from('products')
-      .select('category')
-      .order('category')
+      .from('stock_groups')
+      .select('code')
+      .order('code')
     if (e) return []
-    const set = new Set<string>()
-    for (const r of (data ?? []) as Array<{ category: string }>) set.add(r.category)
-    return Array.from(set).sort()
+    return ((data ?? []) as Array<{ code: string }>).map((r) => r.code)
   }
 
   return {
@@ -493,7 +450,6 @@ export function useAccounts() {
     createParent, updateParent, toggleParentStatus,
     createSub, updateSub, setMain, fetchSubAccounts,
     importFromExcel,
-    assignCategories, fetchAssignedCategories,
     fetchProductCategories,
   }
 }
