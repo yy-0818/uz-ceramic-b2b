@@ -9,7 +9,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Search, Plus, Minus, ShoppingCart, Package } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
+import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
 import Button from '@/components/ui/Button.vue'

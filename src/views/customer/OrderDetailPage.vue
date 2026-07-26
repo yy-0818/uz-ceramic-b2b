@@ -7,7 +7,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
+import { useI18n } from '@/lib/i18n'
 import { ArrowLeft, Loader2 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'

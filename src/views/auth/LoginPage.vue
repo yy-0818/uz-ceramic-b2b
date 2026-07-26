@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { useI18n } from 'vue-i18n'
+import { useI18n } from '@/lib/i18n'
 import { Loader2, LockKeyhole, Mail, Factory } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'

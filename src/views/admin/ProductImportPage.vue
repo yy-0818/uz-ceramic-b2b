@@ -10,7 +10,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { Upload, Loader2, FileSpreadsheet, CheckCircle2, AlertTriangle } from 'lucide-vue-next'
-import { useI18n } from 'vue-i18n'
+import { useI18n } from '@/lib/i18n'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'

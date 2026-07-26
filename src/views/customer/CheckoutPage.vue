@@ -9,7 +9,7 @@
 import { ref, computed } from 'vue'
 import { ArrowLeft, Loader2, CheckCircle2 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
+import { useI18n } from '@/lib/i18n'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
