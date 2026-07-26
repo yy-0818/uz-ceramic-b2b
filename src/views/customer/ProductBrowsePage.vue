@@ -22,21 +22,46 @@ import Dialog from '@/components/ui/Dialog.vue'
 import { useAccountProducts } from '@/composables/useAccountProducts'
 import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart } from '@/composables/useCart'
+import { useAuth } from '@/composables/useAuth'
 
 const { t } = useI18n()
 const router = useRouter()
 const ap = useAccountProducts()
 const productsApi = useProducts()
 const cart = useCart()
+const { isAdmin } = useAuth()
 
 const allProducts = ref<ProductWithColors[]>([])
 const loading = ref(false)
 
 const refresh = async () => {
   loading.value = true
-  // 拉客户可见白名单（account_products join product）
+  // admin 视角：直接拉全部商品（用 view，不走白名单）
+  if (isAdmin.value) {
+    try {
+      allProducts.value = await productsApi.fetchAllWithColors()
+      ap.items.value = allProducts.value.map((p) => ({
+        account_id: '',
+        product_id: p.product_id,
+        is_visible: true,
+        stock_level_1: p.total_boxes_level1,
+        stock_level_2: p.total_boxes_level2,
+        updated_at: '',
+        product: {
+          id: p.product_id,
+          model: p.model,
+          category: p.category,
+          conversion_rate: p.conversion_rate,
+          remark: p.remark,
+        },
+      }))
+    } finally {
+      loading.value = false
+    }
+    return
+  }
+  // 客户/审核员视角：拉白名单
   await ap.fetchForCurrentAccount()
-  // 同时拉所有 product + 色号视图
   try {
     allProducts.value = await productsApi.fetchAllWithColors()
   } finally {
