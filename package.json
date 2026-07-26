@@ -14,13 +14,13 @@
     "@vueuse/core": "^11.1.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
-    "lucide-vue-next": "^0.451.0",
+    "lucide-vue-next": "^0.460.0",
     "papaparse": "^5.4.1",
     "pinia": "^2.2.4",
     "radix-vue": "^1.9.7",
     "tailwind-merge": "^2.5.2",
     "vue": "^3.5.10",
-    "vue-i18n": "^10.0.0",
+    "vue-i18n": "^11.4.7",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
