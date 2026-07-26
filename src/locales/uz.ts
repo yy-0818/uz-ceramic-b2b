@@ -31,6 +31,7 @@ export default {
     import: 'Import',
     assign: 'Taqsimot',
     customerGroups: 'Mijoz guruhlari',
+    accounts: 'Hisoblar',
     audit: 'Tekshirish',
     fulfillment: 'Jo\'natish',
     finance: 'Moliya',

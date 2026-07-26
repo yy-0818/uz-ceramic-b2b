@@ -1,25 +1,28 @@
 <!--
   src/views/layout/AppLayout.vue
-  Phase 3 完整版：按角色显示导航
+  按角色显示导航；移动端底部精简为 4 个主项 + "更多" 抽屉
 -->
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, Globe, FileText, ClipboardCheck, Landmark, Truck, Link2, Database } from 'lucide-vue-next'
+import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, Globe, FileText, ClipboardCheck, Landmark, Truck, Link2, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import { setLocale } from '@/lib/i18n'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
+import Dialog from '@/components/ui/Dialog.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const { account, appUser, isAdmin, signOut } = useAuth()
 
-const navItems = computed(() => {
-  const items: Array<{ name: string; to: string; icon: any }> = []
+type NavItem = { name: string; to: string; icon: any }
+
+const navItems = computed<NavItem[]>(() => {
+  const items: NavItem[] = []
   if (appUser.value?.role === 'customer' || isAdmin.value) {
     items.push({ name: t('nav.catalog'), to: '/catalog', icon: Package })
     items.push({ name: t('nav.orders'), to: '/orders', icon: FileText })
@@ -29,6 +32,7 @@ const navItems = computed(() => {
     items.push({ name: t('nav.allProducts'), to: '/admin/products', icon: Database })
     items.push({ name: t('nav.customerGroups'), to: '/admin/customer-groups', icon: Link2 })
     items.push({ name: t('nav.assign'), to: '/admin/assign', icon: Filter })
+    items.push({ name: t('nav.accounts'), to: '/admin/accounts', icon: Users })
   }
   if (appUser.value?.role === 'checker' || isAdmin.value) {
     items.push({ name: t('nav.audit'), to: '/audit', icon: ClipboardCheck })
@@ -42,6 +46,39 @@ const navItems = computed(() => {
   return items
 })
 
+// 移动端：底部固定 4 项 = catalog/orders + 当前角色最高频入口 + "更多"
+// 这样在 admin 视角下也能露出核心 + 抽屉。
+const MOBILE_PRIMARY: Record<string, string[]> = {
+  admin:     ['/admin/import', '/admin/products', '/admin/assign', '/admin/customer-groups'],
+  customer:  ['/catalog', '/orders'],
+  checker:   ['/audit'],
+  finance:   ['/finance'],
+  warehouse: ['/warehouse'],
+}
+
+const primaryItems = computed<NavItem[]>(() => {
+  const priorities = MOBILE_PRIMARY[appUser.value?.role ?? 'customer'] ?? ['/catalog', '/orders']
+  const picked: NavItem[] = []
+  for (const to of priorities) {
+    const found = navItems.value.find((n) => n.to === to)
+    if (found) picked.push(found)
+  }
+  // 不够 4 个的，用 navItems 剩余的补到 4
+  for (const n of navItems.value) {
+    if (picked.length >= 4) break
+    if (!picked.find((p) => p.to === n.to)) picked.push(n)
+  }
+  // 永远多塞一个"更多"
+  return picked.slice(0, 4)
+})
+
+const overflowItems = computed<NavItem[]>(() => {
+  const used = new Set(primaryItems.value.map((n) => n.to))
+  return navItems.value.filter((n) => !used.has(n.to))
+})
+
+const moreOpen = ref(false)
+
 const isActive = (to: string) =>
   route.path === to || route.path.startsWith(to + '/')
 
@@ -53,6 +90,11 @@ const onLogout = async () => {
 const cycleLocale = () => {
   const next = locale.value === 'ru' ? 'uz' : locale.value === 'uz' ? 'zh' : 'ru'
   setLocale(next as any)
+}
+
+const goAndClose = (to: string) => {
+  moreOpen.value = false
+  router.push(to)
 }
 
 // 按角色自动落到对应首页（避免管理员登录后落在客户式浏览页）
@@ -77,6 +119,7 @@ onMounted(() => {
 
 <template>
   <div class="min-h-dvh flex flex-col md:flex-row">
+    <!-- 桌面端侧栏 -->
     <aside class="hidden md:flex w-60 shrink-0 border-r bg-muted/30 flex-col">
       <div class="h-14 flex items-center gap-2 px-4 border-b">
         <div class="h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
@@ -126,20 +169,55 @@ onMounted(() => {
         <RouterView />
       </main>
 
+      <!-- 移动端底部 nav：精简 4 个 + "更多" -->
       <nav class="md:hidden fixed bottom-0 inset-x-0 border-t bg-background/95 backdrop-blur z-20">
-        <div class="flex items-center justify-around h-14">
+        <div class="grid items-center h-14" :style="{ gridTemplateColumns: `repeat(${primaryItems.length + 1}, minmax(0, 1fr))` }">
           <RouterLink
-            v-for="it in navItems"
+            v-for="it in primaryItems"
             :key="it.to"
             :to="it.to"
-            class="flex flex-col items-center justify-center gap-0.5 flex-1 h-full text-[11px]"
+            class="flex flex-col items-center justify-center gap-0.5 h-full text-[11px]"
             :class="isActive(it.to) ? 'text-primary' : 'text-muted-foreground'"
           >
             <component :is="it.icon" class="h-5 w-5" />
-            {{ it.name }}
+            <span class="truncate max-w-[5rem]">{{ it.name }}</span>
           </RouterLink>
+          <!-- "更多" 按钮 -->
+          <button
+            class="flex flex-col items-center justify-center gap-0.5 h-full text-[11px]"
+            :class="overflowItems.some((n) => isActive(n.to)) ? 'text-primary' : 'text-muted-foreground'"
+            @click="moreOpen = true"
+          >
+            <MoreHorizontal class="h-5 w-5" />
+            <span>更多</span>
+          </button>
         </div>
       </nav>
     </div>
+
+    <!-- "更多" 抽屉 -->
+    <Dialog v-model:open="moreOpen" title="所有页面" description="点击进入任一页面">
+      <div v-if="overflowItems.length === 0" class="text-sm text-muted-foreground text-center py-4">
+        已在底部栏显示全部页面
+      </div>
+      <ul v-else class="space-y-1 max-h-[60vh] overflow-y-auto">
+        <li v-for="it in overflowItems" :key="it.to">
+          <button
+            class="w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition text-left"
+            :class="isActive(it.to) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'"
+            @click="goAndClose(it.to)"
+          >
+            <component :is="it.icon" class="h-4 w-4 shrink-0" />
+            <span class="flex-1">{{ it.name }}</span>
+          </button>
+        </li>
+      </ul>
+      <div class="mt-4 pt-3 border-t">
+        <p class="text-xs text-muted-foreground">
+          当前身份：<strong>{{ appUser?.role }}</strong>
+          · {{ account?.account_name }}
+        </p>
+      </div>
+    </Dialog>
   </div>
 </template>

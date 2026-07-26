@@ -33,6 +33,7 @@ export default {
     allProducts: '所有商品',
     assign: '分配',
     customerGroups: '客户组映射',
+    accounts: '账号',
     audit: '审核',
     fulfillment: '发货',
     finance: '财务',

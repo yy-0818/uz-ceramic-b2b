@@ -33,6 +33,7 @@ export default {
     allProducts: 'Все товары',
     assign: 'Распределение',
     customerGroups: 'Группы клиентов',
+    accounts: 'Счета',
     audit: 'Аудит',
     fulfillment: 'Отгрузка',
     finance: 'Финансы',
