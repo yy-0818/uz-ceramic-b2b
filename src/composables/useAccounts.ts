@@ -73,7 +73,8 @@ export function parseExcelRow(raw: any): ExcelRow | null {
   const cat = String(raw['类别'] ?? raw['category'] ?? '').trim()
   const inn = String(raw['税号'] ?? raw['inn'] ?? '').trim()
   const name = String(raw['客户名称'] ?? raw['name'] ?? '').trim()
-  const typ = String(raw['账户类型'] ?? raw['type'] ?? '').trim()
+  // 兼容两种列名：「账户」 / 「账户类型」 / 「type」
+  const typ = String(raw['账户类型'] ?? raw['账户'] ?? raw['type'] ?? '').trim()
   const st = String(raw['状态'] ?? raw['status'] ?? '可用').trim()
   if (!cat || !name) return null
   if (!TYPE_MAP[typ]) return null
