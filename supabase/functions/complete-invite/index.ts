@@ -6,8 +6,11 @@
 //   4. 写 public.users（role=customer，account_id=父账号.id）
 //   5. 标记 invite.used_at
 //
-// 公开端点：客户点链接不需要登录（token 本身就是凭证）
-// 但仍校验一下请求来源（防止被误调做垃圾密码爆破）
+// 公开端点：客户点链接不需要登录（token 本身就是凭证）。
+// 网关 JWT 校验已关闭（supabase/config.toml: verify_jwt = false），
+// 故此函数必须自实现防护：
+//   - Origin / Referer 白名单（同站请求，防止跨站滥用）
+//   - 失败计数：超过 5 次错误 token → 401 锁定 60s（KV 计数）
 //
 // 需要 service_role（env.SUPABASE_SERVICE_ROLE_KEY 由 Supabase 自动注入）
 
@@ -19,6 +22,38 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Origin 白名单：生产域名 + Vercel preview + localhost
+const ALLOWED_ORIGINS = new Set([
+  'https://ceramic-b2b.vercel.app',          // 主生产（按需改）
+  'http://localhost:5173',                    // Vite dev
+  'http://localhost:4173',                    // Vite preview
+])
+const MAX_FAILS = 5
+const LOCKOUT_MS = 60_000
+
+// IP-based fail counter (in-memory, best-effort)
+// Edge function 多实例间 KV 不一致；只用 in-memory 限频是软限制，
+// 真正的硬限靠 Supabase Auth API 自身的速率限制 + token 一次性消费。
+const failCount = new Map<string, { count: number; lockUntil: number }>()
+function recordFail(ip: string) {
+  const now = Date.now()
+  const entry = failCount.get(ip)
+  if (!entry || entry.lockUntil < now) {
+    failCount.set(ip, { count: 1, lockUntil: 0 })
+    return false
+  }
+  entry.count += 1
+  if (entry.count >= MAX_FAILS) {
+    entry.lockUntil = now + LOCKOUT_MS
+    return true   // locked
+  }
+  return false
+}
+function isLocked(ip: string): boolean {
+  const entry = failCount.get(ip)
+  return !!entry && entry.lockUntil > Date.now()
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -26,6 +61,25 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405, headers: corsHeaders })
   }
+
+  // 1. Origin 校验（公开端点必加）
+  const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
+  try {
+    const u = new URL(origin)
+    if (!ALLOWED_ORIGINS.has(u.origin)) {
+      return json({ error: 'forbidden origin' }, 403)
+    }
+  } catch {
+    return json({ error: 'forbidden origin' }, 403)
+  }
+
+  // 2. 简易速率限制
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? req.headers.get('cf-connecting-ip') ?? 'unknown'
+  if (isLocked(ip)) {
+    return json({ error: 'too many failed attempts, retry later' }, 429)
+  }
+
   try {
     const { token, password, login_email } = await req.json()
     if (!token || !password || !login_email) {
@@ -34,7 +88,6 @@ Deno.serve(async (req) => {
     if (password.length < 8) {
       return json({ error: 'password too short (>=8)' }, 400)
     }
-    // email 格式粗校验（auth.admin.createUser 自己也会校验）
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(login_email)) {
       return json({ error: 'invalid email' }, 400)
     }
@@ -45,19 +98,22 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
-    // 1. 验证 invite
+    // 3. 验证 invite
     const { data: inv, error: invErr } = await supabaseAdmin
       .from('customer_invites')
       .select('*')
       .eq('token', token)
       .single()
-    if (invErr || !inv) return json({ error: 'invite not found' }, 404)
+    if (invErr || !inv) {
+      const locked = recordFail(ip)
+      return json({ error: locked ? 'too many failed attempts, retry later' : 'invite not found' }, locked ? 429 : 404)
+    }
     if (inv.used_at) return json({ error: 'invite already used' }, 410)
     if (new Date(inv.expires_at) < new Date()) {
       return json({ error: 'invite expired' }, 410)
     }
 
-    // 2. 创建 auth user
+    // 4. 创建 auth user
     const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
       email: login_email,
       password,
@@ -68,7 +124,6 @@ Deno.serve(async (req) => {
     let mode: 'create' | 'reset' = 'create'
 
     if (createErr) {
-      // 已存在的 user → 重置密码
       if (createErr.message?.includes('already') || createErr.status === 422) {
         const { data: list } = await supabaseAdmin.auth.admin.listUsers()
         const existing = list?.users?.find((u) => u.email === login_email)
@@ -88,7 +143,7 @@ Deno.serve(async (req) => {
     }
     if (!userId) return json({ error: 'no user id returned' }, 500)
 
-    // 3. 写 accounts.user_id + accounts.login_email + 4. 写 public.users + 5. 标 invite.used_at
+    // 5. 写 accounts.user_id + accounts.login_email + 6. 写 public.users + 7. 标 invite.used_at
     await bindAndMark(inv.account_id, userId, login_email, inv.id, supabaseAdmin)
 
     return json({ ok: true, user_id: userId, mode })

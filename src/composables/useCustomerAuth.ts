@@ -122,12 +122,17 @@ export function useCustomerAuth() {
     loading.value = true
     try {
       const fnUrl = (import.meta.env.VITE_SUPABASE_FUNCTIONS_URL as string | undefined)?.trim()
+      const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim()
       if (!fnUrl) {
         throw new Error('邀请完成功能未启用（缺 VITE_SUPABASE_FUNCTIONS_URL）。请管理员先帮客户设密码。')
       }
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      // apikey header：complete-invite 网关 verify_jwt=false，但仍透传 apikey
+      // 让 Supabase Auth API 自身速率限制 + 后端日志关联生效
+      if (anonKey) headers['apikey'] = anonKey
       const res = await fetch(`${fnUrl}/complete-invite`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ token, password, login_email: loginEmail }),
       })
       if (!res.ok) {

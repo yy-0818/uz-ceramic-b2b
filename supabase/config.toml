@@ -1,0 +1,22 @@
+# Supabase project config (CLI 读取)
+# 文档：https://supabase.com/docs/guides/functions/function-configuration
+
+project_id = "olnawzjgfrbduzfithjj"
+
+# ===== Edge Functions 部署配置 =====
+# 每个 function 的 deploy 行为：
+#   verify_jwt = true（默认）：网关校验 Authorization JWT；不带就 401
+#   verify_jwt = false：网关放行到 function 代码（函数内必须自实现防护）
+
+# complete-invite：客户点邀请链接调，客户尚未登录 → 必须关闭网关 JWT 校验
+# 保护层由函数内的 origin 白名单 + token 一次性消费 + rate-limit 兜底
+[functions.complete-invite]
+verify_jwt = false
+
+# reset-customer-password / bind-customer-email：admin 在已登录态下调用
+# 前端 useCustomerAuth 带 admin session.access_token，过默认 JWT 校验即可
+[functions.reset-customer-password]
+verify_jwt = true
+
+[functions.bind-customer-email]
+verify_jwt = true

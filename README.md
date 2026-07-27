@@ -42,8 +42,42 @@ npm run dev
 3. 设置环境变量：
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_FUNCTIONS_URL` — 形如 `https://<project-ref>.supabase.co/functions/v1`
 4. Build Command: `npm run build`
 5. Output Directory: `dist`
+
+## 部署 Edge Functions
+
+3 个 function 都在 `supabase/functions/` 下：
+
+| Function | 调用方 | verify_jwt |
+|---|---|---|
+| `complete-invite` | 客户点邀请链接（无登录态） | **false** |
+| `reset-customer-password` | admin 已登录 | true |
+| `bind-customer-email` | admin 已登录 | true |
+
+部署命令（CLI 需要 `SUPABASE_ACCESS_TOKEN`，dashboard → Account → Access Tokens）：
+
+```bash
+# 一次性 link 项目
+supabase link --project-ref olnawzjgfrbduzfithjj
+
+# deploy 全部（config.toml 会自动应用 verify_jwt 设置）
+supabase functions deploy
+```
+
+或单独 deploy：
+
+```bash
+# complete-invite 必须带 --no-verify-jwt（因为 config.toml 的
+# verify_jwt=false 在某些 Supabase 版本上 deploy 时不会自动应用）
+supabase functions deploy complete-invite --no-verify-jwt
+supabase functions deploy reset-customer-password
+supabase functions deploy bind-customer-email
+```
+
+部署后**生产 origin 白名单**记得改：
+`supabase/functions/complete-invite/index.ts` 里的 `ALLOWED_ORIGINS`（目前含 `ceramic-b2b.vercel.app`，按实际域名调整）。
 
 ## 关键设计
 
