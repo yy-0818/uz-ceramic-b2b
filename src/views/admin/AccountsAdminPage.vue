@@ -454,11 +454,6 @@ const selectNoneAssigned = () => {
 }
 
 // ============ 邀请 / 重置密码 ============
-// 客户占位登录邮箱域（VITE_CUSTOMER_EMAIL_DOMAIN），供 UI 提示用
-const customerEmailDomain = computed(
-  () => (import.meta.env.VITE_CUSTOMER_EMAIL_DOMAIN as string | undefined)?.trim() || 'example.com',
-)
-
 const openInvite = (parent: Account) => {
   openMenuId.value = null
   inviteTarget.value = parent
@@ -1098,15 +1093,15 @@ const goImport = () => router.push('/admin/accounts/import')
             <p>链接 7 天过期，只能用一次。</p>
             <p>客户点链接 → 设密码 → 自动登录。</p>
           </div>
-          <div v-if="!inviteTarget?.user_id" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-            ⚠️ 该主账号尚未绑定登录邮箱。生成的链接会自动用占位邮箱（如 <code>xxx_xxxxxxxx@{{ customerEmailDomain }}</code>），客户无法自助找回密码。建议在父账号编辑里先填一个真实邮箱。
+          <div v-if="!inviteTarget?.login_email?.trim()" class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+            ✗ 该主账号尚未绑定真实登录邮箱。<strong>无法生成邀请链接</strong>。请先在父账号编辑里填一个有效邮箱（如 <code>customer@yourcompany.com</code>）—— Supabase Auth 会拒绝任何占位邮箱（<code>example.com</code> / <code>.local</code> / <code>.test</code> 等保留域）。
           </div>
           <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
-            将使用登录邮箱：<span class="font-mono">{{ inviteTarget.user_id.slice(0, 8) }}...</span>（auth.user 已绑）
+            将使用登录邮箱：<span class="font-mono">{{ inviteTarget.login_email }}</span>
           </div>
           <div class="flex justify-end gap-2 pt-2">
             <Button variant="outline" @click="inviteOpen = false">取消</Button>
-            <Button @click="submitInvite" :disabled="loading">
+            <Button @click="submitInvite" :disabled="loading || !inviteTarget?.login_email?.trim()">
               <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
               <Mail class="mr-2 h-4 w-4" />
               生成邀请链接

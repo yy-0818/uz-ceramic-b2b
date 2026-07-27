@@ -18,25 +18,6 @@ import { supabase } from '@/lib/supabase'
 
 const INVITE_TTL_DAYS = 7
 
-/**
- * 客户占位登录邮箱的域名。仅在 accounts.login_email 为空时使用。
- * 必须是真实可注册 TLD（Supabase Auth 拒绝 .local / .test 等保留 TLD）。
- * 配置项：VITE_CUSTOMER_EMAIL_DOMAIN
- */
-const CUSTOMER_PLACEHOLDER_DOMAIN: string =
-  (import.meta.env.VITE_CUSTOMER_EMAIL_DOMAIN as string | undefined)?.trim()
-  || 'example.com'
-
-/**
- * 根据父账号 id + name 生成占位登录邮箱。
- * 形如：<safe_name>_<accountId前8位>@<CUSTOMER_PLACEHOLDER_DOMAIN>
- * 例：ali_b2b_12345678@example.com
- */
-export function generatePlaceholderLoginEmail(parentId: string, nameFallback: string): string {
-  const safe = (nameFallback || 'customer').replace(/\s+/g, '_').toLowerCase()
-  return `${safe}_${parentId.slice(0, 8)}@${CUSTOMER_PLACEHOLDER_DOMAIN}`
-}
-
 export interface CustomerInvite {
   id: string
   account_id: string
@@ -70,22 +51,24 @@ export function useCustomerAuth() {
     parentId: string,
     parentName: string,
     parentAccountId: string,
-  ): Promise<{ token: string; url: string; loginEmail: string; emailSource: 'preset' | 'generated' }> => {
+  ): Promise<{ token: string; url: string; loginEmail: string; emailSource: 'preset' }> => {
     loading.value = true
     try {
-      // 1. 拉父账号 login_email（admin 在 UI 里可填）
+      // 1. 拉父账号 login_email（admin 在 UI 里必须填；占位域名 Supabase 一律拒）
       const { data: parent } = await supabase
         .from('accounts')
         .select('login_email, account_name')
         .eq('id', parentId)
         .single()
       const parentRow = parent as { login_email: string | null; account_name: string } | null
-      let loginEmail = parentRow?.login_email?.trim()
-      let emailSource: 'preset' | 'generated' = 'preset'
+      const loginEmail = parentRow?.login_email?.trim() || ''
       if (!loginEmail) {
-        loginEmail = generatePlaceholderLoginEmail(parentAccountId, parentName || parentRow?.account_name || '')
-        emailSource = 'generated'
+        // 没有真实邮箱就禁止生成邀请：占位 email 会被 Supabase Auth 拒绝（example.* / .local / .test 都过不了）
+        throw new Error(
+          '该主账号尚未绑定真实登录邮箱。请先在父账号编辑里填一个有效邮箱（如 customer@yourcompany.com），再生成邀请链接。',
+        )
       }
+      const emailSource: 'preset' = 'preset'
 
       // 2. 生成 token
       const token = generateToken()

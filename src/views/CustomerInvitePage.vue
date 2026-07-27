@@ -15,7 +15,7 @@ import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import { useCustomerAuth, generatePlaceholderLoginEmail } from '@/composables/useCustomerAuth'
+import { useCustomerAuth } from '@/composables/useCustomerAuth'
 import { useStockGroups } from '@/composables/useStockGroups'
 import { supabase } from '@/lib/supabase'
 
@@ -59,8 +59,13 @@ onMounted(async () => {
       .eq('id', info.accountId)
       .single()
     parentName.value = (parent as any)?.account_name ?? '主账号'
-    loginEmail.value = (parent as any)?.login_email
-      ?? generatePlaceholderLoginEmail(info.accountId, (parent as any)?.account_name ?? '')
+    // 必须有 login_email 才能继续：占位邮箱 Supabase Auth 不接受（example.* / .local / .test）
+    loginEmail.value = (parent as any)?.login_email?.trim() ?? ''
+    if (!loginEmail.value) {
+      error.value = '该主账号尚未绑定真实登录邮箱，请联系管理员在父账号编辑里先填一个有效邮箱（如 customer@yourcompany.com）。'
+      step.value = 'error'
+      return
+    }
 
     assignedGroups.value = await stockGroups.fetchAssignedForParent(info.accountId)
     step.value = 'setPassword'
