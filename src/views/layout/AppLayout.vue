@@ -14,6 +14,7 @@ import { setLocale } from '@/lib/i18n'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import ThemeToggle from '@/components/ui/ThemeToggle.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -161,6 +162,7 @@ onMounted(() => {
           <Badge variant="secondary">{{ appUser?.role }}</Badge>
         </div>
         <div class="flex items-center gap-1">
+          <ThemeToggle />
           <Button size="sm" variant="ghost" @click="cycleLocale">
             <Globe class="h-4 w-4 mr-1" />
             {{ locale.toUpperCase() }}

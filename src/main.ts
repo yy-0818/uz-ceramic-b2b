@@ -3,9 +3,13 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import { i18n, useI18n, setLocale } from './lib/i18n'
+import { initTheme } from './composables/useTheme'
 import { registerPermissionDirective } from './directives/permission'
 
 import './assets/main.css'
+
+// 同步初始化主题：必须在 mount 前，避免首屏白闪
+initTheme()
 
 const app = createApp(App)
 
