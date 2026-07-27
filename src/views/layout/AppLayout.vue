@@ -6,15 +6,15 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, Globe, FileText, ClipboardCheck, Landmark, Truck, Link2, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
+import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Link2, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import { useCart } from '@/composables/useCart'
-import { setLocale } from '@/lib/i18n'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
+import LocaleMenu from '@/components/ui/LocaleMenu.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -91,11 +91,6 @@ const onLogout = async () => {
   router.push('/login')
 }
 
-const cycleLocale = () => {
-  const next = locale.value === 'ru' ? 'uz' : locale.value === 'uz' ? 'zh' : 'ru'
-  setLocale(next as any)
-}
-
 const cartTotalBoxes = computed(() => cart.totalBoxes())
 const cartTotalM2 = computed(() => cart.totalM2())
 
@@ -163,10 +158,7 @@ onMounted(() => {
         </div>
         <div class="flex items-center gap-1">
           <ThemeToggle />
-          <Button size="sm" variant="ghost" @click="cycleLocale">
-            <Globe class="h-4 w-4 mr-1" />
-            {{ locale.toUpperCase() }}
-          </Button>
+          <LocaleMenu />
           <Button size="sm" variant="ghost" @click="onLogout">
             <LogOut class="h-4 w-4" />
           </Button>
@@ -220,11 +212,16 @@ onMounted(() => {
           </button>
         </li>
       </ul>
-      <div class="mt-4 pt-3 border-t">
+      <div class="mt-4 pt-3 border-t space-y-3">
         <p class="text-xs text-muted-foreground">
           当前身份：<strong>{{ appUser?.role }}</strong>
           · {{ account?.account_name }}
         </p>
+        <!-- 移动端把语言/主题放进抽屉，避免挤底部 4 项 -->
+        <div class="flex items-center gap-2 md:hidden">
+          <LocaleMenu />
+          <ThemeToggle />
+        </div>
       </div>
     </Dialog>
 
