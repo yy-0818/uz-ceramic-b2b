@@ -55,17 +55,45 @@ const lastSelectedId = ref<string | null>(null)
 
 // 菜单面板（"更多"下拉）
 const openMenuId = ref<string | null>(null)
+// 菜单 fixed 定位坐标：基于 ⋯ 按钮的 getBoundingClientRect
+const menuPos = ref({ top: 0, left: 0, width: 208 }) // 208 = w-52
+
+const triggerRefs = ref<Record<string, HTMLElement | null>>({})
+const setTriggerRef = (id: string, el: any) => {
+  // el 可能为 component instance → 用 $el
+  triggerRefs.value[id] = el?.$el ?? el
+}
+
 const toggleMenu = (id: string) => {
-  openMenuId.value = openMenuId.value === id ? null : id
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
+  openMenuId.value = id
+  // 计算 fixed 坐标：放在按钮下方、右对齐
+  const btn = triggerRefs.value[id]
+  if (btn) {
+    const r = btn.getBoundingClientRect()
+    menuPos.value = {
+      top: r.bottom + 4,         // mt-1
+      left: r.right - 208,       // right-0
+      width: 208,
+    }
+  }
 }
 const closeMenu = () => { openMenuId.value = null }
+
+// 当前打开菜单对应的主账号行（给 Teleport 菜单渲染用）
+const currentMenuParent = computed(() =>
+  openMenuId.value ? pagedParents.value.find(p => p.id === openMenuId.value) ?? null : null,
+)
 
 // 移动端判断：< 640px（sm 断点）把行内按钮折叠进 ···
 const isMobileMenu = ref(false)
 const mql = typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)') : null
 const syncMobile = () => { isMobileMenu.value = !!mql?.matches }
 
-// 全局：Esc 关闭 + 外点关闭
+// 全局：Esc 关闭 + 外点关闭 + 滚动/resize 重算坐标
 const onKeydown = (e: KeyboardEvent) => {
   if (e.key === 'Escape') closeMenu()
 }
@@ -75,6 +103,17 @@ const onDocClick = (e: MouseEvent) => {
   // 点击下拉触发按钮或菜单本体时由 @click.stop 拦截
   if (target.closest('[data-row-menu]')) return
   closeMenu()
+}
+const reposition = () => {
+  if (!openMenuId.value) return
+  const btn = triggerRefs.value[openMenuId.value]
+  if (!btn) return
+  const r = btn.getBoundingClientRect()
+  menuPos.value = {
+    top: r.bottom + 4,
+    left: r.right - 208,
+    width: 208,
+  }
 }
 
 // dialogs
@@ -148,6 +187,8 @@ onMounted(() => {
   } catch {}
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onDocClick)
+  window.addEventListener('scroll', reposition, true)
+  window.addEventListener('resize', reposition)
   syncMobile()
   mql?.addEventListener('change', syncMobile)
   load()
@@ -155,6 +196,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onDocClick)
+  window.removeEventListener('scroll', reposition, true)
+  window.removeEventListener('resize', reposition)
   mql?.removeEventListener('change', syncMobile)
 })
 
@@ -656,6 +699,61 @@ const goImport = () => router.push('/admin/accounts/import')
       </CardContent>
     </Card>
 
+    <!-- ============ 行菜单（Teleport → body） ============ -->
+    <Teleport to="body">
+      <div
+        v-if="currentMenuParent"
+        :style="{
+          position: 'fixed',
+          top: menuPos.top + 'px',
+          left: menuPos.left + 'px',
+          width: menuPos.width + 'px',
+        }"
+        class="bg-popover border rounded-lg shadow-xl py-1 z-[9999]"
+        role="menu"
+        @click.stop
+      >
+        <!-- 手机额外：分配分类 / 加子账号 -->
+        <template v-if="isMobileMenu">
+          <button
+            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+            @click="openAssign(currentMenuParent); closeMenu()">
+            <Tag class="h-4 w-4 text-muted-foreground" />分配分类
+          </button>
+          <button
+            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+            @click="openSubCreate(currentMenuParent); closeMenu()">
+            <Plus class="h-4 w-4 text-muted-foreground" />加子账号
+          </button>
+          <div class="my-1 border-t" />
+        </template>
+        <!-- 账号管理 -->
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="openParentEdit(currentMenuParent); closeMenu()">
+          <Edit class="h-4 w-4 text-muted-foreground" />编辑
+        </button>
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="openInvite(currentMenuParent); closeMenu()">
+          <Mail class="h-4 w-4 text-muted-foreground" />邀请客户登录
+        </button>
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="openReset(currentMenuParent); closeMenu()">
+          <KeyRound class="h-4 w-4 text-muted-foreground" />重置密码
+        </button>
+        <div class="my-1 border-t" />
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
+          @click="toggleParent(currentMenuParent); closeMenu()">
+          <PowerOff v-if="currentMenuParent.status === 'active'" class="h-4 w-4" />
+          <Power v-else class="h-4 w-4" />
+          {{ currentMenuParent.status === 'active' ? '停用' : '启用' }}
+        </button>
+      </div>
+    </Teleport>
+
     <!-- ============ 批量操作条（粘性） ============ -->
     <Transition
       enter-active-class="transition-all duration-200 ease-out"
@@ -710,7 +808,7 @@ const goImport = () => router.push('/admin/accounts/import')
     </div>
 
     <!-- ============ 树（分页） ============ -->
-    <div v-else class="space-y-4">
+    <div v-else class="space-y-2">
       <!-- 当前页全选 -->
       <div class="flex items-center justify-between text-xs text-muted-foreground px-1">
         <label class="flex items-center gap-2 cursor-pointer hover:text-foreground">
@@ -725,16 +823,7 @@ const goImport = () => router.push('/admin/accounts/import')
         <span v-if="selected.size > 0" class="text-primary">已选 {{ selected.size }} 个</span>
       </div>
 
-      <Card v-for="p in pagedParents" :key="p.id"
-        :class="[
-          'overflow-visible transition-shadow',
-          // 展开子账号 / 打开菜单时，整张 Card 提级：
-          // - z-40 跨越兄弟 stacking context
-          // - shadow-md 让"浮起"有视觉锚点
-          (expanded[p.id] || openMenuId === p.id)
-            ? 'relative z-40 shadow-md'
-            : 'relative',
-        ]">
+      <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
         <!-- 父头 -->
         <div
           class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
@@ -790,60 +879,23 @@ const goImport = () => router.push('/admin/accounts/import')
               <Plus class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">加子账号</span>
             </Button>
-            <div class="relative z-50" data-row-menu>
-              <Button size="sm" variant="ghost" class="h-8 w-8 p-0" @click.stop="toggleMenu(p.id)">
+            <div class="relative" data-row-menu>
+              <Button
+                size="sm"
+                variant="ghost"
+                class="h-8 w-8 p-0"
+                :ref="el => setTriggerRef(p.id, el)"
+                @click.stop="toggleMenu(p.id)"
+              >
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
-              <div v-if="openMenuId === p.id"
-                class="absolute right-0 top-full mt-1 w-52 bg-popover border rounded-lg shadow-lg z-30 py-1"
-                @click.stop>
-                <!-- 手机额外：分配分类 / 加子账号（桌面行内已有按钮） -->
-                <template v-if="isMobileMenu">
-                  <button
-                    class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                    @click="openAssign(p)">
-                    <Tag class="h-4 w-4 text-muted-foreground" />分配分类
-                  </button>
-                  <button
-                    class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                    @click="openSubCreate(p)">
-                    <Plus class="h-4 w-4 text-muted-foreground" />加子账号
-                  </button>
-                  <div class="my-1 border-t" />
-                </template>
-                <!-- 账号管理 -->
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                  @click="openParentEdit(p)">
-                  <Edit class="h-4 w-4 text-muted-foreground" />编辑
-                </button>
-                <!-- 客户登录 -->
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                  @click="openInvite(p)">
-                  <Mail class="h-4 w-4 text-muted-foreground" />邀请客户登录
-                </button>
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-                  @click="openReset(p)">
-                  <KeyRound class="h-4 w-4 text-muted-foreground" />重置密码
-                </button>
-                <div class="my-1 border-t" />
-                <!-- 危险动作 -->
-                <button
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
-                  @click="toggleParent(p)">
-                  <PowerOff v-if="p.status === 'active'" class="h-4 w-4" />
-                  <Power v-else class="h-4 w-4" />
-                  {{ p.status === 'active' ? '停用' : '启用' }}
-                </button>
-              </div>
+              <!-- 菜单通过 Teleport 挂在 body 上，单例渲染 -->
             </div>
           </div>
         </div>
 
         <!-- 子 -->
-        <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2 rounded-b-lg">
+        <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2">
           <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
             <Users class="h-3 w-3" />
             子账号 ({{ (subsByParent[p.id] ?? []).length }})
