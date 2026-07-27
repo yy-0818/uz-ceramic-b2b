@@ -56,18 +56,9 @@ begin
   return new;
 end $$;
 
--- 确保函数 owner 是 postgres（SECURITY DEFINER 跑在 owner 权限下，能 bypass RLS）
--- local Supabase dev：supabase db push 由 supabase_admin 跑 → 函数 owner 是 supabase_admin（也是 bypass rls）
--- 远端 Supabase：迁移由 supabase_admin 跑 → 同上。显式指定 owner 为 postgres 兜底
-do $$
-begin
-  if exists (select 1 from pg_roles where rolname = 'postgres') then
-    execute 'alter function public.fn_handle_new_user() owner to postgres';
-  end if;
-exception when insufficient_privilege then
-  -- 跑迁移的角色没权限改 owner → 保持默认 owner（通常已是 supabase_admin / postgres）
-  null;
-end $$;
+-- 函数 owner 默认是 supabase_admin（supabase CLI 跑迁移用的角色）
+-- supabase_admin 是 superuser 等价权限，能 bypass RLS → SECURITY DEFINER 函数足够
+-- 不要再 alter owner to postgres：supabase_admin 没权限把自己改成 postgres owner
 
 drop trigger if exists trg_handle_new_user on auth.users;
 create trigger trg_handle_new_user
