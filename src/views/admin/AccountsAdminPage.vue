@@ -9,7 +9,7 @@
   v2: 响应式更紧凑、KPI 卡片、分页、列对齐、暗色适配
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
@@ -55,6 +55,27 @@ const lastSelectedId = ref<string | null>(null)
 
 // 菜单面板（"更多"下拉）
 const openMenuId = ref<string | null>(null)
+const toggleMenu = (id: string) => {
+  openMenuId.value = openMenuId.value === id ? null : id
+}
+const closeMenu = () => { openMenuId.value = null }
+
+// 移动端判断：< 640px（sm 断点）把行内按钮折叠进 ···
+const isMobileMenu = ref(false)
+const mql = typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)') : null
+const syncMobile = () => { isMobileMenu.value = !!mql?.matches }
+
+// 全局：Esc 关闭 + 外点关闭
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') closeMenu()
+}
+const onDocClick = (e: MouseEvent) => {
+  if (!openMenuId.value) return
+  const target = e.target as HTMLElement
+  // 点击下拉触发按钮或菜单本体时由 @click.stop 拦截
+  if (target.closest('[data-row-menu]')) return
+  closeMenu()
+}
 
 // dialogs
 const parentEditOpen = ref(false)
@@ -125,7 +146,16 @@ onMounted(() => {
     const saved = JSON.parse(localStorage.getItem('admin.accounts.expanded') || '{}')
     expanded.value = saved
   } catch {}
+  document.addEventListener('keydown', onKeydown)
+  document.addEventListener('click', onDocClick)
+  syncMobile()
+  mql?.addEventListener('change', syncMobile)
   load()
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('click', onDocClick)
+  mql?.removeEventListener('change', syncMobile)
 })
 
 watch(expanded, (v) => {
@@ -584,15 +614,17 @@ const goImport = () => router.push('/admin/accounts/import')
     <Card>
       <CardContent class="py-3 space-y-3">
         <div class="flex flex-wrap items-center gap-2">
-          <div class="relative flex-1 min-w-[200px]">
+          <div class="relative flex-1 min-w-[160px] sm:min-w-[200px]">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input v-model="search" placeholder="搜索主账号 / 子账号 / 税号" class="pl-9 h-9" />
           </div>
-          <Button size="sm" variant="ghost" @click="expandAll" class="text-xs">
-            <ChevronDown class="h-3 w-3 mr-1" />展开
+          <Button size="sm" variant="ghost" @click="expandAll" class="text-xs px-2 sm:px-3" title="展开全部">
+            <ChevronDown class="h-3 w-3 sm:mr-1" />
+            <span class="hidden sm:inline">展开</span>
           </Button>
-          <Button size="sm" variant="ghost" @click="collapseAll" class="text-xs">
-            <ChevronRight class="h-3 w-3 mr-1" />折叠
+          <Button size="sm" variant="ghost" @click="collapseAll" class="text-xs px-2 sm:px-3" title="折叠全部">
+            <ChevronRight class="h-3 w-3 sm:mr-1" />
+            <span class="hidden sm:inline">折叠</span>
           </Button>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -696,7 +728,7 @@ const goImport = () => router.push('/admin/accounts/import')
       <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
         <!-- 父头 -->
         <div
-          class="flex items-center gap-3 px-4 py-3 transition"
+          class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
           :class="selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-muted/40'"
         >
           <!-- checkbox -->
@@ -707,7 +739,7 @@ const goImport = () => router.push('/admin/accounts/import')
             @click.stop
             @change="toggleSelect(p.id, ($event as MouseEvent).shiftKey)"
           />
-          <!-- 展开 -->
+          <!-- 展开：▶ 唯一入口 -->
           <button
             class="shrink-0 p-1 -m-1 rounded hover:bg-muted"
             @click.stop="toggleExpand(p.id)"
@@ -715,7 +747,7 @@ const goImport = () => router.push('/admin/accounts/import')
             <component :is="expanded[p.id] ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
           </button>
           <!-- 名称 + meta -->
-          <div class="flex-1 min-w-0 cursor-pointer" @click="toggleExpand(p.id)">
+          <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-semibold truncate">{{ p.account_name }}</span>
               <span class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border font-medium"
@@ -740,49 +772,61 @@ const goImport = () => router.push('/admin/accounts/import')
           </div>
           <!-- 操作 -->
           <div class="flex items-center gap-1 shrink-0">
-            <Button size="sm" variant="outline" @click.stop="openAssign(p)" class="h-8">
+            <!-- ≥sm 才显示文字按钮；手机端折叠进 ··· -->
+            <Button size="sm" variant="outline" @click.stop="openAssign(p)" class="h-8 hidden sm:inline-flex">
               <Tag class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">分配分类</span>
             </Button>
-            <Button size="sm" variant="outline" @click.stop="openSubCreate(p)" class="h-8">
+            <Button size="sm" variant="outline" @click.stop="openSubCreate(p)" class="h-8 hidden sm:inline-flex">
               <Plus class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">加子账号</span>
             </Button>
-            <div class="relative">
-              <Button size="sm" variant="ghost" class="h-8 w-8 p-0" @click.stop="openMenuId = openMenuId === p.id ? null : p.id">
+            <div class="relative" data-row-menu>
+              <Button size="sm" variant="ghost" class="h-8 w-8 p-0" @click.stop="toggleMenu(p.id)">
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
               <div v-if="openMenuId === p.id"
-                class="absolute right-0 top-full mt-1 w-48 bg-popover border rounded-md shadow-lg z-20 py-1"
+                class="absolute right-0 top-full mt-1 w-52 bg-popover border rounded-lg shadow-lg z-30 py-1"
                 @click.stop>
+                <!-- 手机额外：分配分类 / 加子账号（桌面行内已有按钮） -->
+                <template v-if="isMobileMenu">
+                  <button
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                    @click="openAssign(p)">
+                    <Tag class="h-4 w-4 text-muted-foreground" />分配分类
+                  </button>
+                  <button
+                    class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+                    @click="openSubCreate(p)">
+                    <Plus class="h-4 w-4 text-muted-foreground" />加子账号
+                  </button>
+                  <div class="my-1 border-t" />
+                </template>
+                <!-- 账号管理 -->
                 <button
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                   @click="openParentEdit(p)">
-                  <Edit class="h-3.5 w-3.5" />编辑
+                  <Edit class="h-4 w-4 text-muted-foreground" />编辑
                 </button>
+                <!-- 客户登录 -->
                 <button
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                   @click="openInvite(p)">
-                  <Mail class="h-3.5 w-3.5" />邀请客户登录
+                  <Mail class="h-4 w-4 text-muted-foreground" />邀请客户登录
                 </button>
                 <button
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
                   @click="openReset(p)">
-                  <KeyRound class="h-3.5 w-3.5" />重置密码
+                  <KeyRound class="h-4 w-4 text-muted-foreground" />重置密码
                 </button>
                 <div class="my-1 border-t" />
+                <!-- 危险动作 -->
                 <button
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
                   @click="toggleParent(p)">
-                  <PowerOff v-if="p.status === 'active'" class="h-3.5 w-3.5" />
-                  <Power v-else class="h-3.5 w-3.5" />
+                  <PowerOff v-if="p.status === 'active'" class="h-4 w-4" />
+                  <Power v-else class="h-4 w-4" />
                   {{ p.status === 'active' ? '停用' : '启用' }}
-                </button>
-                <button
-                  class="w-full text-left px-3 py-1.5 text-sm hover:bg-muted flex items-center gap-2"
-                  @click="toggleExpand(p.id)">
-                  <component :is="expanded[p.id] ? ChevronDown : ChevronRight" class="h-3.5 w-3.5" />
-                  {{ expanded[p.id] ? '收起' : '展开' }}子账号
                 </button>
               </div>
             </div>
