@@ -1,9 +1,10 @@
 // supabase/functions/reset-customer-password/index.ts
 // Admin flow: 重置主账号对应的客户密码 → 返回 temp password
-// 1. 拉 accounts.user_id + accounts.login_email
-// 2. 生成随机临时密码
-// 3. 用 service_role 改密码
-// 4. 把所有未使用的 invite 标 used（防止旧链接被用）
+//   1. 校验调用者是 admin
+//   2. 拉 accounts.user_id + accounts.login_email
+//   3. 生成随机临时密码
+//   4. 用 service_role 改密码
+//   5. 把所有未使用的 invite 标 used（防止旧链接被用）
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -16,6 +17,11 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders })
+
+  // 1. 校验 admin
+  const ctx = await requireAdmin(req)
+  if (!ctx.ok) return ctx.response
+
   try {
     const { parent_id } = await req.json()
     if (!parent_id) return json({ error: 'missing parent_id' }, 400)
@@ -26,7 +32,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
-    // 1. 拉父账号
+    // 2. 拉父账号
     const { data: acc, error: aErr } = await supabaseAdmin
       .from('accounts')
       .select('id, user_id, login_email, account_name')
@@ -36,17 +42,17 @@ Deno.serve(async (req) => {
     if (!acc.user_id) return json({ error: '该主账号尚未绑登录账号，请先邀请客户登录' }, 400)
     if (!acc.login_email) return json({ error: '该主账号没有 login_email' }, 400)
 
-    // 2. 生成临时密码
+    // 3. 生成临时密码
     const tempPassword = generatePassword()
 
-    // 3. 改密码
+    // 4. 改密码
     const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(
       acc.user_id,
       { password: tempPassword },
     )
     if (updErr) return json({ error: updErr.message }, 500)
 
-    // 4. 标记未使用的 invite 为 used
+    // 5. 标记未使用的 invite 为 used
     await supabaseAdmin
       .from('customer_invites')
       .update({ used_at: new Date().toISOString() })
@@ -59,8 +65,34 @@ Deno.serve(async (req) => {
   }
 })
 
+/** 校验调用者是 admin；返回 { ok: true } 或 { ok: false, response } */
+async function requireAdmin(req: Request): Promise<{ ok: true } | { ok: false; response: Response }> {
+  const auth = req.headers.get('authorization')
+  if (!auth?.startsWith('Bearer ')) {
+    return { ok: false, response: json({ error: 'missing bearer token' }, 401) }
+  }
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL') ?? '',
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
+  const token = auth.slice(7)
+  const { data, error } = await supabaseAdmin.auth.getUser(token)
+  if (error || !data?.user) {
+    return { ok: false, response: json({ error: 'invalid token' }, 401) }
+  }
+  const { data: profile } = await supabaseAdmin
+    .from('users')
+    .select('role')
+    .eq('id', data.user.id)
+    .single()
+  if (profile?.role !== 'admin') {
+    return { ok: false, response: json({ error: 'admin only' }, 403) }
+  }
+  return { ok: true }
+}
+
 function generatePassword() {
-  // 12 字符，包含大小写 + 数字
   const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
   const lower = 'abcdefghijkmnpqrstuvwxyz'
   const num = '23456789'
@@ -70,7 +102,6 @@ function generatePassword() {
   s += lower[Math.floor(Math.random() * lower.length)]
   s += num[Math.floor(Math.random() * num.length)]
   for (let i = 0; i < 9; i++) s += all[Math.floor(Math.random() * all.length)]
-  // shuffle
   return s.split('').sort(() => Math.random() - 0.5).join('')
 }
 
