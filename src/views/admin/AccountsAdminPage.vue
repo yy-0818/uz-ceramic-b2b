@@ -710,7 +710,7 @@ const goImport = () => router.push('/admin/accounts/import')
     </div>
 
     <!-- ============ 树（分页） ============ -->
-    <div v-else class="space-y-2">
+    <div v-else class="space-y-4">
       <!-- 当前页全选 -->
       <div class="flex items-center justify-between text-xs text-muted-foreground px-1">
         <label class="flex items-center gap-2 cursor-pointer hover:text-foreground">
@@ -726,7 +726,15 @@ const goImport = () => router.push('/admin/accounts/import')
       </div>
 
       <Card v-for="p in pagedParents" :key="p.id"
-        :class="['overflow-visible', openMenuId === p.id ? 'relative z-50' : 'relative']">
+        :class="[
+          'overflow-visible transition-shadow',
+          // 展开子账号 / 打开菜单时，整张 Card 提级：
+          // - z-40 跨越兄弟 stacking context
+          // - shadow-md 让"浮起"有视觉锚点
+          (expanded[p.id] || openMenuId === p.id)
+            ? 'relative z-40 shadow-md'
+            : 'relative',
+        ]">
         <!-- 父头 -->
         <div
           class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
