@@ -75,6 +75,3 @@ begin
        '-', '-', '-', '-', '-', '-', 'active', false, 0);
   end if;
 end $$;
-
-comment on migration '0009_seed.sql' is
-  '演示数据 + admin 初始化文档。生产部署后第一次跑这文件即可。';
