@@ -67,7 +67,13 @@ const assignCategoriesState = ref<string[]>([])
 const allStockGroups = ref<StockGroup[]>([])
 const inviteOpen = ref(false)
 const inviteTarget = ref<Account | null>(null)
-const inviteResult = ref<{ url: string } | null>(null)
+const inviteResult = ref<{
+  url: string
+  loginEmail: string
+  emailSource: 'preset' | 'generated'
+  expiresAt: string
+  token: string
+} | null>(null)
 const resetOpen = ref(false)
 const resetTarget = ref<Account | null>(null)
 const resetTempPassword = ref<string | null>(null)
@@ -79,7 +85,11 @@ const accountTypes: Array<{ value: AccountType; label: string; desc: string; cla
 ]
 const typeClass = (t: AccountType) => accountTypes.find((x) => x.value === t)?.class ?? ''
 
-const parentForm = ref({ account_name: '', account_type: '1_public' as AccountType })
+const parentForm = ref({
+  account_name: '',
+  account_type: '1_public' as AccountType,
+  login_email: '',
+})
 const subForm = ref({
   parent_id: '',
   account_name: '',
@@ -206,12 +216,16 @@ const clearSelection = () => {
 // ============ 父 CRUD ============
 const openParentCreate = () => {
   parentEditTarget.value = null
-  parentForm.value = { account_name: '', account_type: '1_public' }
+  parentForm.value = { account_name: '', account_type: '1_public', login_email: '' }
   parentEditOpen.value = true
 }
 const openParentEdit = (p: Account) => {
   parentEditTarget.value = p
-  parentForm.value = { account_name: p.account_name, account_type: p.account_type }
+  parentForm.value = {
+    account_name: p.account_name,
+    account_type: p.account_type,
+    login_email: (p as any).login_email ?? '',
+  }
   openMenuId.value = null
   parentEditOpen.value = true
 }
@@ -220,18 +234,24 @@ const submitParent = async () => {
     error.value = '请填写主账号名'
     return
   }
+  if (parentForm.value.login_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentForm.value.login_email)) {
+    error.value = '登录邮箱格式不正确'
+    return
+  }
   loading.value = true
   try {
     if (parentEditTarget.value) {
       await acc.updateParent(parentEditTarget.value.id, {
         account_name: parentForm.value.account_name,
         account_type: parentForm.value.account_type,
-      })
+        login_email: parentForm.value.login_email || null,
+      } as any)
     } else {
       await acc.createParent({
         account_name: parentForm.value.account_name,
         account_type: parentForm.value.account_type,
-      })
+        login_email: parentForm.value.login_email || null,
+      } as any)
     }
     parentEditOpen.value = false
     await load()
@@ -371,8 +391,18 @@ const submitInvite = async () => {
   if (!inviteTarget.value) return
   loading.value = true
   try {
-    const { url } = await customerAuth.createInvite(inviteTarget.value.id)
-    inviteResult.value = { url }
+    const { url, loginEmail, emailSource } = await customerAuth.createInvite(
+      inviteTarget.value.id,
+      inviteTarget.value.account_name,
+      inviteTarget.value.id,
+    )
+    inviteResult.value = {
+      url,
+      loginEmail,
+      emailSource,
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      token: url.split('token=')[1] ?? '',
+    }
   } catch (e: any) {
     error.value = e.message ?? String(e)
   } finally {
@@ -386,6 +416,15 @@ const copyInviteUrl = async () => {
     alert('已复制邀请链接')
   } catch {
     prompt('复制这一行：', inviteResult.value.url)
+  }
+}
+const copyLoginEmail = async () => {
+  if (!inviteResult.value) return
+  try {
+    await navigator.clipboard.writeText(inviteResult.value.loginEmail)
+    alert('已复制登录邮箱')
+  } catch {
+    prompt('复制这一行：', inviteResult.value.loginEmail)
   }
 }
 
@@ -821,6 +860,10 @@ const goImport = () => router.push('/admin/accounts/import')
           <Input v-model="parentForm.account_name" placeholder="例如：贾汉 / I客户 / W客户" class="h-9" />
         </div>
         <div>
+          <Label>客户登录邮箱 <span class="text-xs text-muted-foreground">（邀请时使用，留空自动生成占位邮箱）</span></Label>
+          <Input v-model="parentForm.login_email" type="email" placeholder="customer@example.com" class="h-9" />
+        </div>
+        <div>
           <Label>类型</Label>
           <div class="grid grid-cols-3 gap-2 mt-1">
             <button v-for="t in accountTypes" :key="t.value"
@@ -940,9 +983,16 @@ const goImport = () => router.push('/admin/accounts/import')
       description="为客户生成 7 天有效的一次性邀请链接。客户打开链接后自己设置密码。">
       <div class="space-y-3">
         <div v-if="!inviteResult" class="space-y-2">
-          <p class="text-xs text-muted-foreground">
-            链接 7 天过期，只能用一次。客户点链接 → 设密码 → 登录成功。
-          </p>
+          <div class="text-xs text-muted-foreground space-y-1">
+            <p>链接 7 天过期，只能用一次。</p>
+            <p>客户点链接 → 设密码 → 自动登录。</p>
+          </div>
+          <div v-if="!inviteTarget?.user_id" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+            ⚠️ 该主账号尚未绑定登录邮箱。生成的链接会自动用占位邮箱（如 <code>xxx_xxxxxxxx@customer.local</code>），客户无法自助找回密码。建议在父账号编辑里先填一个真实邮箱。
+          </div>
+          <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
+            将使用登录邮箱：<span class="font-mono">{{ inviteTarget.user_id.slice(0, 8) }}...</span>（auth.user 已绑）
+          </div>
           <div class="flex justify-end gap-2 pt-2">
             <Button variant="outline" @click="inviteOpen = false">取消</Button>
             <Button @click="submitInvite" :disabled="loading">
@@ -952,18 +1002,59 @@ const goImport = () => router.push('/admin/accounts/import')
             </Button>
           </div>
         </div>
-        <div v-else class="space-y-2">
+        <div v-else class="space-y-3">
           <div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
             链接已生成。请复制后发送给客户（微信 / 邮件）。
+            过期时间：{{ new Date(inviteResult.expiresAt).toLocaleString('zh-CN') }}
           </div>
-          <div class="flex items-center gap-2">
-            <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
-            <Button size="sm" variant="outline" @click="copyInviteUrl">
-              <Copy class="h-3.5 w-3.5" />
-            </Button>
+
+          <!-- 邀请链接 -->
+          <div>
+            <Label class="text-xs text-muted-foreground">邀请链接</Label>
+            <div class="flex items-center gap-2 mt-1">
+              <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
+              <Button size="sm" variant="outline" @click="copyInviteUrl">
+                <Copy class="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
+
+          <!-- 客户登录邮箱（关键信息）-->
+          <div>
+            <Label class="text-xs text-muted-foreground">
+              客户登录邮箱
+              <span v-if="inviteResult.emailSource === 'generated'" class="text-amber-600 ml-1">（自动生成，建议告知客户）</span>
+            </Label>
+            <div class="flex items-center gap-2 mt-1">
+              <Input :value="inviteResult.loginEmail" readonly class="font-mono text-xs h-9" />
+              <Button size="sm" variant="outline" @click="copyLoginEmail">
+                <Copy class="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+
+          <!-- 发送模板（直接复制给客户） -->
+          <details class="text-xs">
+            <summary class="cursor-pointer text-muted-foreground hover:text-foreground">给客户的发送模板（点击展开）</summary>
+            <div class="mt-2 p-3 bg-muted rounded-md font-mono text-xs whitespace-pre-wrap">{{
+              `您好 ${inviteTarget?.account_name ?? ''}，
+
+请通过以下链接设置您的登录密码（链接 7 天内有效）：
+
+${inviteResult.url}
+
+您的登录邮箱是：
+${inviteResult.loginEmail}
+
+设置密码后即可登录。
+如有疑问请联系您的业务对接人。`
+            }}</div>
+          </details>
+
           <div class="flex justify-end gap-2 pt-2">
-            <Button variant="outline" @click="inviteResult = null">再生成一个</Button>
+            <Button variant="outline" @click="inviteResult = null">
+              <RefreshCw class="h-3.5 w-3.5 mr-1" />再生成一个
+            </Button>
             <Button @click="inviteOpen = false">完成</Button>
           </div>
         </div>

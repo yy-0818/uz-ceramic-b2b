@@ -148,7 +148,7 @@ export function useStockGroups() {
         remark: 'admin 在 AccountsAdminPage 手动分配库存组',
       }))
       const { error: e } = await (supabase.from('customer_group_mappings') as any)
-        .upsert(rows, { onConflict: 'customer_group' })
+        .upsert(rows, { onConflict: 'customer_group,account_id' })
       if (e) throw e
     } finally {
       loading.value = false

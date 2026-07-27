@@ -42,13 +42,35 @@ export function useCustomerAuth() {
   /**
    * 给父账号发邀请链接
    * 流程：
-   *   1. 生成 token
-   *   2. 写 customer_invites
-   *   3. 返回 token + 完整 URL
+   *   1. 拉父账号的 login_email（优先用 admin 在 UI 填的；为空则按 name 生成占位邮箱）
+   *   2. 生成 token
+   *   3. 写 customer_invites
+   *   4. 返回 token + 完整 URL + 客户登录邮箱
    */
-  const createInvite = async (parentId: string): Promise<{ token: string; url: string }> => {
+  const createInvite = async (
+    parentId: string,
+    parentName: string,
+    parentAccountId: string,
+  ): Promise<{ token: string; url: string; loginEmail: string; emailSource: 'preset' | 'generated' }> => {
     loading.value = true
     try {
+      // 1. 拉父账号 login_email（admin 在 UI 里可填）
+      const { data: parent } = await supabase
+        .from('accounts')
+        .select('login_email, account_name')
+        .eq('id', parentId)
+        .single()
+      const parentRow = parent as { login_email: string | null; account_name: string } | null
+      let loginEmail = parentRow?.login_email?.trim()
+      let emailSource: 'preset' | 'generated' = 'preset'
+      if (!loginEmail) {
+        const safe = (parentName || parentRow?.account_name || 'customer')
+          .replace(/\s+/g, '_').toLowerCase()
+        loginEmail = `${safe}_${parentAccountId.slice(0, 8)}@customer.local`
+        emailSource = 'generated'
+      }
+
+      // 2. 生成 token
       const token = generateToken()
       const expires = new Date()
       expires.setDate(expires.getDate() + INVITE_TTL_DAYS)
@@ -61,7 +83,7 @@ export function useCustomerAuth() {
       if (e) throw e
       const origin = window.location.origin
       const url = `${origin}/customer-invite?token=${token}`
-      return { token, url }
+      return { token, url, loginEmail, emailSource }
     } finally {
       loading.value = false
     }
@@ -120,6 +142,7 @@ export function useCustomerAuth() {
   /**
    * admin 重置密码：拿到一个新的临时密码返回
    * 真实调用 Edge Function（service_role 修改密码）
+   * 前端必须带上 admin 的 session token（Edge Function 内部校验 admin 角色）
    */
   const resetPassword = async (parentId: string): Promise<string> => {
     loading.value = true
@@ -128,9 +151,16 @@ export function useCustomerAuth() {
       if (!fnUrl) {
         throw new Error('重置密码功能未启用（缺 VITE_SUPABASE_FUNCTIONS_URL）')
       }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('需要登录管理员账号才能重置密码')
+      }
       const res = await fetch(`${fnUrl}/reset-customer-password`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ parent_id: parentId }),
       })
       if (!res.ok) {
@@ -146,19 +176,26 @@ export function useCustomerAuth() {
 
   /**
    * 父账号绑定登录邮箱（创建/复用 auth user）
-   * 同上：需要 Edge Function（service_role）
+   * 同上：需要 Edge Function（service_role）+ admin token
    */
-  const bindLoginEmail = async (parentId: string, email: string): Promise<void> => {
+  const bindLoginEmail = async (parentId: string, email: string, password: string): Promise<void> => {
     loading.value = true
     try {
       const fnUrl = (import.meta.env.VITE_SUPABASE_FUNCTIONS_URL as string | undefined)?.trim()
       if (!fnUrl) {
         throw new Error('绑定邮箱功能未启用')
       }
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        throw new Error('需要登录管理员账号')
+      }
       const res = await fetch(`${fnUrl}/bind-customer-email`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_id: parentId, email }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ parent_id: parentId, email, password }),
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))

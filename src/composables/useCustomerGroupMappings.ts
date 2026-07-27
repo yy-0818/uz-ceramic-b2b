@@ -40,7 +40,7 @@ export function useCustomerGroupMappings() {
     return items.value
   }
 
-  /** 批量 upsert 映射（按 customer_group 唯一） */
+  /** 批量 upsert 映射（按 (customer_group, account_id) 联合唯一） */
   const bulkUpsert = async (rows: Array<{
     customer_group: string
     account_id: string
@@ -50,8 +50,8 @@ export function useCustomerGroupMappings() {
     if (rows.length === 0) return 0
     const { error: e, count } = await supabase
       .from('customer_group_mappings')
-      // eslint-disable-next-line @typescript-eslint/no-explicitany
-      .upsert(rows as any, { onConflict: 'customer_group', count: 'exact' })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .upsert(rows as any, { onConflict: 'customer_group,account_id', count: 'exact' })
     if (e) { error.value = e.message; throw e }
     return count ?? rows.length
   }

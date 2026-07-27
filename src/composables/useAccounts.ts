@@ -44,6 +44,8 @@ export interface Account {
   balance: number
   status: AccountStatus
   is_main: boolean
+  login_email?: string | null   // 客户登录邮箱（迁移 0006 加）
+  user_id?: string | null       // 关联到 auth.users.id（迁移 0006 加）
   created_at: string
   updated_at: string
 }
@@ -147,7 +149,11 @@ export function useAccounts() {
   }
 
   /** 新建父账号（按 category 去重：同名父已存在则跳过） */
-  const createParent = async (params: { account_name: string; account_type: AccountType }) => {
+  const createParent = async (params: {
+    account_name: string
+    account_type: AccountType
+    login_email?: string | null
+  }) => {
     loading.value = true
     try {
       const { data, error: e } = await (supabase.from('accounts') as any)
@@ -165,6 +171,7 @@ export function useAccounts() {
           status: 'active',
           is_main: false,
           balance: 0,
+          login_email: params.login_email ?? null,
         })
         .select('*')
         .single()
@@ -418,7 +425,7 @@ export function useAccounts() {
         const slice = mappingRows.slice(i, i + M_CHUNK)
         const { error: e } = await (supabase
           .from('customer_group_mappings') as any)
-          .upsert(slice, { onConflict: 'customer_group' })
+          .upsert(slice, { onConflict: 'customer_group,account_id' })
         if (e) throw e
         mappingsAdded += slice.length
       }
