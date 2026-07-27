@@ -458,6 +458,7 @@ const openInvite = (parent: Account) => {
   openMenuId.value = null
   inviteTarget.value = parent
   inviteResult.value = null
+  error.value = null
   inviteOpen.value = true
 }
 const submitInvite = async () => {
