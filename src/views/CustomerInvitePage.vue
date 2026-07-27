@@ -4,6 +4,7 @@
   URL: /customer-invite?token=...
   - 不需要 admin 登录
   - 验证 token → 选密码 → 自动登录
+  - 客户登录邮箱从 accounts.login_email 读（admin 在邀请前应已填好）
 -->
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
@@ -27,6 +28,7 @@ const step = ref<'verify' | 'setPassword' | 'done' | 'error'>('verify')
 const error = ref<string | null>(null)
 const accountId = ref<string | null>(null)
 const parentName = ref<string | null>(null)
+const loginEmail = ref<string | null>(null)
 const expiresAt = ref<string | null>(null)
 const password = ref('')
 const passwordAgain = ref('')
@@ -50,13 +52,15 @@ onMounted(async () => {
     accountId.value = info.accountId
     expiresAt.value = info.expiresAt
 
-    // 拉父账号名 + 白名单
+    // 拉父账号：name + login_email（login_email 优先作为客户登录邮箱）
     const { data: parent } = await supabase
       .from('accounts')
-      .select('account_name')
+      .select('account_name, login_email')
       .eq('id', info.accountId)
       .single()
     parentName.value = (parent as any)?.account_name ?? '主账号'
+    loginEmail.value = (parent as any)?.login_email
+      ?? `${(parent as any)?.account_name?.replace(/\s+/g, '_').toLowerCase() ?? 'customer'}_${info.accountId.slice(0, 8)}@customer.local`
 
     assignedGroups.value = await stockGroups.fetchAssignedForParent(info.accountId)
     step.value = 'setPassword'
@@ -67,7 +71,7 @@ onMounted(async () => {
 })
 
 const submit = async () => {
-  if (!accountId.value) return
+  if (!accountId.value || !loginEmail.value) return
   if (password.value.length < 8) {
     error.value = '密码至少 8 位'
     return
@@ -80,13 +84,12 @@ const submit = async () => {
   error.value = null
   try {
     const token = (route.query.token as string) || ''
-    const loginEmail = `${parentName.value?.replace(/\s+/g, '_').toLowerCase() ?? 'customer'}_${accountId.value.slice(0, 8)}@customer.local`
-    await auth.completeInvite(token, password.value, loginEmail)
+    await auth.completeInvite(token, password.value, loginEmail.value)
     // 自动登录
-    await auth.signIn(loginEmail, password.value)
+    await auth.signIn(loginEmail.value, password.value)
     step.value = 'done'
-    // 跳到主页
-    setTimeout(() => router.push('/'), 1500)
+    // 直接跳到 /catalog（路由 / 重定向到 /catalog，绕一步没意义）
+    setTimeout(() => router.push('/catalog'), 1200)
   } catch (e: any) {
     error.value = e.message ?? String(e)
   } finally {
@@ -125,12 +128,19 @@ const submit = async () => {
             </p>
           </div>
 
+          <!-- 登录邮箱（关键提示）-->
+          <div class="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs">
+            <p class="font-medium text-blue-900 mb-1">您的登录邮箱：</p>
+            <p class="font-mono text-blue-800 break-all">{{ loginEmail }}</p>
+            <p class="text-blue-700 mt-1">请记住此邮箱，用于以后登录。</p>
+          </div>
+
           <div v-if="assignedGroups.length > 0"
-            class="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs">
-            <p class="font-medium text-blue-900 mb-1">您可查看的库存组：</p>
+            class="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs">
+            <p class="font-medium text-slate-900 mb-1">您可查看的库存组：</p>
             <div class="flex flex-wrap gap-1">
               <span v-for="g in assignedGroups" :key="g"
-                class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">{{ g }}</span>
+                class="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">{{ g }}</span>
             </div>
           </div>
 
@@ -156,7 +166,7 @@ const submit = async () => {
         <div v-else-if="step === 'done'" class="text-center space-y-3">
           <CheckCircle2 class="h-10 w-10 mx-auto text-emerald-500" />
           <p class="text-base font-medium">账号已激活</p>
-          <p class="text-sm text-muted-foreground">正在跳转到主页...</p>
+          <p class="text-sm text-muted-foreground">正在跳转到商品目录...</p>
         </div>
       </CardContent>
     </Card>
