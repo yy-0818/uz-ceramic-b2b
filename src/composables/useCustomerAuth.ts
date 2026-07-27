@@ -18,6 +18,25 @@ import { supabase } from '@/lib/supabase'
 
 const INVITE_TTL_DAYS = 7
 
+/**
+ * 客户占位登录邮箱的域名。仅在 accounts.login_email 为空时使用。
+ * 必须是真实可注册 TLD（Supabase Auth 拒绝 .local / .test 等保留 TLD）。
+ * 配置项：VITE_CUSTOMER_EMAIL_DOMAIN
+ */
+const CUSTOMER_PLACEHOLDER_DOMAIN: string =
+  (import.meta.env.VITE_CUSTOMER_EMAIL_DOMAIN as string | undefined)?.trim()
+  || 'example.com'
+
+/**
+ * 根据父账号 id + name 生成占位登录邮箱。
+ * 形如：<safe_name>_<accountId前8位>@<CUSTOMER_PLACEHOLDER_DOMAIN>
+ * 例：ali_b2b_12345678@example.com
+ */
+export function generatePlaceholderLoginEmail(parentId: string, nameFallback: string): string {
+  const safe = (nameFallback || 'customer').replace(/\s+/g, '_').toLowerCase()
+  return `${safe}_${parentId.slice(0, 8)}@${CUSTOMER_PLACEHOLDER_DOMAIN}`
+}
+
 export interface CustomerInvite {
   id: string
   account_id: string
@@ -64,9 +83,7 @@ export function useCustomerAuth() {
       let loginEmail = parentRow?.login_email?.trim()
       let emailSource: 'preset' | 'generated' = 'preset'
       if (!loginEmail) {
-        const safe = (parentName || parentRow?.account_name || 'customer')
-          .replace(/\s+/g, '_').toLowerCase()
-        loginEmail = `${safe}_${parentAccountId.slice(0, 8)}@customer.local`
+        loginEmail = generatePlaceholderLoginEmail(parentAccountId, parentName || parentRow?.account_name || '')
         emailSource = 'generated'
       }
 

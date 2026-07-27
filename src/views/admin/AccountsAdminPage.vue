@@ -454,6 +454,11 @@ const selectNoneAssigned = () => {
 }
 
 // ============ 邀请 / 重置密码 ============
+// 客户占位登录邮箱域（VITE_CUSTOMER_EMAIL_DOMAIN），供 UI 提示用
+const customerEmailDomain = computed(
+  () => (import.meta.env.VITE_CUSTOMER_EMAIL_DOMAIN as string | undefined)?.trim() || 'example.com',
+)
+
 const openInvite = (parent: Account) => {
   openMenuId.value = null
   inviteTarget.value = parent
@@ -1094,7 +1099,7 @@ const goImport = () => router.push('/admin/accounts/import')
             <p>客户点链接 → 设密码 → 自动登录。</p>
           </div>
           <div v-if="!inviteTarget?.user_id" class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-            ⚠️ 该主账号尚未绑定登录邮箱。生成的链接会自动用占位邮箱（如 <code>xxx_xxxxxxxx@customer.local</code>），客户无法自助找回密码。建议在父账号编辑里先填一个真实邮箱。
+            ⚠️ 该主账号尚未绑定登录邮箱。生成的链接会自动用占位邮箱（如 <code>xxx_xxxxxxxx@{{ customerEmailDomain }}</code>），客户无法自助找回密码。建议在父账号编辑里先填一个真实邮箱。
           </div>
           <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
             将使用登录邮箱：<span class="font-mono">{{ inviteTarget.user_id.slice(0, 8) }}...</span>（auth.user 已绑）

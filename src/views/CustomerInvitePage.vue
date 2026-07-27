@@ -15,7 +15,7 @@ import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import { useCustomerAuth } from '@/composables/useCustomerAuth'
+import { useCustomerAuth, generatePlaceholderLoginEmail } from '@/composables/useCustomerAuth'
 import { useStockGroups } from '@/composables/useStockGroups'
 import { supabase } from '@/lib/supabase'
 
@@ -60,7 +60,7 @@ onMounted(async () => {
       .single()
     parentName.value = (parent as any)?.account_name ?? '主账号'
     loginEmail.value = (parent as any)?.login_email
-      ?? `${(parent as any)?.account_name?.replace(/\s+/g, '_').toLowerCase() ?? 'customer'}_${info.accountId.slice(0, 8)}@customer.local`
+      ?? generatePlaceholderLoginEmail(info.accountId, (parent as any)?.account_name ?? '')
 
     assignedGroups.value = await stockGroups.fetchAssignedForParent(info.accountId)
     step.value = 'setPassword'
