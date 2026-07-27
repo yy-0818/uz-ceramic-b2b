@@ -23,11 +23,23 @@ const corsHeaders = {
 }
 
 // Origin 白名单：生产域名 + Vercel preview + localhost
-const ALLOWED_ORIGINS = new Set([
-  'https://ceramic-b2b.vercel.app',          // 主生产（按需改）
-  'http://localhost:5173',                    // Vite dev
-  'http://localhost:4173',                    // Vite preview
-])
+// 模式匹配：字符串后缀匹配 (a.endsWith)，以便覆盖 vercel.app preview 子域
+const ORIGIN_SUFFIXES = [
+  '.vercel.app',              // Vercel 任意 preview / production 子域
+  'localhost:5173',
+  'localhost:4173',
+  '127.0.0.1:5173',
+  '127.0.0.1:4173',
+]
+
+function originAllowed(origin: string): boolean {
+  try {
+    const u = new URL(origin)
+    return ORIGIN_SUFFIXES.some(s => u.origin.endsWith(s) || u.host.endsWith(s))
+  } catch {
+    return false
+  }
+}
 const MAX_FAILS = 5
 const LOCKOUT_MS = 60_000
 
@@ -63,14 +75,11 @@ Deno.serve(async (req) => {
   }
 
   // 1. Origin 校验（公开端点必加）
+  //    暂记录所有 origin 到日志以便诊断；按 ORIGIN_SUFFIXES 白名单拒
   const origin = req.headers.get('origin') ?? req.headers.get('referer') ?? ''
-  try {
-    const u = new URL(origin)
-    if (!ALLOWED_ORIGINS.has(u.origin)) {
-      return json({ error: 'forbidden origin' }, 403)
-    }
-  } catch {
-    return json({ error: 'forbidden origin' }, 403)
+  if (!originAllowed(origin)) {
+    console.log('[complete-invite] origin rejected:', JSON.stringify(origin))
+    return json({ error: 'forbidden origin', got: origin }, 403)
   }
 
   // 2. 简易速率限制
@@ -82,6 +91,7 @@ Deno.serve(async (req) => {
 
   try {
     const { token, password, login_email } = await req.json()
+    console.log('[complete-invite] payload:', JSON.stringify({ token_len: token?.length, password_len: password?.length, login_email }))
     if (!token || !password || !login_email) {
       return json({ error: 'missing token/password/email' }, 400)
     }
@@ -97,6 +107,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
+    console.log('[complete-invite] env ok:', !!Deno.env.get('SUPABASE_URL'), !!Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
 
     // 3. 验证 invite
     const { data: inv, error: invErr } = await supabaseAdmin
@@ -105,6 +116,7 @@ Deno.serve(async (req) => {
       .eq('token', token)
       .single()
     if (invErr || !inv) {
+      console.log('[complete-invite] invite lookup err:', JSON.stringify(invErr))
       const locked = recordFail(ip)
       return json({ error: locked ? 'too many failed attempts, retry later' : 'invite not found' }, locked ? 429 : 404)
     }
@@ -119,6 +131,7 @@ Deno.serve(async (req) => {
       password,
       email_confirm: true,
     })
+    console.log('[complete-invite] createUser ok:', !!created?.user?.id, createErr?.message)
 
     let userId: string | null = null
     let mode: 'create' | 'reset' = 'create'
@@ -144,11 +157,17 @@ Deno.serve(async (req) => {
     if (!userId) return json({ error: 'no user id returned' }, 500)
 
     // 5. 写 accounts.user_id + accounts.login_email + 6. 写 public.users + 7. 标 invite.used_at
-    await bindAndMark(inv.account_id, userId, login_email, inv.id, supabaseAdmin)
+    try {
+      await bindAndMark(inv.account_id, userId, login_email, inv.id, supabaseAdmin)
+    } catch (bindErr: any) {
+      console.log('[complete-invite] bindAndMark err:', JSON.stringify(bindErr?.message ?? bindErr))
+      return json({ error: `bind failed: ${bindErr?.message ?? bindErr}` }, 500)
+    }
 
     return json({ ok: true, user_id: userId, mode })
-  } catch (e) {
-    return json({ error: String(e?.message ?? e) }, 500)
+  } catch (e: any) {
+    console.log('[complete-invite] top-level err:', String(e?.message ?? e), e?.stack)
+    return json({ error: String(e?.message ?? e), stack: e?.stack }, 500)
   }
 })
 

@@ -137,7 +137,9 @@ export function useCustomerAuth() {
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || '邀请完成失败')
+        // 诊断日志：完整暴露 server 返回的 error，方便定位 function 内 500 的根因
+        console.error('[complete-invite] non-ok:', res.status, j)
+        throw new Error(j.error || `邀请完成失败 (HTTP ${res.status})`)
       }
     } finally {
       loading.value = false
