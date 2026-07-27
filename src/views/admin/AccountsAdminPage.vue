@@ -725,7 +725,8 @@ const goImport = () => router.push('/admin/accounts/import')
         <span v-if="selected.size > 0" class="text-primary">已选 {{ selected.size }} 个</span>
       </div>
 
-      <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
+      <Card v-for="p in pagedParents" :key="p.id"
+        :class="['overflow-visible', openMenuId === p.id ? 'relative z-50' : 'relative']">
         <!-- 父头 -->
         <div
           class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
@@ -781,7 +782,7 @@ const goImport = () => router.push('/admin/accounts/import')
               <Plus class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">加子账号</span>
             </Button>
-            <div class="relative" data-row-menu>
+            <div class="relative z-50" data-row-menu>
               <Button size="sm" variant="ghost" class="h-8 w-8 p-0" @click.stop="toggleMenu(p.id)">
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
@@ -834,7 +835,7 @@ const goImport = () => router.push('/admin/accounts/import')
         </div>
 
         <!-- 子 -->
-        <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2">
+        <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2 rounded-b-lg">
           <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
             <Users class="h-3 w-3" />
             子账号 ({{ (subsByParent[p.id] ?? []).length }})
