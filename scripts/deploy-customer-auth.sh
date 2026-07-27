@@ -1,13 +1,22 @@
 #!/usr/bin/env bash
 # scripts/deploy-customer-auth.sh
 # 一键部署客户邀请 + 登录全链路到 Supabase
-# 使用：./scripts/deploy-customer-auth.sh
+# 使用：./scripts/deploy-customer-auth.sh [--yes]
+#   --yes: 自动确认 db push 的交互提示
 
 set -euo pipefail
 
 PROJECT_REF="${SUPABASE_PROJECT_REF:-olnawzjgfrbduzfithjj}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+AUTO_YES="false"
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) AUTO_YES="true" ;;
+    *) echo "unknown arg: $arg" >&2; exit 1 ;;
+  esac
+done
 
 cd "$ROOT_DIR"
 
@@ -42,14 +51,19 @@ supabase link --project-ref "$PROJECT_REF" 2>&1 | sed 's/^/  /'
 
 # ---------- 2. 跑迁移 ----------
 log "▶ 2. 跑数据库迁移"
-DB_CHANGES=$(supabase db diff --schema public 2>/dev/null || true)
-if [[ -n "$DB_CHANGES" && "$DB_CHANGES" != "No changes found" ]]; then
-  warn "检测到 schema 漂移（一个或多个迁移未执行）："
-  echo "$DB_CHANGES" | sed 's/^/    /'
-  warn "将尝试 push 0007-0010（如果之前没跑过）"
+
+# supabase db push 在交互模式下会卡 [Y/n]；用 --yes 或管道 yes 自动确认
+if [[ "$AUTO_YES" == "true" ]]; then
+  PUSH_CMD=(supabase db push --yes)
+else
+  PUSH_CMD=(supabase db push)
 fi
 
-supabase db push 2>&1 | sed 's/^/  /'
+# 实时输出，不退出；命令本身失败由 set -e 处理
+"${PUSH_CMD[@]}" 2>&1 | sed 's/^/  /' || {
+  err "迁移失败，请看上方的 SQL 错误并修复后重跑"
+  exit 1
+}
 log "✓ 迁移完成"
 
 # ---------- 3. 部署 3 个 Edge Functions ----------

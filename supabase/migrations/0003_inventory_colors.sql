@@ -78,36 +78,14 @@ create policy cgm_select on public.customer_group_mappings
 -- 若发现同一 model 在不同客户组出现，导入时会自动按"客户组 + model" 拆分
 -- =====================================================================
 
--- =====================================================================
--- 辅助视图：v_products_with_colors —— 商品页用
--- 一次查询拿全 product + 所有色号 + 总库存
--- =====================================================================
-create or replace view public.v_products_with_colors as
-select
-  p.id           as product_id,
-  p.model,
-  p.category,
-  p.conversion_rate,
-  p.remark,
-  coalesce(sum(sc.boxes) filter (where sc.stock_level = 1), 0) as total_boxes_level1,
-  coalesce(sum(sc.boxes) filter (where sc.stock_level = 2), 0) as total_boxes_level2,
-  (
-    select json_agg(json_build_object(
-      'color_code', sc2.color_code,
-      'stock_level', sc2.stock_level,
-      'boxes', sc2.boxes
-    ) order by sc2.color_code, sc2.stock_level)
-    from public.stock_colors sc2
-    where sc2.product_id = p.id and sc2.boxes > 0
-  ) as colors
-from public.products p
-left join public.stock_colors sc on sc.product_id = p.id
-group by p.id, p.model, p.category, p.conversion_rate, p.remark;
+-- 视图 v_products_with_colors / v_customer_product_visibility 由 0004 创建
+-- （0004 加了 image_url / display_order 列后视图才完整；这里不再创建避免列冲突）
 
 -- =====================================================================
 -- 辅助视图：v_customer_product_visibility —— 商品可见性
 -- 客户看见的白名单 = 客户 account_id 的白名单 ∪ 主账号(parent)的白名单
 -- =====================================================================
+drop view if exists public.v_customer_product_visibility;
 create or replace view public.v_customer_product_visibility as
 select
   ap.account_id,
