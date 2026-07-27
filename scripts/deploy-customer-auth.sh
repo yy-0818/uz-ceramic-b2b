@@ -77,34 +77,29 @@ log "✓ Edge Functions 已部署"
 # ---------- 4. 验证 ----------
 log "▶ 4. 验证部署"
 
-# 4a. 检查 _internal 哨兵账号
-INTERNAL=$(supabase db remote psql --project-ref "$PROJECT_REF" --command "
-  SELECT id FROM public.accounts WHERE id = '00000000-0000-0000-0000-000000000000';
-" 2>&1 | grep -E '^[0-9a-f]{8}-' | head -1 || true)
+run_query() {
+  supabase db query --linked "$1" 2>&1 | tr -d '\n'
+}
 
-if [[ -n "$INTERNAL" ]]; then
-  log "  ✓ _internal 哨兵账号就位: $INTERNAL"
+# 4a. 检查 _internal 哨兵账号
+INTERNAL=$(run_query "SELECT id::text FROM public.accounts WHERE id = '00000000-0000-0000-0000-000000000000';")
+if [[ "$INTERNAL" == *'00000000-0000-0000-0000-000000000000'* ]]; then
+  log "  ✓ _internal 哨兵账号就位"
 else
   warn "  ✗ _internal 哨兵账号缺失（迁移 0008 没跑）"
 fi
 
-# 4b. 检查 trigger
-TRIGGER=$(supabase db remote psql --project-ref "$PROJECT_REF" --command "
-  SELECT tgname FROM pg_trigger WHERE tgname = 'trg_handle_new_user';
-" 2>&1 | grep 'trg_handle_new_user' | head -1 || true)
-
-if [[ -n "$TRIGGER" ]]; then
+# 4b. 检查 trigger（精确匹配 schema，避免 pg_trigger 全表扫描卡住）
+TRIGGER=$(run_query "SELECT tgname FROM pg_trigger t JOIN pg_class c ON t.tgrelid = c.oid WHERE c.relname = 'users' AND c.relnamespace = 'auth'::regnamespace AND tgname = 'trg_handle_new_user';")
+if [[ "$TRIGGER" == *'"tgname": "trg_handle_new_user"'* ]]; then
   log "  ✓ trigger trg_handle_new_user 已安装"
 else
   warn "  ✗ trigger trg_handle_new_user 缺失"
 fi
 
 # 4c. 检查 customer_invites RLS
-RLS=$(supabase db remote psql --project-ref "$PROJECT_REF" --command "
-  SELECT relrowsecurity FROM pg_class WHERE relname = 'customer_invites';
-" 2>&1 | grep -E '^\s*t' | head -1 || true)
-
-if [[ "$RLS" == "t" ]]; then
+RLS=$(run_query "SELECT relrowsecurity FROM pg_class WHERE relname = 'customer_invites';")
+if [[ "$RLS" == *'"relrowsecurity": true'* ]]; then
   log "  ✓ customer_invites RLS 已启用"
 else
   warn "  ✗ customer_invites RLS 未启用"
