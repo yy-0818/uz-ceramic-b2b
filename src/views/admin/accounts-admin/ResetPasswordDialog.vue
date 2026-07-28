@@ -11,8 +11,11 @@ import { Copy, KeyRound, Loader2 } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import { useI18n } from '@/lib/i18n'
 
 import type { Account } from '@/composables/useAccounts'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -30,9 +33,9 @@ const copyTempPassword = async () => {
   if (!props.tempPassword) return
   try {
     await navigator.clipboard.writeText(props.tempPassword)
-    alert('已复制临时密码')
+    alert(t('accounts.resetCopied'))
   } catch {
-    prompt('复制这一行：', props.tempPassword)
+    prompt(t('admin.invites.copyPrompt'), props.tempPassword)
   }
 }
 </script>
@@ -41,21 +44,21 @@ const copyTempPassword = async () => {
   <Dialog
     :open="open"
     @update:open="emit('update:open', $event)"
-    :title="`重置密码：${target?.account_name ?? ''}`"
-    description="生成一个临时密码，请通过其他渠道（微信 / 电话）告知客户。客户首次登录后应自行修改。"
+    :title="`${t('accounts.resetTitle')}: ${target?.account_name ?? ''}`"
+    :description="t('accounts.resetDesc')"
   >
     <div class="space-y-3">
       <div v-if="!tempPassword" class="flex justify-end gap-2 pt-2">
-        <Button variant="outline" @click="emit('update:open', false)">取消</Button>
+        <Button variant="outline" @click="emit('update:open', false)">{{ t('common.cancel') }}</Button>
         <Button @click="emit('generate')" :disabled="loading">
           <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
           <KeyRound class="mr-2 h-4 w-4" />
-          生成临时密码
+          {{ t('accounts.resetGenerate') }}
         </Button>
       </div>
       <div v-else class="space-y-2">
         <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-          临时密码已生成。请复制后告知客户。
+          {{ t('accounts.resetReady') }}
         </div>
         <div class="flex items-center gap-2">
           <Input :value="tempPassword" readonly class="font-mono text-sm h-9" />
@@ -64,7 +67,7 @@ const copyTempPassword = async () => {
           </Button>
         </div>
         <div class="flex justify-end gap-2 pt-2">
-          <Button @click="emit('update:open', false)">完成</Button>
+          <Button @click="emit('update:open', false)">{{ t('common.done') }}</Button>
         </div>
       </div>
     </div>

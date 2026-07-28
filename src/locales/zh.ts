@@ -24,6 +24,14 @@ export default {
     cartTotalM2: '总面积',
     cartCheckout: '去结算',
     currentRole: '当前身份：',
+    done: '完成',
+  },
+  accounts: {
+    resetTitle: '重置密码',
+    resetDesc: '生成一个临时密码，请通过其他渠道（微信 / 电话）告知客户。客户首次登录后应自行修改。',
+    resetGenerate: '生成临时密码',
+    resetCopied: '已复制临时密码',
+    resetReady: '临时密码已生成。请复制后告知客户。',
   },
   auth: {
     brand: '陶瓷 · B2B',

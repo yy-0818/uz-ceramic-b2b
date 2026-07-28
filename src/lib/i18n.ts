@@ -32,8 +32,11 @@ const DEFAULT_LOCALE: Locale = 'ru'
 const MESSAGES: Messages = { ru, uz, zh }
 
 const currentLocale = ref<Locale>(
-  ((typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) as Locale) ||
-  DEFAULT_LOCALE,
+  (((() => {
+    if (typeof localStorage === 'undefined') return null
+    try { return localStorage.getItem(STORAGE_KEY) as Locale | null }
+    catch { return null }
+  })()) || DEFAULT_LOCALE),
 )
 
 function lookup(dict: MessageDict, key: string): any {

@@ -10,6 +10,14 @@ export default {
     search: 'Qidirish',
     back: 'Orqaga',
     logout: 'Chiqish',
+    done: 'Tayyor',
+  },
+  accounts: {
+    resetTitle: 'Parolni tiklash',
+    resetDesc: "Vaqtinchalik parol yaratiladi. Uni mijozga boshqa kanal orqali (WeChat / telefon) yetkazing. Mijoz birinchi kirishda parolni o'zgartirishi kerak.",
+    resetGenerate: "Vaqtinchalik parol yaratish",
+    resetCopied: "Vaqtinchalik parol nusxalandi",
+    resetReady: "Vaqtinchalik parol yaratildi. Nusxalab mijozga yuboring.",
   },
   auth: {
     brand: 'Keramika · B2B',
