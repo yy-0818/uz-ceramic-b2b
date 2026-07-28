@@ -84,7 +84,7 @@ export function useCustomerInvites() {
   const revokeInvite = async (inviteId: string): Promise<void> => {
     loading.value = true
     try {
-      const { error } = await supabase.rpc('fn_revoke_invite', { inv_id: inviteId })
+      const { error } = await supabase.rpc('fn_revoke_invite' as never, { inv_id: inviteId } as never)
       if (error) throw error
       // 本地乐观更新
       const idx = invites.value.findIndex((i) => i.id === inviteId)
@@ -100,7 +100,7 @@ export function useCustomerInvites() {
   const regenerateInvite = async (inviteId: string): Promise<CustomerInvite> => {
     loading.value = true
     try {
-      const { data, error } = await supabase.rpc('fn_regenerate_invite', { inv_id: inviteId })
+      const { data, error } = await supabase.rpc('fn_regenerate_invite' as never, { inv_id: inviteId } as never)
       if (error) throw error
       // 本地替换旧记录（把旧 record 替换成新 record）
       const idx = invites.value.findIndex((i) => i.id === inviteId)

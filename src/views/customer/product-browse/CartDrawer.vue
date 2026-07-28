@@ -63,7 +63,7 @@ const fmtM2 = (n: number) => `${n.toFixed(2)} м²`
         <span class="font-medium">{{ fmtM2(cart.totalM2()) }}</span>
       </div>
       <Button class="w-full" @click="emit('checkout')">
-        {{ t('customer.cart.checkout') }}
+        {{ t('customer.cart.checkoutBtn') }}
       </Button>
     </div>
   </Dialog>
