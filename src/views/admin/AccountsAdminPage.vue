@@ -647,17 +647,12 @@ const goImport = () => router.push('/admin/accounts/import')
 <template>
   <div class="space-y-4">
     <!-- ============ 顶部标题 + 操作 ============ -->
-    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold flex items-center gap-2">
-          <Users class="h-5 w-5" />
-          账号管理
-        </h1>
-        <p class="text-xs text-muted-foreground mt-1">
-          主账号 = 客户分类；子账号 = 该分类下的具体客户。下单时主账号登录后选择子账号。
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <h1 class="text-lg font-semibold flex items-center gap-2">
+        <Users class="h-4 w-4 text-muted-foreground" />
+        账号管理
+      </h1>
+      <div class="flex items-center gap-2">
         <Button size="sm" variant="outline" @click="load" :disabled="loading">
           <RefreshCw class="h-4 w-4 sm:mr-1" :class="{ 'animate-spin': loading, 'hidden sm:inline': true }" />
           <span class="hidden sm:inline">刷新</span>
@@ -674,48 +669,48 @@ const goImport = () => router.push('/admin/accounts/import')
     </div>
 
     <!-- ============ KPI 卡片 ============ -->
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+    <div class="grid grid-cols-4 gap-3">
       <Card>
-        <CardContent class="py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs text-muted-foreground">主账号</p>
-              <p class="text-2xl font-semibold tabular-nums">{{ summary.totalParents }}</p>
+        <CardContent class="px-3 py-3">
+          <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] text-muted-foreground leading-none mb-1">主账号</p>
+              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.totalParents }}</p>
             </div>
-            <Folder class="h-7 w-7 text-blue-500" />
+            <Folder class="h-4 w-4 text-blue-500 shrink-0" />
           </div>
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs text-muted-foreground">活跃主账号</p>
-              <p class="text-2xl font-semibold tabular-nums">{{ summary.activeParents }}</p>
+        <CardContent class="px-3 py-3">
+          <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] text-muted-foreground leading-none mb-1">活跃</p>
+              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.activeParents }}</p>
             </div>
-            <CheckCircle2 class="h-7 w-7 text-emerald-500" />
+            <CheckCircle2 class="h-4 w-4 text-emerald-500 shrink-0" />
           </div>
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs text-muted-foreground">子账号总数</p>
-              <p class="text-2xl font-semibold tabular-nums">{{ summary.totalSubs }}</p>
+        <CardContent class="px-3 py-3">
+          <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] text-muted-foreground leading-none mb-1">子账号</p>
+              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.totalSubs }}</p>
             </div>
-            <Users class="h-7 w-7 text-violet-500" />
+            <Users class="h-4 w-4 text-violet-500 shrink-0" />
           </div>
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="py-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-xs text-muted-foreground">已停用子账号</p>
-              <p class="text-2xl font-semibold tabular-nums">{{ summary.inactiveSubs }}</p>
+        <CardContent class="px-3 py-3">
+          <div class="flex items-center gap-2">
+            <div class="flex-1 min-w-0">
+              <p class="text-[11px] text-muted-foreground leading-none mb-1">已停用</p>
+              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.inactiveSubs }}</p>
             </div>
-            <EyeOff class="h-7 w-7 text-gray-400" />
+            <EyeOff class="h-4 w-4 text-gray-400 shrink-0" />
           </div>
         </CardContent>
       </Card>
