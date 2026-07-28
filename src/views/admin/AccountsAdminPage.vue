@@ -1154,7 +1154,7 @@ const goImport = () => router.push('/admin/accounts/import')
     <Dialog v-model:open="inviteOpen"
       :title="`${t('admin.invites.title')}：${inviteTarget?.account_name ?? ''}`"
       description=""
-      class="lg:!max-w-2xl"
+      class="lg:!max-w-2xl">
       <div class="space-y-3">
 
         <!-- Tab 切换：移动端更大点击区域 -->
