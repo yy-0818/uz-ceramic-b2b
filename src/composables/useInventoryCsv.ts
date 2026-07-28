@@ -116,9 +116,6 @@ function parseRowByIndex(
   if (model === '合计' || category === '合计') return null
   // 防御：跳过类型列含中文合计关键字的行
   if (/合计|总计|小计/.test(model) || /合计|总计|小计/.test(category)) return null
-  // 跳过 CSV 表头行（合并多行表头，如"发货最后日期"跨 8 行）
-  // 识别特征：model 值匹配已知列名
-  if (['型号', '类型', '1级', '2级', '换算率', '备注', '辅助列', '辅助2', '检查1', '检查2', '最近入库日期', '最后日期', '最后账户', '最后数量', '大于整托最后日期', '大于整托最后账户', '大于整托最后数量'].includes(model)) return null
 
   const level1 = toNum(val(idx.level1Idx))
   const level2 = toNum(val(idx.level2Idx))
