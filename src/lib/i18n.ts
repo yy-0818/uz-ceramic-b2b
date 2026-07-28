@@ -59,20 +59,29 @@ function format(template: unknown, values?: Record<string, any>): string {
 
 /**
  * 按指定 locale 翻译（用于 admin 选语言预览模板）。
+ *
+ * Fallback 链：当前 locale → ru → uz → zh → __MISSING.<key>
+ * （中文作最终兜底，保证生产环境不会展示空字符串，方便后续逐步翻译）
  */
+const FALLBACK_LOCALES: Locale[] = ['ru', 'uz', 'zh']
+
 export function tForLocale(lang: Locale, key: string, values?: Record<string, any>): string {
-  const dict = MESSAGES[lang]
-  const raw = lookup(dict, key) ?? lookup(MESSAGES[DEFAULT_LOCALE], key)
-  return format(raw, values)
+  for (const loc of [lang, ...FALLBACK_LOCALES]) {
+    const raw = lookup(MESSAGES[loc], key)
+    if (raw != null) return format(raw, values)
+  }
+  return `__MISSING.${key}`
 }
 
 /**
- * 解析当前 locale 下 key 对应的字符串，找不到则走 fallback (ru)。
+ * 解析当前 locale 下 key 对应的字符串，找不到则走 ru → uz → zh 兜底。
  */
 function translate(key: string, values?: Record<string, any>): string {
-  const dict = MESSAGES[currentLocale.value]
-  const raw = lookup(dict, key) ?? lookup(MESSAGES[DEFAULT_LOCALE], key)
-  return format(raw, values)
+  for (const loc of [currentLocale.value, ...FALLBACK_LOCALES]) {
+    const raw = lookup(MESSAGES[loc], key)
+    if (raw != null) return format(raw, values)
+  }
+  return `__MISSING.${key}`
 }
 
 /**
@@ -91,6 +100,33 @@ export function useI18n() {
       try { return new Intl.NumberFormat(currentLocale.value).format(value) }
       catch { return String(value) }
     },
+  }
+}
+
+/**
+ * 报告所有在 zh 存在但 ru/uz 缺失的 key（dev 工具）。
+ */
+export function reportMissingTranslations(): { locale: Locale; missing: string[] }[] {
+  const result: { locale: Locale; missing: string[] }[] = []
+  for (const loc of ['ru', 'uz'] as Locale[]) {
+    const missing: string[] = []
+    walkKeys(MESSAGES.zh, MESSAGES[loc], '', missing)
+    result.push({ locale: loc, missing })
+  }
+  return result
+}
+
+function walkKeys(src: MessageDict, ref: MessageDict, prefix: string, missing: string[]): void {
+  for (const k in src) {
+    const path = prefix ? `${prefix}.${k}` : k
+    const v = src[k]
+    if (typeof v === 'object' && v !== null) {
+      walkKeys(v as MessageDict, (ref as any)?.[k] as MessageDict ?? {}, path, missing)
+    } else {
+      if (ref == null || !(k in ref) || typeof (ref as any)[k] !== 'string') {
+        missing.push(path)
+      }
+    }
   }
 }
 
