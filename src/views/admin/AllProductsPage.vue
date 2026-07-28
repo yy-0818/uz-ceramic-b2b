@@ -154,33 +154,43 @@ const onClearUpload = (productId: string) => {
 
 <template>
   <div class="space-y-4">
-    <!-- 顶部：汇总 + 筛选 -->
+    <!-- 顶部：标题 + 统计 chip -->
     <Card>
-      <CardContent class="p-4 flex flex-wrap items-end gap-3">
-        <div class="flex items-center gap-2 mr-auto">
-          <ImageIcon class="h-5 w-5 text-muted-foreground" />
+      <CardContent class="p-4 space-y-3">
+        <div class="flex items-center gap-2 flex-wrap">
+          <ImageIcon class="h-5 w-5 text-muted-foreground shrink-0" />
           <h1 class="text-lg font-semibold">{{ t('admin.products.title') }}</h1>
-          <Badge variant="secondary">{{ summary.total }}</Badge>
-          <Badge variant="outline" class="hidden sm:inline-flex">{{ t('admin.productsAll.withImage') }} {{ summary.withImage }}</Badge>
-          <Badge variant="outline" class="hidden sm:inline-flex">{{ t('admin.productsAll.withStock') }} {{ summary.withStock }}</Badge>
+          <Badge variant="secondary" class="font-mono tabular-nums">{{ summary.total }}</Badge>
+          <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            {{ t('admin.productsAll.withImage') }}
+            <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withImage }}</span>
+          </span>
+          <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <span class="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
+            {{ t('admin.productsAll.withStock') }}
+            <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withStock }}</span>
+          </span>
+          <Button size="sm" variant="outline" class="ml-auto" @click="load" :disabled="loading">
+            <RefreshCw class="h-4 w-4 sm:mr-1.5" :class="{ 'animate-spin': loading }" />
+            <span class="hidden sm:inline">{{ t('admin.productsAll.refresh') }}</span>
+          </Button>
         </div>
-        <Button size="sm" variant="outline" @click="load" :disabled="loading">
-          <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-          <span class="hidden sm:inline">{{ t('admin.productsAll.refresh') }}</span>
-        </Button>
-        <div class="relative">
-          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')" class="pl-8 w-44" />
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="relative flex-1 min-w-[180px] max-w-xs">
+            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')" class="pl-8 w-full" />
+          </div>
+          <select v-model="categoryFilter"
+            class="h-9 rounded-md border bg-background px-2 text-sm shrink-0">
+            <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
+            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+          </select>
+          <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none shrink-0">
+            <input type="checkbox" v-model="onlyWithStock" class="rounded" />
+            <span class="whitespace-nowrap">{{ t('admin.productsAll.onlyWithStock') }}</span>
+          </label>
         </div>
-        <select v-model="categoryFilter"
-          class="h-9 rounded-md border bg-background px-2 text-sm">
-          <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
-          <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-        </select>
-        <label class="flex items-center gap-1.5 text-xs cursor-pointer">
-          <input type="checkbox" v-model="onlyWithStock" class="rounded" />
-          {{ t('admin.productsAll.onlyWithStock') }}
-        </label>
       </CardContent>
     </Card>
 
@@ -196,12 +206,12 @@ const onClearUpload = (productId: string) => {
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
 
     <!-- 加载中 -->
-    <div v-if="loading && items.length === 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <ProductCardSkeleton v-for="i in 4" :key="i" />
+    <div v-if="loading && items.length === 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+      <ProductCardSkeleton v-for="i in 8" :key="i" />
     </div>
 
     <!-- 列表 -->
-    <div v-else-if="filtered.length > 0" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+    <div v-else-if="filtered.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
       <ProductCard
         v-for="p in filtered" :key="p.product_id"
         :product="p"
