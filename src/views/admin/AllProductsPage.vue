@@ -134,7 +134,7 @@ const onRetry = async (productId: string, file: File) => {
 }
 
 const onRemove = async (productId: string) => {
-  if (!confirm('确定删除该商品的产品图吗？')) return
+  if (!confirm(t('admin.productsAll.confirmDelImage'))) return
   try {
     await removeProductImage(productId)
     const target = items.value.find((p) => p.product_id === productId)
@@ -159,27 +159,27 @@ const onClearUpload = (productId: string) => {
       <CardContent class="p-4 flex flex-wrap items-end gap-3">
         <div class="flex items-center gap-2 mr-auto">
           <ImageIcon class="h-5 w-5 text-muted-foreground" />
-          <h1 class="text-lg font-semibold">{{ t('admin.products.title') || '所有商品' }}</h1>
+          <h1 class="text-lg font-semibold">{{ t('admin.products.title') }}</h1>
           <Badge variant="secondary">{{ summary.total }}</Badge>
-          <Badge variant="outline" class="hidden sm:inline-flex">有图 {{ summary.withImage }}</Badge>
-          <Badge variant="outline" class="hidden sm:inline-flex">有库存 {{ summary.withStock }}</Badge>
+          <Badge variant="outline" class="hidden sm:inline-flex">{{ t('admin.productsAll.withImage') }} {{ summary.withImage }}</Badge>
+          <Badge variant="outline" class="hidden sm:inline-flex">{{ t('admin.productsAll.withStock') }} {{ summary.withStock }}</Badge>
         </div>
         <Button size="sm" variant="outline" @click="load" :disabled="loading">
           <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-          <span class="hidden sm:inline">刷新</span>
+          <span class="hidden sm:inline">{{ t('admin.productsAll.refresh') }}</span>
         </Button>
         <div class="relative">
           <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input v-model="search" placeholder="搜索型号" class="pl-8 w-44" />
+          <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')" class="pl-8 w-44" />
         </div>
         <select v-model="categoryFilter"
           class="h-9 rounded-md border bg-background px-2 text-sm">
-          <option value="all">全部分类</option>
+          <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
           <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
         </select>
         <label class="flex items-center gap-1.5 text-xs cursor-pointer">
           <input type="checkbox" v-model="onlyWithStock" class="rounded" />
-          仅显示有库存
+          {{ t('admin.productsAll.onlyWithStock') }}
         </label>
       </CardContent>
     </Card>
@@ -217,7 +217,7 @@ const onClearUpload = (productId: string) => {
     <Card v-else>
       <CardContent class="py-10 text-center text-sm text-muted-foreground">
         <Database class="h-8 w-8 mx-auto mb-2 opacity-40" />
-        {{ t('admin.products.empty') || '暂无商品' }}
+        {{ t('admin.products.allEmpty') }}
       </CardContent>
     </Card>
   </div>

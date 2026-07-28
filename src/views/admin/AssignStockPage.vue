@@ -79,8 +79,8 @@ const groupedByCustomerGroup = computed<ProductGroupBucket[]>(() => {
     }
   }
   return Array.from(byGroup.values()).sort((a, b) => {
-    if (a.group === '未分组') return 1
-    if (b.group === '未分组') return -1
+    if (a.group === t('admin.assignPage.unbucketed')) return 1
+    if (b.group === t('admin.assignPage.unbucketed')) return -1
     return a.group.localeCompare(b.group)
   })
 })
@@ -204,7 +204,7 @@ const onSubmitBindSelection = async ({ group, selection }: { group: string; sele
     await mappings.fetchAll()
     bindDialogOpen.value = false
   } catch (e) {
-    alert(e instanceof Error ? e.message : '保存失败')
+    alert(e instanceof Error ? e.message : t('admin.assignPage.saveFail'))
   } finally {
     savingBind.value = false
   }
@@ -216,7 +216,11 @@ const onSubmitBindSelection = async ({ group, selection }: { group: string; sele
 const onSubmit = async () => {
   if (expectedSummary.value.rows === 0) return
   if (!confirm(
-    `将为 ${expectedSummary.value.accounts} 个账户写入 ${expectedSummary.value.rows} 条白名单（客户组：${expectedSummary.value.groups}）。\n确定提交？`,
+    t('admin.assignPage.targetSummary', {
+      accounts: expectedSummary.value.accounts,
+      rows: expectedSummary.value.rows,
+      groups: expectedSummary.value.groups,
+    }),
   )) return
   submitting.value = true
   try {
@@ -262,7 +266,7 @@ const onSubmit = async () => {
       groups: expectedSummary.value.groups,
     }
   } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : '提交失败')
+    alert(e instanceof Error ? e.message : t('admin.assignPage.submitFail'))
   } finally {
     submitting.value = false
   }
@@ -279,16 +283,16 @@ const onSubmit = async () => {
             <Layers class="h-5 w-5" />
           </div>
           <div>
-            <h1 class="text-xl font-semibold tracking-tight">库存白名单分配</h1>
+            <h1 class="text-xl font-semibold tracking-tight">{{ t('admin.assignPage.title') }}</h1>
             <p class="text-xs text-muted-foreground">
-              勾客户组，绑定主账号后即可一键写入白名单。
+              {{ t('admin.assignPage.subtitle') }}
             </p>
           </div>
         </div>
         <div class="flex items-center gap-2">
           <Button variant="outline" size="sm" @click="deselectAllGroups" :disabled="selectedGroupNames.size === 0">
-            <X class="mr-1 h-3.5 w-3.5" />
-            清空选择
+            <X :class="`mr-1 h-3.5 w-3.5`" />
+            {{ t('admin.assignPage.clearSelection') }}
           </Button>
           <Button
             size="sm"
@@ -305,10 +309,10 @@ const onSubmit = async () => {
       <!-- 默认可见开关 -->
       <div v-if="selectedGroupNames.size > 0" class="mt-3 flex items-center gap-2 border-t pt-3 text-xs text-muted-foreground">
         <Checkbox v-model="defaultVisible" id="default-visible-toggle" />
-        <label for="default-visible-toggle" class="cursor-pointer">写入时默认对外可见</label>
+        <label for="default-visible-toggle" class="cursor-pointer">{{ t('admin.assignPage.defaultVisible') }}</label>
         <span class="ml-auto inline-flex items-center gap-1 text-[11px]">
           <span class="inline-block h-1.5 w-1.5 rounded-full" :class="defaultVisible ? 'bg-emerald-500' : 'bg-muted-foreground/50'" />
-          {{ defaultVisible ? '已开启' : '已关闭' }}
+          {{ defaultVisible ? t('admin.assignPage.toggleOn') : t('admin.assignPage.toggleOff') }}
         </span>
       </div>
     </div>
@@ -323,10 +327,10 @@ const onSubmit = async () => {
         <AlertTriangle class="h-4 w-4" />
       </div>
       <div class="leading-relaxed">
-        已勾的 <b class="font-semibold">{{ selectedUnmappedGroups.length }}</b> 个客户组未绑定主账号（提交时这些组将被跳过）：
+        {{ t('admin.assignPage.warningUnbound', { n: selectedUnmappedGroups.length }) }}主账号（提交时这些组将被跳过）：
         <span class="font-mono">{{ selectedUnmappedGroups.slice(0, 6).join('、') }}</span>
         <span v-if="selectedUnmappedGroups.length > 6"> 等</span>
-        — 请在各组头点击「+绑定」。
+        {{ t('admin.assignPage.warningHint') }}
       </div>
     </div>
 
@@ -340,7 +344,7 @@ const onSubmit = async () => {
         {{ unmappedGroups.length }} 个客户组尚未绑定主账号：
         <span class="font-mono">{{ unmappedGroups.slice(0, 6).join('、') }}</span>
         <span v-if="unmappedGroups.length > 6"> 等</span>
-        （先用各组头「+绑定」关联账户）
+        {{ t('admin.assignPage.globalHint') }}
       </div>
     </div>
 
@@ -349,25 +353,25 @@ const onSubmit = async () => {
       <CardHeader class="flex flex-row items-center justify-between gap-2 space-y-0 border-b bg-muted/20 px-4 py-3">
         <div class="flex items-center gap-2">
           <Layers class="h-4 w-4 text-muted-foreground" />
-          <CardTitle class="text-sm">客户组</CardTitle>
+          <CardTitle class="text-sm">{{ t('admin.assignPage.grpList') }}</CardTitle>
           <span class="text-[11px] text-muted-foreground">· {{ allGroups.length }} 个</span>
         </div>
         <div class="flex items-center gap-2 text-xs">
           <button
             class="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             @click="selectAllGroups"
-          >全选</button>
+          >{{ t('admin.assignPage.selectAll') }}</button>
           <span class="text-muted-foreground/40">|</span>
           <button
             class="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             @click="deselectAllGroups"
-          >清空</button>
+          >{{ t('admin.assignPage.clear') }}</button>
         </div>
       </CardHeader>
       <CardContent class="p-3">
         <div v-if="allGroups.length === 0" class="py-10 text-center text-sm text-muted-foreground">
           <Boxes class="mx-auto mb-2 h-8 w-8 opacity-40" />
-          暂无客户组数据，请先上传库存表
+          {{ t('admin.assignPage.emptyGrp') }}
         </div>
 
         <div class="max-h-[68vh] overflow-auto pr-1 space-y-2">
@@ -408,7 +412,7 @@ const onSubmit = async () => {
             <!-- 已绑主账号 chips + 绑定按钮 -->
             <div class="flex flex-wrap items-center gap-1.5">
               <template v-if="(groupToAccount[g.group]?.length ?? 0) > 0">
-                <div class="hidden text-[11px] text-muted-foreground md:inline">已绑</div>
+                <div class="hidden text-[11px] text-muted-foreground md:inline">{{ t('admin.assignPage.bound') }}</div>
                 <Badge
                   v-for="aid in groupToAccount[g.group]"
                   :key="aid"
@@ -423,7 +427,7 @@ const onSubmit = async () => {
                 class="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700"
               >
                 <span class="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                未绑定
+                {{ t('admin.assignPage.unbound') }}
               </span>
               <Button
                 size="sm"
@@ -433,7 +437,7 @@ const onSubmit = async () => {
               >
                 <Edit3 v-if="(groupToAccount[g.group]?.length ?? 0) > 0" class="h-3 w-3" />
                 <Link2 v-else class="h-3 w-3" />
-                {{ (groupToAccount[g.group]?.length ?? 0) > 0 ? '改绑' : '+ 绑定' }}
+                {{ (groupToAccount[g.group]?.length ?? 0) > 0 ? t('admin.assignPage.bindAction') : t('admin.assignPage.bindAction') }}
               </Button>
             </div>
           </div>
@@ -450,7 +454,7 @@ const onSubmit = async () => {
         <CheckCircle2 class="h-4 w-4" />
       </div>
       <div class="text-emerald-900">
-        已写入 <b class="font-semibold">{{ result.rows }}</b> 条白名单
+        {{ t('admin.assignPage.resultBound') }} <b class="font-semibold">{{ result.rows }}</b> {{ t('admin.assignPage.resultUnit') }}
         <span class="text-emerald-700/80">（{{ result.accounts }} 账户 × {{ result.groups }} 客户组）</span>
       </div>
     </div>

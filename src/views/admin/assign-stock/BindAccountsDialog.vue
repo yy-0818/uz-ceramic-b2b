@@ -18,7 +18,10 @@ import { ref, watch } from 'vue'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 
+import { useI18n } from '@/lib/i18n'
 import type { Account } from '@/composables/useAccounts'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -63,8 +66,8 @@ const onSubmit = () => {
   <Dialog
     :open="open"
     @update:open="emit('update:open', $event)"
-    :title="group ? `「${group}」绑定主账号` : ''"
-    description="可多选；勾选确定后写入 DB。"
+    :title="group ? `「${group}」${t('admin.assignPage.btnBind')}` : ''"
+    :description="t('admin.assignPage.modalDesc')"
   >
     <div class="flex flex-wrap gap-1.5 max-h-72 overflow-auto py-2">
       <button
@@ -85,9 +88,9 @@ const onSubmit = () => {
     </div>
 
     <div class="mt-4 flex justify-end gap-2">
-      <Button variant="outline" :disabled="saving" @click="onCancel">取消</Button>
+      <Button variant="outline" :disabled="saving" @click="onCancel">{{ t('common.cancel') }}</Button>
       <Button :disabled="saving" @click="onSubmit">
-        保存绑定
+        {{ t('admin.assignPage.btnSaveBind') }}
       </Button>
     </div>
   </Dialog>

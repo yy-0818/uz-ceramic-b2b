@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from '@/lib/i18n'
 import {
   Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
   Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
@@ -40,6 +41,7 @@ import AssignStockDialog from './accounts-admin/AssignStockDialog.vue'
 import InviteDialog from './accounts-admin/InviteDialog.vue'
 import ResetPasswordDialog from './accounts-admin/ResetPasswordDialog.vue'
 
+const { t } = useI18n()
 const router = useRouter()
 const acc = useAccounts()
 const stockGroups = useStockGroups()
@@ -125,12 +127,12 @@ const resetTarget = ref<Account | null>(null)
 const resetTempPassword = ref<string | null>(null)
 
 // ============ 常量 ============
-const accountTypes: Array<{ value: AccountType; label: string; desc: string; class: string }> = [
-  { value: '1_public', label: '1 公户', desc: '对公大客户', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: '2_cash',   label: '2 现金', desc: '现金客户',   class: 'bg-amber-100 text-amber-800 border-amber-200' },
-  { value: '3_export', label: '3 出口', desc: '出口客户',   class: 'bg-violet-100 text-violet-800 border-violet-200' },
-]
-const typeClass = (t: AccountType) => accountTypes.find((x) => x.value === t)?.class ?? ''
+const accountTypes = computed<Array<{ value: AccountType; label: string; desc: string; class: string }>>(() => [
+  { value: '1_public', label: t('admin.accounts.type1Public'), desc: t('admin.accounts.rev'),   class: 'bg-blue-100 text-blue-800 border-blue-200' },
+  { value: '2_cash',   label: t('admin.accounts.type2Cash'),   desc: t('admin.accounts.cash'),  class: 'bg-amber-100 text-amber-800 border-amber-200' },
+  { value: '3_export', label: t('admin.accounts.type3Export'), desc: t('admin.accounts.exp'),   class: 'bg-violet-100 text-violet-800 border-violet-200' },
+])
+const typeClass = (t: AccountType) => accountTypes.value.find((x) => x.value === t)?.class ?? ''
 
 // ============ 数据加载 ============
 const load = async () => {
@@ -286,7 +288,10 @@ const submitParent = async ({ form }: { form: { account_name: string; account_ty
 }
 const toggleParent = async (p: Account) => {
   openMenuId.value = null
-  if (!confirm(`${p.status === 'active' ? '停用' : '启用'} 主账号 "${p.account_name}"？\n所有子账号会被同步停用。`)) return
+  if (!confirm(t('admin.accounts.confirmToggleParent', {
+    action: p.status === 'active' ? t('admin.accounts.disabled') : t('admin.accounts.enabled'),
+    name: p.account_name,
+  }))) return
   loading.value = true
   try {
     await acc.updateParent(p.id, { status: p.status === 'active' ? 'inactive' : 'active' })
@@ -393,7 +398,10 @@ const submitAssign = async ({ codes }: { codes: string[] }) => {
 }
 const batchToggle = async (to: 'active' | 'inactive') => {
   if (selected.value.size === 0) return
-  if (!confirm(`将 ${selected.value.size} 个主账号设为「${to === 'active' ? '活跃' : '停用'}」？`)) return
+  if (!confirm(t('admin.accounts.confirmBatchToggle', {
+    n: selected.value.size,
+    state: to === 'active' ? t('admin.accounts.active') : t('admin.accounts.disabled'),
+  }))) return
   loading.value = true
   try {
     for (const id of selected.value) {
@@ -442,7 +450,7 @@ const fetchInviteHistory = async () => {
 }
 const revokeInvite = async (id: string) => {
   await invMgr.revokeInvite(id)
-  alert('已撤销邀请')
+  alert(t('admin.accounts.inviteRevoked'))
 }
 
 // ============ 重置密码：open + submit ============
@@ -474,21 +482,21 @@ const goImport = () => router.push('/admin/accounts/import')
       <div>
         <h1 class="text-xl font-semibold flex items-center gap-2">
           <Users class="h-5 w-5" />
-          账号管理
+          {{ t("admin.accounts.title") }}
         </h1>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" @click="load" :disabled="loading">
           <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-          <span class="hidden sm:inline">刷新</span>
+          <span class="hidden sm:inline">{{ t('admin.accounts.refresh') }}</span>
         </Button>
         <Button size="sm" variant="outline" @click="goImport">
           <Upload class="h-4 w-4 sm:mr-1" />
-          <span class="hidden sm:inline">上传档案库</span>
+          <span class="hidden sm:inline">{{ t('admin.accounts.uploadArchive') }}</span>
         </Button>
         <Button size="sm" @click="openParentCreate">
           <Plus class="h-4 w-4 sm:mr-1" />
-          <span class="hidden sm:inline">新建主账号</span>
+          <span class="hidden sm:inline">{{ t('admin.accounts.newParent') }}</span>
         </Button>
       </div>
     </div>
@@ -498,7 +506,7 @@ const goImport = () => router.push('/admin/accounts/import')
       <Card>
         <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
           <div>
-            <p class="text-xs text-muted-foreground mb-0.5">主账号</p>
+            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiParents') }}</p>
             <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalParents }}</p>
           </div>
           <Folder class="h-8 w-8 text-blue-400 shrink-0" />
@@ -507,7 +515,7 @@ const goImport = () => router.push('/admin/accounts/import')
       <Card>
         <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
           <div>
-            <p class="text-xs text-muted-foreground mb-0.5">活跃</p>
+            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiActiveParents') }}</p>
             <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.activeParents }}</p>
           </div>
           <CheckCircle2 class="h-8 w-8 text-emerald-500 shrink-0" />
@@ -516,7 +524,7 @@ const goImport = () => router.push('/admin/accounts/import')
       <Card>
         <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
           <div>
-            <p class="text-xs text-muted-foreground mb-0.5">子账号</p>
+            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiSubs') }}</p>
             <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalSubs }}</p>
           </div>
           <Users class="h-8 w-8 text-violet-500 shrink-0" />
@@ -525,7 +533,7 @@ const goImport = () => router.push('/admin/accounts/import')
       <Card>
         <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
           <div>
-            <p class="text-xs text-muted-foreground mb-0.5">已停用</p>
+            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiInactiveSubs') }}</p>
             <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.inactiveSubs }}</p>
           </div>
           <EyeOff class="h-8 w-8 text-gray-400 shrink-0" />
@@ -539,9 +547,9 @@ const goImport = () => router.push('/admin/accounts/import')
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="search" placeholder="搜索账号 / 税号" class="pl-9 h-8 text-sm" />
+            <Input v-model="search" :placeholder="t('admin.accounts.searchPh')" class="pl-9 h-8 text-sm" />
           </div>
-          <Button size="sm" variant="ghost" @click="toggleExpandAll" class="shrink-0" :title="allExpanded ? '折叠全部' : '展开全部'">
+          <Button size="sm" variant="ghost" @click="toggleExpandAll" class="shrink-0" :title="allExpanded ? t('common.collapseAll') : t('common.expandAll')">
             <ChevronDown v-if="!allExpanded" class="h-4 w-4" />
             <ChevronRight v-else class="h-4 w-4" />
           </Button>
@@ -549,20 +557,20 @@ const goImport = () => router.push('/admin/accounts/import')
         <div class="flex flex-wrap gap-1.5">
           <Button size="sm" variant="outline" class="h-7 text-xs"
             :class="typeFilter === 'all' ? 'border-primary text-primary' : ''"
-            @click="typeFilter = 'all'">全部</Button>
+            @click="typeFilter = 'all'">{{ t('admin.accounts.typeAll') }}</Button>
           <Button v-for="t in accountTypes" :key="t.value" size="sm" variant="outline" class="h-7 text-xs"
             :class="typeFilter === t.value ? 'border-primary text-primary' : ''"
             @click="typeFilter = t.value">{{ t.label }}</Button>
           <span class="w-px h-5 bg-border mx-1" />
           <Button size="sm" variant="outline" class="h-7 text-xs"
             :class="statusFilter === 'all' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'all'">全部状态</Button>
+            @click="statusFilter = 'all'">{{ t('admin.accounts.statusAll') }}</Button>
           <Button size="sm" variant="outline" class="h-7 text-xs"
             :class="statusFilter === 'active' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'active'">活跃</Button>
+            @click="statusFilter = 'active'">{{ t('admin.accounts.active') }}</Button>
           <Button size="sm" variant="outline" class="h-7 text-xs"
             :class="statusFilter === 'inactive' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'inactive'">停用</Button>
+            @click="statusFilter = 'inactive'">{{ t('admin.accounts.inactive') }}</Button>
         </div>
       </CardContent>
     </Card>
@@ -584,32 +592,32 @@ const goImport = () => router.push('/admin/accounts/import')
         <template v-if="isMobileMenu">
           <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="openAssign(currentMenuParent); closeMenu()">
-            <Tag class="h-4 w-4 text-muted-foreground" />分配分类
+            <Tag class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuAssign') }}
           </button>
           <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="openSubCreate(currentMenuParent); closeMenu()">
-            <Plus class="h-4 w-4 text-muted-foreground" />加子账号
+            <Plus class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuAddSub') }}
           </button>
           <div class="my-1 border-t" />
         </template>
         <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openParentEdit(currentMenuParent); closeMenu()">
-          <Edit class="h-4 w-4 text-muted-foreground" />编辑
+          <Edit class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuEdit') }}
         </button>
         <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openInvite(currentMenuParent); closeMenu()">
-          <Mail class="h-4 w-4 text-muted-foreground" />邀请客户登录
+          <Mail class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuInvite') }}
         </button>
         <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openReset(currentMenuParent); closeMenu()">
-          <KeyRound class="h-4 w-4 text-muted-foreground" />重置密码
+          <KeyRound class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuReset') }}
         </button>
         <div class="my-1 border-t" />
         <button class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
           @click="toggleParent(currentMenuParent); closeMenu()">
           <PowerOff v-if="currentMenuParent.status === 'active'" class="h-4 w-4" />
           <Power v-else class="h-4 w-4" />
-          {{ currentMenuParent.status === 'active' ? '停用' : '启用' }}
+          {{ currentMenuParent.status === 'active' ? t('admin.accounts.disabled') : t('admin.accounts.enabled') }}
         </button>
       </div>
     </Teleport>
@@ -627,22 +635,22 @@ const goImport = () => router.push('/admin/accounts/import')
         class="sticky top-0 z-10 bg-primary text-primary-foreground rounded-lg shadow-lg px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
         <div class="flex items-center gap-3">
           <div class="text-sm font-medium">
-            已选 <span class="text-lg tabular-nums">{{ selected.size }}</span> 个主账号
+            {{ t('admin.accounts.selected') }} <span class="text-lg tabular-nums">{{ selected.size }}</span> {{ t('admin.accounts.parentsUnit') }}
           </div>
           <Button size="sm" variant="ghost" class="text-primary-foreground hover:bg-primary-foreground/10 h-7"
             @click="clearSelection">
-            <X class="h-3 w-3 mr-1" />清除
+            <X class="h-3 w-3 mr-1" />{{ t('admin.accounts.clear') }}
           </Button>
         </div>
         <div class="flex items-center gap-2">
           <Button size="sm" variant="secondary" @click="batchAssign">
-            <Tag class="h-3.5 w-3.5 mr-1" />批量分配分类
+            <Tag class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.batchAssign') }}
           </Button>
           <Button size="sm" variant="secondary" @click="batchToggle('active')">
-            <Power class="h-3.5 w-3.5 mr-1" />启用
+            <Power class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.enabled') }}
           </Button>
           <Button size="sm" variant="secondary" @click="batchToggle('inactive')">
-            <PowerOff class="h-3.5 w-3.5 mr-1" />停用
+            <PowerOff class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.disabled') }}
           </Button>
         </div>
       </div>
@@ -655,14 +663,14 @@ const goImport = () => router.push('/admin/accounts/import')
     <div v-else-if="filteredParents.length === 0" class="text-center py-12 border border-dashed rounded-lg">
       <Database class="h-10 w-10 mx-auto mb-2 text-muted-foreground/50" />
       <p class="text-sm text-muted-foreground mb-4">
-        {{ parents.length === 0 ? '还没有主账号' : '没有匹配的主账号' }}
+        {{ parents.length === 0 ? t('admin.accounts.empty1') : t('admin.accounts.empty2') }}
       </p>
       <div class="flex justify-center gap-2">
         <Button v-if="parents.length === 0" size="sm" @click="goImport">
-          <Upload class="h-4 w-4 mr-1" />上传客户档案库
+          <Upload class="h-4 w-4 mr-1" />{{ t('admin.accounts.uploadCta') }}
         </Button>
         <Button v-else size="sm" variant="outline" @click="search = ''; typeFilter = 'all'; statusFilter = 'all'">
-          清除筛选
+          {{ t('admin.accounts.clearFilter') }}
         </Button>
       </div>
     </div>
@@ -674,9 +682,9 @@ const goImport = () => router.push('/admin/accounts/import')
           <input type="checkbox" class="rounded"
             :checked="pagedParents.every(p => selected.has(p.id)) && pagedParents.length > 0"
             @change="toggleSelectPage" />
-          第 {{ page }} / {{ totalPages }} 页 · {{ filteredParents.length }} 个主账号
+          {{ t('admin.accounts.page', { p: page, total: totalPages, n: filteredParents.length }) }}
         </label>
-        <span v-if="selected.size > 0" class="text-primary">已选 {{ selected.size }} 个</span>
+        <span v-if="selected.size > 0" class="text-primary">{{ t('admin.accounts.pageSelected', { n: selected.size }) }}</span>
       </div>
 
       <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
@@ -694,32 +702,31 @@ const goImport = () => router.push('/admin/accounts/import')
               <span class="font-semibold truncate">{{ p.account_name }}</span>
               <span class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border font-medium"
                 :class="typeClass(p.account_type)">
-                {{ accountTypes.find(x => x.value === p.account_type)?.label }}
-              </span>
+                {{ accountTypes.find(x => x.value === p.account_type)?.label }}              </span>
               <span v-if="p.status === 'active'"
                 class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" />活跃
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" />{{ t('admin.accounts.active') }}
               </span>
               <span v-else
                 class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-gray-400" />停用
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-400" />{{ t('admin.accounts.disabled') }}
               </span>
             </div>
             <p class="text-xs text-muted-foreground mt-0.5">
-              {{ subsByParent[p.id]?.length ?? 0 }} 个子账号
+              {{ subsByParent[p.id]?.length ?? 0 }} {{ t('admin.accounts.subsUnit') }}
               <span v-if="subsByParent[p.id]?.length">
-                · {{ (subsByParent[p.id] ?? []).filter(s => s.status === 'active').length }} 活跃
+                · {{ (subsByParent[p.id] ?? []).filter(s => s.status === 'active').length }} {{ t('admin.accounts.subsActiveSuffix') }}
               </span>
             </p>
           </div>
           <div class="flex items-center gap-1 shrink-0">
             <Button size="sm" variant="outline" @click.stop="openAssign(p)" class="h-8 hidden sm:inline-flex">
               <Tag class="h-3.5 w-3.5 sm:mr-1" />
-              <span class="hidden md:inline">分配分类</span>
+              <span class="hidden md:inline">{{ t('admin.accounts.menuAssign') }}</span>
             </Button>
             <Button size="sm" variant="outline" @click.stop="openSubCreate(p)" class="h-8 hidden sm:inline-flex">
               <Plus class="h-3.5 w-3.5 sm:mr-1" />
-              <span class="hidden md:inline">加子账号</span>
+              <span class="hidden md:inline">{{ t('admin.accounts.menuAddSub') }}</span>
             </Button>
             <div class="relative" data-row-menu>
               <Button size="sm" variant="ghost" class="h-8 w-8 p-0"
@@ -734,10 +741,10 @@ const goImport = () => router.push('/admin/accounts/import')
         <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2">
           <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
             <Users class="h-3 w-3" />
-            子账号 ({{ (subsByParent[p.id] ?? []).length }})
+            {{ t('admin.accounts.sub') }} ({{ (subsByParent[p.id] ?? []).length }})
           </p>
           <div v-if="(subsByParent[p.id] ?? []).length === 0" class="text-xs text-muted-foreground py-2 text-center">
-            暂无子账号
+            {{ t('admin.accounts.noSubs') }}
           </div>
           <div v-else class="space-y-1.5">
             <div v-for="s in subsByParent[p.id]" :key="s.id"
@@ -748,14 +755,14 @@ const goImport = () => router.push('/admin/accounts/import')
               <span v-if="s.inn" class="text-xs text-muted-foreground font-mono hidden sm:inline">{{ s.inn }}</span>
               <span class="text-xs px-1.5 py-0.5 rounded"
                 :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'">
-                {{ s.status === 'active' ? '可用' : '停用' }}
+                {{ s.status === 'active' ? t('admin.accounts.subAvailable') : t('admin.accounts.disabled') }}
               </span>
               <Button v-if="!s.is_main" size="sm" variant="ghost" class="h-6 w-6 p-0"
-                @click="setMain(p.id, s)" title="设为主联系">
+                @click="setMain(p.id, s)" :title="t('admin.accounts.setMain')">
                 <Star class="h-3 w-3" />
               </Button>
               <Button size="sm" variant="ghost" class="h-6 w-6 p-0"
-                @click="openSubEdit(p, s)" title="编辑">
+                @click="openSubEdit(p, s)" :title="t('admin.accounts.menuEdit')">
                 <Edit class="h-3 w-3" />
               </Button>
             </div>

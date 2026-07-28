@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { Upload, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, X, ChevronRight, RefreshCw } from 'lucide-vue-next'
 import { read, utils } from 'xlsx'
+import { useI18n } from '@/lib/i18n'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
@@ -15,6 +16,7 @@ import CardContent from '@/components/ui/CardContent.vue'
 import Badge from '@/components/ui/Badge.vue'
 import { useAccounts, parseExcelRow, buildImportPreview, type ExcelRow, type ImportPreview } from '@/composables/useAccounts'
 
+const { t } = useI18n()
 const router = useRouter()
 const accounts = useAccounts()
 
@@ -133,7 +135,7 @@ const reset = () => {
     <Card v-if="preview && summary">
       <CardHeader>
         <CardTitle class="text-base flex items-center justify-between">
-          <span>解析结果预览</span>
+          <span>{{ t('admin.productsAll.import.preview') }}</span>
           <div class="flex gap-1 text-xs">
             <Badge variant="secondary">父账号: {{ summary.parents }}</Badge>
             <Badge variant="secondary">子账号: {{ summary.subs }}</Badge>
@@ -154,7 +156,7 @@ const reset = () => {
                 <tr>
                   <th class="text-left px-2 py-1">类别</th>
                   <th class="text-left px-2 py-1">类型</th>
-                  <th class="text-right px-2 py-1">子账号数</th>
+                  <th class="text-right px-2 py-1">{{ t('admin.productsAll.import.colSubs') }}</th>
                 </tr>
               </thead>
               <tbody>

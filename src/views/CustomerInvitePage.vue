@@ -17,8 +17,10 @@ import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import { useCustomerAuth } from '@/composables/useCustomerAuth'
 import { useStockGroups } from '@/composables/useStockGroups'
+import { useI18n } from '@/lib/i18n'
 import { supabase } from '@/lib/supabase'
 
+const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const auth = useCustomerAuth()
@@ -38,14 +40,14 @@ const assignedGroups = ref<string[]>([])
 onMounted(async () => {
   const token = (route.query.token as string) || ''
   if (!token) {
-    error.value = '链接无效（缺少 token）'
+    error.value = t('invite.errNoToken')
     step.value = 'error'
     return
   }
   try {
     const info = await auth.validateInvite(token)
     if (!info) {
-      error.value = '链接无效、已过期、或者已被使用'
+      error.value = t('invite.errInvalidOrExpired')
       step.value = 'error'
       return
     }
@@ -58,11 +60,11 @@ onMounted(async () => {
       .select('account_name, login_email')
       .eq('id', info.accountId)
       .single()
-    parentName.value = (parent as any)?.account_name ?? '主账号'
+    parentName.value = (parent as any)?.account_name ?? t('invite.parentFallback')
     // 必须有 login_email 才能继续：占位邮箱 Supabase Auth 不接受（example.* / .local / .test）
     loginEmail.value = (parent as any)?.login_email?.trim() ?? ''
     if (!loginEmail.value) {
-      error.value = '该主账号尚未绑定真实登录邮箱，请联系管理员在父账号编辑里先填一个有效邮箱（如 customer@yourcompany.com）。'
+      error.value = t('invite.errNoLoginEmail')
       step.value = 'error'
       return
     }
@@ -78,11 +80,11 @@ onMounted(async () => {
 const submit = async () => {
   if (!accountId.value || !loginEmail.value) return
   if (password.value.length < 8) {
-    error.value = '密码至少 8 位'
+    error.value = t('invite.errPasswordShort')
     return
   }
   if (password.value !== passwordAgain.value) {
-    error.value = '两次密码不一致'
+    error.value = t('invite.errPasswordMismatch')
     return
   }
   submitting.value = true
@@ -110,16 +112,16 @@ const submit = async () => {
         <!-- 验证中 -->
         <div v-if="step === 'verify'" class="text-center space-y-3">
           <Loader2 class="h-8 w-8 mx-auto animate-spin text-muted-foreground" />
-          <p class="text-sm text-muted-foreground">验证邀请链接...</p>
+          <p class="text-sm text-muted-foreground">{{ t('invite.verifying') }}</p>
         </div>
 
         <!-- 错误 -->
         <div v-else-if="step === 'error'" class="text-center space-y-3">
           <AlertCircle class="h-10 w-10 mx-auto text-red-500" />
-          <p class="text-base font-medium">链接无效</p>
+          <p class="text-base font-medium">{{ t('invite.invalidLink') }}</p>
           <p class="text-sm text-muted-foreground">{{ error }}</p>
           <p class="text-xs text-muted-foreground mt-4">
-            请联系你的业务对接人（管理员）重新发送邀请
+            {{ t('invite.invalidLinkHint') }}
           </p>
         </div>
 
@@ -127,22 +129,22 @@ const submit = async () => {
         <div v-else-if="step === 'setPassword'" class="space-y-4">
           <div class="text-center space-y-1">
             <Mail class="h-8 w-8 mx-auto text-primary" />
-            <p class="text-base font-semibold">欢迎，{{ parentName }}</p>
+            <p class="text-base font-semibold">{{ t('invite.welcome', { name: parentName }) }}</p>
             <p class="text-xs text-muted-foreground">
-              邀请有效期至 {{ new Date(expiresAt!).toLocaleString('zh-CN') }}
+              {{ t('invite.expiresAt', { date: new Date(expiresAt!).toLocaleString('zh-CN') }) }}
             </p>
           </div>
 
           <!-- 登录邮箱（关键提示）-->
           <div class="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs">
-            <p class="font-medium text-blue-900 mb-1">您的登录邮箱：</p>
+            <p class="font-medium text-blue-900 mb-1">{{ t('invite.loginEmail') }}</p>
             <p class="font-mono text-blue-800 break-all">{{ loginEmail }}</p>
-            <p class="text-blue-700 mt-1">请记住此邮箱，用于以后登录。</p>
+            <p class="text-blue-700 mt-1">{{ t('invite.loginEmailHint') }}</p>
           </div>
 
           <div v-if="assignedGroups.length > 0"
             class="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs">
-            <p class="font-medium text-slate-900 mb-1">您可查看的库存组：</p>
+            <p class="font-medium text-slate-900 mb-1">{{ t('invite.assignedGroups') }}</p>
             <div class="flex flex-wrap gap-1">
               <span v-for="g in assignedGroups" :key="g"
                 class="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">{{ g }}</span>
@@ -151,18 +153,18 @@ const submit = async () => {
 
           <form @submit.prevent="submit" class="space-y-3">
             <div>
-              <Label>设置密码（至少 8 位）</Label>
+              <Label>{{ t('invite.passwordLabel') }}</Label>
               <Input v-model="password" type="password" placeholder="••••••••" class="h-9" />
             </div>
             <div>
-              <Label>再次输入</Label>
+              <Label>{{ t('invite.passwordAgain') }}</Label>
               <Input v-model="passwordAgain" type="password" placeholder="••••••••" class="h-9" />
             </div>
             <div v-if="error" class="text-xs text-red-600">{{ error }}</div>
             <Button type="submit" class="w-full" :disabled="submitting">
               <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
               <Lock v-else class="mr-2 h-4 w-4" />
-              设置密码并登录
+              {{ t('invite.submitBtn') }}
             </Button>
           </form>
         </div>
@@ -170,8 +172,8 @@ const submit = async () => {
         <!-- 完成 -->
         <div v-else-if="step === 'done'" class="text-center space-y-3">
           <CheckCircle2 class="h-10 w-10 mx-auto text-emerald-500" />
-          <p class="text-base font-medium">账号已激活</p>
-          <p class="text-sm text-muted-foreground">正在跳转到商品目录...</p>
+          <p class="text-base font-medium">{{ t('invite.activated') }}</p>
+          <p class="text-sm text-muted-foreground">{{ t('invite.redirecting') }}</p>
         </div>
       </CardContent>
     </Card>

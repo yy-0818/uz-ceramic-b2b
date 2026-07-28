@@ -138,12 +138,12 @@ const onSubmit = async () => {
 
       <Card>
         <CardContent class="py-4 space-y-2">
-          <Label>下单子账号 *</Label>
+          <Label>{{ t('customer.checkout.subAccountLabel') }}</Label>
           <div v-if="loadingSubs" class="text-xs text-muted-foreground py-2">
-            <Loader2 class="inline h-3 w-3 mr-1 animate-spin" />加载子账号...
+            <Loader2 class="inline h-3 w-3 mr-1 animate-spin" />{{ t('customer.checkout.loadingSubs') }}
           </div>
           <div v-else-if="subs.length === 0" class="text-xs text-amber-700 border border-amber-200 bg-amber-50 rounded-md p-2">
-            你的主账号下还没有子账号，无法下单。请联系管理员在"账号管理 → 加子账号"。
+            {{ t('customer.checkout.noSubs') }}
           </div>
           <div v-else class="space-y-1 max-h-48 overflow-y-auto border rounded-md p-2">
             <label
@@ -163,7 +163,7 @@ const onSubmit = async () => {
             </label>
           </div>
           <p class="text-xs text-muted-foreground">
-            选择了哪个子账号，此订单就归属哪个子账号
+            {{ t('customer.checkout.subAccountHint') }}
           </p>
         </CardContent>
       </Card>

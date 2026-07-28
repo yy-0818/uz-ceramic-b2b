@@ -77,7 +77,7 @@ const doTransition = async (to: 'audited' | 'accounted' | 'shipped' | 'cancelled
     await ordersApi.transition(orderId.value, to)
     await refresh()
   } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : '状态变更失败')
+    alert(e instanceof Error ? e.message : t('customer.order.statusChangeFail'))
   } finally {
     acting.value = false
   }
@@ -122,7 +122,7 @@ const totalM2 = computed(() =>
           <p class="font-medium">{{ order.account?.account_name }}</p>
           <p class="text-muted-foreground">{{ order.account?.company_name }}</p>
           <div v-if="order.sub_account" class="mt-2 pt-2 border-t">
-            <p class="text-xs text-muted-foreground">下单子账号</p>
+            <p class="text-xs text-muted-foreground">{{ t('customer.order.orderSubAccount') }}</p>
             <p class="font-mono">{{ order.sub_account.account_name }}</p>
             <p v-if="order.sub_account.inn && order.sub_account.inn !== '-'" class="text-xs text-muted-foreground">
               INN: {{ order.sub_account.inn }}

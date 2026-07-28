@@ -100,7 +100,7 @@ const inviteStatusLabel = (s: string) => {
 
 const copy = async (text: string) => {
   try { await navigator.clipboard.writeText(text); alert(t('admin.invites.copied')) }
-  catch { prompt('复制这一行：', text) }
+  catch { prompt(t('admin.invites.copyPrompt'), text) }
 }
 
 const copyInviteUrlFor = (inv: { token: string }) =>

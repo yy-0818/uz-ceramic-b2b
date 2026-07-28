@@ -38,7 +38,7 @@ const onShip = async (o: OrderRow) => {
     await ordersApi.transition(o.id, 'shipped')
     await refresh()
   } catch (e: unknown) {
-    alert(e instanceof Error ? e.message : '发货失败')
+    alert(e instanceof Error ? e.message : t('warehouse.shipFail'))
   } finally {
     const s2 = new Set(acting.value)
     s2.delete(o.id); acting.value = s2

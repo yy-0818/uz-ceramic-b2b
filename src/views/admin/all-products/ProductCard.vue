@@ -50,7 +50,7 @@ const { t } = useI18n()
 
 const fmtBoxes = (n: number) => n.toLocaleString()
 const fmtFileType = (type: string) => {
-  if (!type) return '? 文件'
+  if (!type) return t('admin.products.image.unknownType')
   if (type.startsWith('image/')) return type.replace('image/', '').toUpperCase()
   return type
 }
@@ -65,7 +65,7 @@ const percent = () => props.uploadState?.percent ?? 0
 const fileName = () => props.uploadState?.file?.name ?? ''
 const fileType = () => fmtFileType(props.uploadState?.file?.type ?? '')
 const fileSize = () => fmtFileSize(props.uploadState?.file?.size ?? 0)
-const errorMsg = () => props.uploadState?.message || '上传失败'
+const errorMsg = () => props.uploadState?.message || t('admin.products.image.fail')
 const isUploading = () => status() === 'uploading'
 
 // Attachment 组件期望字符串 state；映射：done+有图 → 'done'，无图 → 'idle'
@@ -115,12 +115,12 @@ const attachmentState = () => {
           variant="icon" class="aspect-square sm:aspect-auto sm:min-h-[220px]">
           <div class="flex flex-col items-center gap-1 text-muted-foreground">
             <ImageIcon class="h-8 w-8 mb-1" />
-            <span class="text-xs">{{ t('admin.products.image.noImage') || '暂无图片' }}</span>
+            <span class="text-xs">{{ t('admin.products.image.noImage') }}</span>
             <button type="button"
               class="mt-1 inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs text-foreground transition hover:bg-primary hover:text-primary-foreground hover:border-primary"
               @click="emit('pick')">
               <UploadCloud class="h-3.5 w-3.5" />
-              {{ t('admin.products.image.upload') || '上传图片' }}
+              {{ t('admin.products.image.upload') }}
             </button>
           </div>
         </AttachmentMedia>

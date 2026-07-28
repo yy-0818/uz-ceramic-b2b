@@ -188,16 +188,16 @@ onMounted(() => {
             @click="moreOpen = true"
           >
             <MoreHorizontal class="h-5 w-5" />
-            <span>更多</span>
+            <span>{{ t('common.more') }}</span>
           </button>
         </div>
       </nav>
     </div>
 
     <!-- "更多" 抽屉 -->
-    <Dialog v-model:open="moreOpen" title="所有页面" description="点击进入任一页面">
+    <Dialog v-model:open="moreOpen" :title="t('common.allPages')" :description="t('common.allPagesHint')">
       <div v-if="overflowItems.length === 0" class="text-sm text-muted-foreground text-center py-4">
-        已在底部栏显示全部页面
+        {{ t('common.allInBar') }}
       </div>
       <ul v-else class="space-y-1 max-h-[60vh] overflow-y-auto">
         <li v-for="it in overflowItems" :key="it.to">
@@ -213,7 +213,7 @@ onMounted(() => {
       </ul>
       <div class="mt-4 pt-3 border-t space-y-3">
         <p class="text-xs text-muted-foreground">
-          当前身份：<strong>{{ appUser?.role }}</strong>
+          {{ t('common.currentRole') }}<strong>{{ appUser?.role }}</strong>
           · {{ account?.account_name }}
         </p>
         <!-- 移动端把语言/主题放进抽屉，避免挤底部 4 项 -->
@@ -229,7 +229,7 @@ onMounted(() => {
     <button
       v-if="cartTotalBoxes > 0"
       class="fixed right-4 bottom-20 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
-      aria-label="购物车"
+      :aria-label="t('common.cart')"
       @click="cartOpen = true"
     >
       <ShoppingCart class="h-6 w-6" />
@@ -239,9 +239,9 @@ onMounted(() => {
     </button>
 
     <!-- 全局购物车抽屉 -->
-    <Dialog v-model:open="cartOpen" title="购物车" description="点击删除单条；点击下方按钮进入结算">
+    <Dialog v-model:open="cartOpen" :title="t('common.cart')" :description="t('common.cartHint')">
       <div v-if="cart.items.value.length === 0" class="text-sm text-muted-foreground text-center py-6">
-        购物车为空
+        {{ t('common.cartEmpty') }}
       </div>
       <ul v-else class="space-y-2 max-h-80 overflow-auto">
         <li
@@ -255,20 +255,20 @@ onMounted(() => {
               {{ c.boxes }} ящ × {{ c.conversion_rate }} = {{ (c.boxes * c.conversion_rate).toFixed(2) }} м²
             </p>
           </div>
-          <Button size="sm" variant="ghost" @click="cart.remove(c.product_id)">删除</Button>
+          <Button size="sm" variant="ghost" @click="cart.remove(c.product_id)">{{ t('common.delete') }}</Button>
         </li>
       </ul>
       <div v-if="cart.items.value.length > 0" class="mt-4 border-t pt-3 space-y-2">
         <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">总箱数</span>
+          <span class="text-muted-foreground">{{ t('common.cartTotalBoxes') }}</span>
           <span class="font-medium">{{ cartTotalBoxes }}</span>
         </div>
         <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">总面积</span>
+          <span class="text-muted-foreground">{{ t('common.cartTotalM2') }}</span>
           <span class="font-medium">{{ cartTotalM2.toFixed(2) }} м²</span>
         </div>
         <Button class="w-full" @click="cartOpen = false; router.push('/customer/checkout')">
-          去结算
+          {{ t('common.cartCheckout') }}
         </Button>
       </div>
     </Dialog>

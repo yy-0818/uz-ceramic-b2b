@@ -285,20 +285,20 @@ const cartTotalM2 = computed(() => cart.totalM2())
         <!-- admin：库里压根没商品 -->
         <div v-if="isAdmin && allProducts.length === 0"
           class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
-          <p class="font-medium text-foreground">库里还没有商品</p>
-          <p class="mt-1">先去 <code class="bg-muted px-1 rounded">/admin/import</code> 导入一次 CSV。</p>
+          <p class="font-medium text-foreground">{{ t('customer.catalog.emptyNoProducts') }}</p>
+          <p class="mt-1"><span v-html="t('customer.catalog.emptyNoProductsHint', { path: '/admin/import' })"></span></p>
         </div>
         <!-- admin：有商品 → admin 视角下理论上能看到全部 -->
         <div v-else-if="isAdmin && allProducts.length > 0"
           class="text-center text-sm text-amber-800 border border-amber-200 bg-amber-50 rounded-lg p-6">
-          <p class="font-medium">⚠ admin 视角本应看到全部 {{ allProducts.length }} 个商品，但白名单聚合为空</p>
-          <p class="mt-1 text-xs">检查 console 的 <code>[catalog]</code> 日志</p>
+          <p class="font-medium">⚠ {{ t('customer.catalog.emptyAdminVisible', { n: allProducts.length }) }}</p>
+          <p class="mt-1 text-xs"><span v-html="t('customer.catalog.emptyAdminHint')"></span></p>
         </div>
         <!-- 客户：白名单为空 -->
         <div v-else
           class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
-          <p class="font-medium text-foreground">你的账号还没有可见商品</p>
-          <p class="mt-1">请联系管理员把客户组关联到你的账号，或者让你被加入某些商品的白名单。</p>
+          <p class="font-medium text-foreground">{{ t('customer.catalog.emptyNoAccess') }}</p>
+          <p class="mt-1">{{ t('customer.catalog.emptyNoAccessHint') }}</p>
         </div>
       </div>
       <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -329,7 +329,7 @@ const cartTotalM2 = computed(() => cart.totalM2())
                   {{ cat }}
                 </span>
                 <span class="text-[11px] text-muted-foreground shrink-0">
-                  {{ t('customer.catalog.classification') || '分类' }}
+                  {{ t('customer.catalog.classification') }}
                 </span>
               </div>
               <!-- 元信息：型号 / 箱数 / 色号 -->
@@ -366,7 +366,7 @@ const cartTotalM2 = computed(() => cart.totalM2())
           <Search class="h-5 w-5" />
         </div>
         <p class="text-sm text-muted-foreground">
-          {{ search ? `没找到「${search}」相关型号` : t('customer.catalog.empty') }}
+          {{ search ? t('customer.catalog.searchNotFound', { q: search }) : t('customer.catalog.empty') }}
         </p>
       </div>
       <div v-else class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
@@ -388,7 +388,7 @@ const cartTotalM2 = computed(() => cart.totalM2())
             <div v-else class="flex h-full w-full items-center justify-center">
               <div class="flex flex-col items-center gap-1 text-muted-foreground/50">
                 <Package class="h-7 w-7" />
-                <span class="text-[10px]">暂无图片</span>
+                <span class="text-[10px]">{{ t('customer.catalog.noImage') }}</span>
               </div>
             </div>
             <!-- 角标：型号分类 -->
@@ -438,7 +438,7 @@ const cartTotalM2 = computed(() => cart.totalM2())
             <div v-else class="flex h-full w-full items-center justify-center">
               <div class="flex flex-col items-center gap-2 text-muted-foreground/40">
                 <ImageOff class="h-12 w-12" />
-                <span class="text-xs">暂无产品图</span>
+                <span class="text-xs">{{ t('customer.catalog.noModelImage') }}</span>
               </div>
             </div>
           </div>
@@ -478,7 +478,7 @@ const cartTotalM2 = computed(() => cart.totalM2())
 
       <!-- 色号网格 -->
       <div v-if="colorsInModel.length === 0" class="mt-4 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
-        暂无在售色号
+        {{ t('customer.catalog.noColors') }}
       </div>
       <div v-else class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         <Card
