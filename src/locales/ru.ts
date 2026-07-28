@@ -212,6 +212,17 @@ export default {
         unknownType: '? файл',
       },
     },
+    productsAll: {
+      refresh: 'Обновить',
+      searchPh: 'Поиск модели',
+      allCategory: 'Все категории',
+      onlyWithStock: 'Только с остатком',
+      withImage: 'С фото',
+      withStock: 'С остатком',
+      empty: 'Нет товаров',
+      confirmDelImage: 'Удалить фото товара?',
+      allEmpty: 'Нет товаров',
+    },
   },
   customer: {
     catalog: {

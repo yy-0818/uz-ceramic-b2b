@@ -304,6 +304,17 @@ export default {
       targetSummary: '将为 {accounts} 个账户写入 {rows} 条白名单（客户组：{groups}）。\n确定提交？',
       unbucketed: '未分组',
     },
+    productsAll: {
+      refresh: '刷新',
+      searchPh: '搜索型号',
+      allCategory: '全部分类',
+      onlyWithStock: '仅显示有库存',
+      withImage: '有图',
+      withStock: '有库存',
+      empty: '暂无商品',
+      confirmDelImage: '确定删除该商品的产品图吗？',
+      allEmpty: '暂无商品',
+    },
   },
   customer: {
     order: {

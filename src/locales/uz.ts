@@ -212,6 +212,17 @@ export default {
         unknownType: '? fayl',
       },
     },
+    productsAll: {
+      refresh: 'Yangilash',
+      searchPh: 'Model qidirish',
+      allCategory: 'Barcha kategoriyalar',
+      onlyWithStock: 'Faqat zaxirasi bor',
+      withImage: 'Rasmli',
+      withStock: 'Zaxirali',
+      empty: 'Mahsulot yo\'q',
+      confirmDelImage: 'Mahsulot rasmini o\'chirishni xohlaysizmi?',
+      allEmpty: 'Mahsulot yo\'q',
+    },
   },
   customer: {
     catalog: {
