@@ -17,7 +17,6 @@ import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import CardDescription from '@/components/ui/CardDescription.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
@@ -253,7 +252,6 @@ const toggleCategory = (cat: string) => {
           <Upload class="h-5 w-5" />
           {{ t('admin.import.step1') }}
         </CardTitle>
-        <CardDescription>{{ t('admin.import.step1Desc') }}</CardDescription>
       </CardHeader>
       <CardContent>
         <input
@@ -304,7 +302,6 @@ const toggleCategory = (cat: string) => {
               <Boxes class="h-5 w-5" />
               {{ t('admin.import.step2') }}
             </CardTitle>
-            <CardDescription>按分类归纳，含色号前缀二级汇总</CardDescription>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             <Label class="text-xs">{{ t('admin.import.search') }}</Label>

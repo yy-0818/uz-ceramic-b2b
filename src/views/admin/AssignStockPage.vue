@@ -17,7 +17,6 @@ import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import CardDescription from '@/components/ui/CardDescription.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import Checkbox from '@/components/ui/Checkbox.vue'
@@ -170,7 +169,6 @@ const onSubmit = async () => {
           <Filter class="h-5 w-5" />
           {{ t('admin.assign.step1') }}
         </CardTitle>
-        <CardDescription>{{ t('admin.assign.step1Desc') }}</CardDescription>
       </CardHeader>
       <CardContent>
         <div v-if="csv.customerGroups.value.length === 0" class="text-sm text-muted-foreground">
@@ -273,7 +271,6 @@ const onSubmit = async () => {
     <Card>
       <CardHeader>
         <CardTitle>{{ t('admin.assign.step4') }}</CardTitle>
-        <CardDescription>{{ t('admin.assign.step4Desc', { n: previewRows.length }) }}</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="flex items-center gap-2">

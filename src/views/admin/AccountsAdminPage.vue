@@ -1025,7 +1025,8 @@ const goImport = () => router.push('/admin/accounts/import')
 
     <!-- ============ 父账号 表单 ============ -->
     <Dialog v-model:open="parentEditOpen"
-      :title="parentEditTarget ? `编辑主账号：${parentEditTarget.account_name}` : '新建主账号'">
+      :title="parentEditTarget ? `编辑主账号：${parentEditTarget.account_name}` : '新建主账号'"
+      description="主账号对应客户分类，所有子账号共享此主账号的白名单">
       <form class="space-y-3" @submit.prevent="submitParent">
         <div>
           <Label>主账号名 *</Label>
@@ -1108,7 +1109,8 @@ const goImport = () => router.push('/admin/accounts/import')
 
     <!-- ============ 分配库存组 ============ -->
     <Dialog v-model:open="assignOpen"
-      :title="assignTarget ? `分配库存组：${assignTarget.account_name}` : '批量分配库存组'">
+      :title="assignTarget ? `分配库存组：${assignTarget.account_name}` : '批量分配库存组'"
+      :description="assignTarget ? '勾选该主账号能看到的库存组（= 库存表 A 列客户组）' : `将 ${selected.size} 个主账号绑定到相同库存组`">
       <div v-if="allStockGroups.length === 0" class="text-sm text-muted-foreground">
         还没有库存组 —— 请先在"库存表上传"页面导入库存表
       </div>
@@ -1151,6 +1153,7 @@ const goImport = () => router.push('/admin/accounts/import')
     <!-- ============ 邀请链接 ============ -->
     <Dialog v-model:open="inviteOpen"
       :title="`${t('admin.invites.title')}：${inviteTarget?.account_name ?? ''}`"
+      description=""
       class="lg:!max-w-2xl">
       <div class="space-y-3">
 
@@ -1397,7 +1400,8 @@ const goImport = () => router.push('/admin/accounts/import')
 
     <!-- ============ 重置密码 ============ -->
     <Dialog v-model:open="resetOpen"
-      :title="`重置密码：${resetTarget?.account_name ?? ''}`">
+      :title="`重置密码：${resetTarget?.account_name ?? ''}`"
+      description="生成一个临时密码，请通过其他渠道（微信 / 电话）告知客户。客户首次登录后应自行修改。">
       <div class="space-y-3">
         <div v-if="!resetTempPassword" class="flex justify-end gap-2 pt-2">
           <Button variant="outline" @click="resetOpen = false">取消</Button>

@@ -17,7 +17,6 @@ import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import CardDescription from '@/components/ui/CardDescription.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
 
@@ -135,7 +134,6 @@ const onFileSelected = async (e: Event) => {
               <Box class="h-5 w-5" />
               {{ t('admin.products.title') }}
             </CardTitle>
-            <CardDescription>{{ t('admin.products.desc') }}</CardDescription>
           </div>
           <Button variant="outline" size="sm" @click="load" :disabled="loading">
             <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />

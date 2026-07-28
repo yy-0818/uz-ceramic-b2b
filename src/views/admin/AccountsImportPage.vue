@@ -11,7 +11,6 @@ import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
-import CardDescription from '@/components/ui/CardDescription.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import Badge from '@/components/ui/Badge.vue'
 import { useAccounts, parseExcelRow, buildImportPreview, type ExcelRow, type ImportPreview } from '@/composables/useAccounts'
@@ -102,11 +101,6 @@ const reset = () => {
           <FileSpreadsheet class="h-5 w-5" />
           客户档案库导入
         </CardTitle>
-        <CardDescription>
-          上传 .xlsx（列：类别 / 税号 / 客户名称 / 账户（或「账户类型」）/ 状态）→
-          系统自动按"类别"建父账号，按"客户名称"建子账号，并写入客户组映射。
-          重复导入相同父不会重复建（按名称去重）。
-        </CardDescription>
       </CardHeader>
       <CardContent class="space-y-3">
         <div class="flex items-center gap-3 flex-wrap">
