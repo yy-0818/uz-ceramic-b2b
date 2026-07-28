@@ -199,6 +199,7 @@ export default {
       modelsUnit: 'моделей',
       colorsUnit: 'цветов',
       totalBoxes: 'Всего ящиков',
+      classification: 'Категория',
     },
     cart: {
       title: 'Корзина',

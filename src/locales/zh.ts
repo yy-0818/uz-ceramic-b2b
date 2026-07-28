@@ -198,6 +198,7 @@ export default {
       modelsUnit: '个型号',
       colorsUnit: '个色号',
       totalBoxes: '总箱数',
+      classification: '分类',
     },
     cart: {
       title: '购物车',

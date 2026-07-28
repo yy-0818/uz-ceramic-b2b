@@ -18,6 +18,7 @@ import TableRow from '@/components/ui/TableRow.vue'
 import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
 import TableEmpty from '@/components/ui/TableEmpty.vue'
+import Skeleton from '@/components/ui/Skeleton.vue'
 
 import { useOrders, type OrderRow } from '@/composables/useOrders'
 
@@ -92,7 +93,18 @@ const totalM2 = (o: OrderRow) =>
                 </Button>
               </TableCell>
             </TableRow>
-            <TableEmpty v-if="ordersApi.items.value.length === 0">
+            <TableEmpty v-if="ordersApi.loading.value && ordersApi.items.value.length === 0">
+              <div class="space-y-2 py-2">
+                <div v-for="i in 5" :key="i" class="flex items-center gap-3">
+                  <Skeleton class="h-4 w-24" />
+                  <Skeleton class="h-3 w-28" />
+                  <Skeleton class="h-3 w-16" />
+                  <Skeleton class="h-3 w-20" />
+                  <Skeleton class="h-8 w-20 rounded-md" />
+                </div>
+              </div>
+            </TableEmpty>
+            <TableEmpty v-else-if="ordersApi.items.value.length === 0">
               {{ t('warehouse.empty') }}
             </TableEmpty>
           </TableBody>

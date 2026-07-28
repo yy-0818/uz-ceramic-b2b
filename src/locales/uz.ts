@@ -199,6 +199,7 @@ export default {
       modelsUnit: 'ta model',
       colorsUnit: 'ta rang',
       totalBoxes: 'Jami qutilar',
+      classification: 'Turkum',
     },
     cart: {
       title: 'Savatcha',

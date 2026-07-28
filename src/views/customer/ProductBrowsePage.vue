@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ChevronLeft, Search, Plus, Minus, ShoppingCart, Package } from 'lucide-vue-next'
+import { ChevronLeft, Search, Plus, Minus, ShoppingCart, Package, ImageOff, Box, Tag, Hash } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -18,6 +18,8 @@ import CardContent from '@/components/ui/CardContent.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import CategoryCardSkeleton from '@/components/ui/CategoryCardSkeleton.vue'
+import ModelCardSkeleton from '@/components/ui/ModelCardSkeleton.vue'
 
 import { useAccountProducts } from '@/composables/useAccountProducts'
 import { useProducts, type ProductWithColors } from '@/composables/useProducts'
@@ -118,16 +120,46 @@ const selectedModel = ref<ProductWithColors | null>(null)
 const search = ref('')
 const showCart = ref(false)
 
-// 第 1 级：分类列表（按白名单聚合）
+// 第 1 级：分类列表（按白名单聚合：型号数 / 箱数 / 色号数）
 const categoriesWithCount = computed(() => {
-  const map = new Map<string, number>()
+  type Agg = { models: number; boxes: number; colors: number }
+  const map = new Map<string, Agg>()
+  const fullMap = new Map<string, ProductWithColors>()
+  for (const p of allProducts.value) fullMap.set(p.product_id, p)
   for (const row of ap.items.value) {
     if (!row.product) continue
     const cat = row.product.category
-    map.set(cat, (map.get(cat) ?? 0) + 1)
+    const full = fullMap.get(row.product.id)
+    let agg = map.get(cat)
+    if (!agg) {
+      agg = { models: 0, boxes: 0, colors: 0 }
+      map.set(cat, agg)
+    }
+    agg.models += 1
+    agg.boxes += row.stock_level_1 + row.stock_level_2
+    agg.colors += (full?.colors ?? []).length
   }
-  return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b))
+  return Array.from(map.entries())
+    .map(([cat, agg]) => ({ cat, ...agg }))
+    .sort((a, b) => a.cat.localeCompare(b.cat))
 })
+
+// 分类卡片色板（基于 cat 名称 hash 选 preset，避免所有卡都一个色）
+const PALETTES = [
+  { bg: 'from-blue-500/15 to-blue-500/5',     fg: 'text-blue-600 dark:text-blue-400',     ring: 'hover:border-blue-500/40',     glow: 'group-hover:shadow-blue-500/10' },
+  { bg: 'from-emerald-500/15 to-emerald-500/5', fg: 'text-emerald-600 dark:text-emerald-400', ring: 'hover:border-emerald-500/40', glow: 'group-hover:shadow-emerald-500/10' },
+  { bg: 'from-amber-500/15 to-amber-500/5',   fg: 'text-amber-600 dark:text-amber-400',   ring: 'hover:border-amber-500/40',   glow: 'group-hover:shadow-amber-500/10' },
+  { bg: 'from-rose-500/15 to-rose-500/5',     fg: 'text-rose-600 dark:text-rose-400',     ring: 'hover:border-rose-500/40',     glow: 'group-hover:shadow-rose-500/10' },
+  { bg: 'from-violet-500/15 to-violet-500/5', fg: 'text-violet-600 dark:text-violet-400', ring: 'hover:border-violet-500/40', glow: 'group-hover:shadow-violet-500/10' },
+  { bg: 'from-cyan-500/15 to-cyan-500/5',     fg: 'text-cyan-600 dark:text-cyan-400',     ring: 'hover:border-cyan-500/40',     glow: 'group-hover:shadow-cyan-500/10' },
+  { bg: 'from-orange-500/15 to-orange-500/5', fg: 'text-orange-600 dark:text-orange-400', ring: 'hover:border-orange-500/40', glow: 'group-hover:shadow-orange-500/10' },
+  { bg: 'from-teal-500/15 to-teal-500/5',     fg: 'text-teal-600 dark:text-teal-400',     ring: 'hover:border-teal-500/40',     glow: 'group-hover:shadow-teal-500/10' },
+] as const
+const paletteFor = (cat: string) => {
+  let h = 0
+  for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) >>> 0
+  return PALETTES[h % PALETTES.length]
+}
 
 // 第 2 级：选定分类下的型号列表（join 色号视图）
 const modelsInCategory = computed(() => {
@@ -138,8 +170,17 @@ const modelsInCategory = computed(() => {
     if (row.product.category !== selectedCategory.value) continue
     apMap.set(row.product.id, row.stock_level_1 + row.stock_level_2)
   }
+  const q = search.value.trim().toLowerCase()
   return allProducts.value
     .filter((p) => p.category === selectedCategory.value && apMap.has(p.product_id))
+    .filter((p) => {
+      if (!q) return true
+      return (
+        p.model.toLowerCase().includes(q) ||
+        (p.remark ?? '').toLowerCase().includes(q) ||
+        (p.colors ?? []).some((c) => c.color_code.toLowerCase().includes(q))
+      )
+    })
     .map((p) => ({
       ...p,
       availableBoxes: apMap.get(p.product_id) ?? 0,
@@ -224,9 +265,14 @@ const cartTotalM2 = computed(() => cart.totalM2())
       <Input v-model="search" :placeholder="t('customer.catalog.search')" class="pl-9 h-10" />
     </div>
 
-    <!-- 加载中 -->
-    <div v-if="loading" class="text-center text-sm text-muted-foreground py-10">
-      {{ t('common.loading') }}
+    <!-- 加载中：按当前 view 显示不同骨架 -->
+    <div v-if="loading" class="space-y-4">
+      <div v-if="view === 'categories' || ap.loading.value" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <CategoryCardSkeleton v-for="i in 6" :key="i" />
+      </div>
+      <div v-else class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
+        <ModelCardSkeleton v-for="i in 8" :key="i" />
+      </div>
     </div>
 
     <!-- 第 1 级：分类网格 -->
@@ -252,124 +298,234 @@ const cartTotalM2 = computed(() => cart.totalM2())
           <p class="mt-1">请联系管理员把客户组关联到你的账号，或者让你被加入某些商品的白名单。</p>
         </div>
       </div>
-      <div v-else class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+      <div v-else class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <Card
-          v-for="[cat, count] in categoriesWithCount"
+          v-for="{ cat, models, boxes, colors } in categoriesWithCount"
           :key="cat"
-          class="hover:bg-muted/50 transition cursor-pointer"
+          :class="[
+            'group cursor-pointer overflow-hidden border-2 transition-all active:scale-[0.98]',
+            paletteFor(cat).ring,
+            'hover:shadow-md',
+            paletteFor(cat).glow,
+          ].join(' ')"
           @click="openCategory(cat)"
         >
-          <CardContent class="p-3 text-center">
-            <div class="text-lg font-mono font-semibold">{{ cat }}</div>
-            <div class="text-xs text-muted-foreground mt-1">
-              {{ count }} {{ t('customer.catalog.modelsUnit') }}
+          <CardContent class="flex items-center gap-3 pt-5 pb-4 px-4">
+            <!-- Icon 区（带色板渐变） -->
+            <div
+              class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br transition-transform duration-200 group-hover:scale-105"
+              :class="paletteFor(cat).bg"
+            >
+              <Tag class="h-5 w-5" :class="paletteFor(cat).fg" />
+            </div>
+
+            <!-- 文本信息 -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-1.5">
+                <span class="truncate font-mono text-base font-bold tracking-tight" :title="cat">
+                  {{ cat }}
+                </span>
+                <span class="text-[11px] text-muted-foreground shrink-0">
+                  {{ t('customer.catalog.classification') || '分类' }}
+                </span>
+              </div>
+              <!-- 元信息：型号 / 箱数 / 色号 -->
+              <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10.5px] font-medium text-foreground">
+                  <Package class="h-3 w-3 text-muted-foreground" />
+                  {{ models }} {{ t('customer.catalog.modelsUnit') }}
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+                  <Box class="h-3 w-3" />
+                  {{ boxes.toLocaleString() }} {{ t('customer.catalog.box') }}
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10.5px] font-medium text-blue-700 dark:text-blue-400">
+                  <Hash class="h-3 w-3" />
+                  {{ colors }} {{ t('customer.catalog.colorsUnit') }}
+                </span>
+              </div>
+            </div>
+
+            <!-- 右箭头 -->
+            <ChevronLeft
+              class="h-4 w-4 shrink-0 rotate-180 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-foreground"
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+
+    <!-- 第 2 级：型号卡片网格（含图片） -->
+    <div v-else-if="view === 'models'">
+      <!-- 空状态：搜索无果 -->
+      <div v-if="modelsInCategory.length === 0" class="py-12 text-center">
+        <div class="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-muted text-muted-foreground">
+          <Search class="h-5 w-5" />
+        </div>
+        <p class="text-sm text-muted-foreground">
+          {{ search ? `没找到「${search}」相关型号` : t('customer.catalog.empty') }}
+        </p>
+      </div>
+      <div v-else class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
+        <Card
+          v-for="p in modelsInCategory"
+          :key="p.product_id"
+          class="group cursor-pointer overflow-hidden transition-all hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 active:scale-[0.98]"
+          @click="openModel(p)"
+        >
+          <!-- 图片区 -->
+          <div class="relative aspect-square w-full overflow-hidden bg-gradient-to-br from-muted to-muted/40">
+            <img
+              v-if="p.image_url"
+              :src="p.image_url"
+              :alt="p.model"
+              class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center">
+              <div class="flex flex-col items-center gap-1 text-muted-foreground/50">
+                <Package class="h-7 w-7" />
+                <span class="text-[10px]">暂无图片</span>
+              </div>
+            </div>
+            <!-- 角标：型号分类 -->
+            <Badge class="absolute left-1.5 top-1.5 bg-background/85 px-1.5 py-0.5 text-[10px] text-foreground backdrop-blur">
+              {{ p.category }}
+            </Badge>
+          </div>
+
+          <!-- 信息区 -->
+          <CardContent class="space-y-1 p-2.5">
+            <p class="truncate font-mono text-sm font-semibold leading-tight" :title="p.model">
+              {{ p.model }}
+            </p>
+            <p v-if="p.remark" class="line-clamp-1 text-[11px] text-muted-foreground" :title="p.remark">
+              {{ p.remark }}
+            </p>
+            <div class="flex items-center justify-between gap-1 pt-0.5 text-[11px]">
+              <span class="text-muted-foreground">
+                {{ p.conversion_rate }} <span class="text-[10px]">м²/ящ</span>
+              </span>
+              <span
+                class="inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 font-mono font-semibold"
+                :class="p.availableBoxes > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-muted text-muted-foreground'"
+              >
+                <Box class="h-3 w-3" />
+                {{ p.availableBoxes }}
+              </span>
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
 
-    <!-- 第 2 级：型号列表 -->
-    <ul v-else-if="view === 'models'" class="space-y-2">
-      <li v-for="p in modelsInCategory" :key="p.product_id">
-        <Card
-          class="overflow-hidden hover:bg-muted/30 cursor-pointer"
-          @click="openModel(p)"
-        >
-          <CardContent class="p-3">
-            <div class="flex items-start gap-3">
-              <div class="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0">
-                <Package class="h-4 w-4 text-muted-foreground" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <p class="font-mono font-medium truncate">{{ p.model }}</p>
-                  <Badge variant="outline" class="shrink-0 text-[10px]">{{ p.category }}</Badge>
-                </div>
-                <p v-if="p.remark" class="text-xs text-muted-foreground truncate">{{ p.remark }}</p>
-                <div class="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                  <span>{{ p.conversion_rate }} м²/ящ</span>
-                  <span>
-                    {{ t('customer.catalog.stock') }}:
-                    <span class="font-medium text-foreground">{{ p.availableBoxes }}</span>
-                  </span>
-                  <span v-if="p.colors?.length" class="ml-auto text-emerald-600">
-                    {{ p.colors.length }} {{ t('customer.catalog.colorsUnit') }}
-                  </span>
-                </div>
+    <!-- 第 3 级：型号详情（hero + 色号卡片） -->
+    <div v-else-if="view === 'colors' && selectedModel">
+      <!-- Hero：型号大图 + 信息 -->
+      <Card class="overflow-hidden">
+        <div class="relative">
+          <!-- 大图 / 占位 -->
+          <div class="aspect-[2/1] w-full overflow-hidden bg-gradient-to-br from-muted via-muted/60 to-primary/5 sm:aspect-[2.5/1]">
+            <img
+              v-if="selectedModel.image_url"
+              :src="selectedModel.image_url"
+              :alt="selectedModel.model"
+              class="h-full w-full object-cover"
+            />
+            <div v-else class="flex h-full w-full items-center justify-center">
+              <div class="flex flex-col items-center gap-2 text-muted-foreground/40">
+                <ImageOff class="h-12 w-12" />
+                <span class="text-xs">暂无产品图</span>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      </li>
-      <li v-if="modelsInCategory.length === 0" class="text-center text-sm text-muted-foreground py-10">
-        {{ t('customer.catalog.empty') }}
-      </li>
-    </ul>
+          </div>
+          <!-- 角标 -->
+          <Badge class="absolute left-3 top-3 bg-background/90 px-2 py-0.5 text-xs backdrop-blur">
+            {{ selectedModel.category }}
+          </Badge>
+        </div>
 
-    <!-- 第 3 级：色号列表 -->
-    <div v-else-if="view === 'colors' && selectedModel">
-      <Card class="mb-3">
-        <CardContent class="p-3">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="font-mono font-semibold text-lg">{{ selectedModel.model }}</p>
-              <p class="text-xs text-muted-foreground">
-                {{ selectedModel.category }} ·
-                {{ selectedModel.conversion_rate }} м²/ящ ·
-                {{ t('customer.catalog.totalBoxes') }}: {{ selectedModel.total_boxes_level1 + selectedModel.total_boxes_level2 }}
+        <CardContent class="space-y-2 p-4">
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h2 class="truncate font-mono text-xl font-semibold leading-tight" :title="selectedModel.model">
+                {{ selectedModel.model }}
+              </h2>
+              <p v-if="selectedModel.remark" class="mt-0.5 text-xs text-muted-foreground">
+                {{ selectedModel.remark }}
               </p>
             </div>
-            <Badge>{{ colorsInModel.length }} {{ t('customer.catalog.colorsUnit') }}</Badge>
+            <Badge variant="secondary" class="shrink-0">
+              {{ colorsInModel.length }} {{ t('customer.catalog.colorsUnit') }}
+            </Badge>
+          </div>
+          <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <span class="inline-flex items-center gap-1 text-muted-foreground">
+              <Box class="h-3.5 w-3.5" />
+              {{ t('customer.catalog.totalBoxes') }}:
+              <b class="font-mono text-foreground">{{ selectedModel.total_boxes_level1 + selectedModel.total_boxes_level2 }}</b>
+            </span>
+            <span class="inline-flex items-center gap-1 text-muted-foreground">
+              <Hash class="h-3.5 w-3.5" />
+              {{ selectedModel.conversion_rate }} м²/ящ
+            </span>
           </div>
         </CardContent>
       </Card>
 
-      <ul class="space-y-2">
-        <li v-for="c in colorsInModel" :key="c.color_code + c.stock_level">
-          <Card>
-            <CardContent class="p-3">
-              <div class="flex items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono font-semibold text-lg">{{ c.color_code }}</span>
-                    <Badge variant="outline" class="text-[10px]">
-                      L{{ c.stock_level }}
-                    </Badge>
-                  </div>
-                  <p class="text-xs text-muted-foreground mt-1">
-                    {{ t('customer.catalog.box') }}: {{ c.boxes }} ·
-                    ≈ {{ fmtM2(c.boxes * selectedModel.conversion_rate) }}
-                  </p>
-                </div>
-                <div class="flex items-center gap-1 shrink-0">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    class="h-9 w-9"
-                    :disabled="cart.qtyOf(selectedModel.product_id) === 0"
-                    @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
-                  >
-                    <Minus class="h-4 w-4" />
-                  </Button>
-                  <div class="w-10 text-center font-medium">
-                    {{ cart.qtyOf(selectedModel.product_id) }}
-                  </div>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    class="h-9 w-9"
-                    :disabled="cart.qtyOf(selectedModel.product_id) >= c.boxes"
-                    @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
-                  >
-                    <Plus class="h-4 w-4" />
-                  </Button>
-                </div>
+      <!-- 色号网格 -->
+      <div v-if="colorsInModel.length === 0" class="mt-4 rounded-lg border border-dashed py-10 text-center text-sm text-muted-foreground">
+        暂无在售色号
+      </div>
+      <div v-else class="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <Card
+          v-for="c in colorsInModel"
+          :key="c.color_code + c.stock_level"
+          class="overflow-hidden transition-all hover:border-primary/40 hover:shadow-sm"
+          :class="cart.qtyOf(selectedModel.product_id) > 0 ? 'border-primary/40 bg-primary/5' : ''"
+        >
+          <CardContent class="p-2.5">
+            <div class="flex items-start justify-between gap-1">
+              <div class="min-w-0">
+                <span class="font-mono text-base font-bold">{{ c.color_code }}</span>
+                <Badge variant="outline" class="ml-1.5 h-4 px-1 text-[9px]">
+                  L{{ c.stock_level }}
+                </Badge>
               </div>
-            </CardContent>
-          </Card>
-        </li>
-      </ul>
+              <span
+                class="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-700"
+              >
+                {{ c.boxes }} {{ t('customer.catalog.box') }}
+              </span>
+            </div>
+            <p class="mt-0.5 text-[10px] text-muted-foreground">
+              ≈ {{ fmtM2(c.boxes * selectedModel.conversion_rate) }}
+            </p>
+            <div class="mt-2 flex items-center gap-1">
+              <Button
+                size="icon"
+                variant="outline"
+                class="h-7 w-7"
+                :disabled="cart.qtyOf(selectedModel.product_id) === 0"
+                @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
+              >
+                <Minus class="h-3.5 w-3.5" />
+              </Button>
+              <div class="flex h-7 flex-1 items-center justify-center rounded-md border bg-background font-mono text-sm font-semibold">
+                {{ cart.qtyOf(selectedModel.product_id) }}
+              </div>
+              <Button
+                size="icon"
+                class="h-7 w-7"
+                :disabled="cart.qtyOf(selectedModel.product_id) >= c.boxes"
+                @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
+              >
+                <Plus class="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
 
     <!-- 购物车抽屉 -->

@@ -15,7 +15,7 @@ import {
   Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
   Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
   MoreHorizontal, Folder, Check, Mail, KeyRound, Copy,
-  Database, CheckCircle2, Eye, EyeOff, Filter,
+  Database, CheckCircle2, Eye, EyeOff,
 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
@@ -28,6 +28,7 @@ import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
 import Dialog from '@/components/ui/Dialog.vue'
+import AccountRowSkeleton from '@/components/ui/AccountRowSkeleton.vue'
 
 import { useAccounts, type Account, type AccountType } from '@/composables/useAccounts'
 import { useStockGroups, type StockGroup } from '@/composables/useStockGroups'
@@ -147,6 +148,15 @@ const accountTypes: Array<{ value: AccountType; label: string; desc: string; cla
   { value: '2_cash',   label: '2 现金', desc: '现金客户',     class: 'bg-amber-100 text-amber-800 border-amber-200' },
   { value: '3_export', label: '3 出口', desc: '出口客户',     class: 'bg-violet-100 text-violet-800 border-violet-200' },
 ]
+const typeOptions = [
+  { value: 'all' as const, label: '全部' },
+  ...accountTypes.map(t => ({ value: t.value as 'all' | AccountType, label: t.label })),
+]
+const statusOptions = [
+  { value: 'all' as const, label: '全部' },
+  { value: 'active' as const, label: '活跃' },
+  { value: 'inactive' as const, label: '停用' },
+]
 const typeClass = (t: AccountType) => accountTypes.find((x) => x.value === t)?.class ?? ''
 
 const parentForm = ref({
@@ -255,6 +265,15 @@ const expandAll = () => {
 }
 const collapseAll = () => {
   expanded.value = {}
+}
+const allExpanded = computed(() => {
+  const list = filteredParents.value
+  if (list.length === 0) return false
+  return list.every(p => expanded.value[p.id])
+})
+const toggleExpandAll = () => {
+  if (allExpanded.value) collapseAll()
+  else expandAll()
 }
 
 // ============ 选择 ============
@@ -647,14 +666,16 @@ const goImport = () => router.push('/admin/accounts/import')
 <template>
   <div class="space-y-4">
     <!-- ============ 顶部标题 + 操作 ============ -->
-    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <h1 class="text-lg font-semibold flex items-center gap-2">
-        <Users class="h-4 w-4 text-muted-foreground" />
-        账号管理
-      </h1>
-      <div class="flex items-center gap-2">
+    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+      <div>
+        <h1 class="text-xl font-semibold flex items-center gap-2">
+          <Users class="h-5 w-5" />
+          账号管理
+        </h1>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" @click="load" :disabled="loading">
-          <RefreshCw class="h-4 w-4 sm:mr-1" :class="{ 'animate-spin': loading, 'hidden sm:inline': true }" />
+          <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
           <span class="hidden sm:inline">刷新</span>
         </Button>
         <Button size="sm" variant="outline" @click="goImport">
@@ -669,91 +690,79 @@ const goImport = () => router.push('/admin/accounts/import')
     </div>
 
     <!-- ============ KPI 卡片 ============ -->
-    <div class="grid grid-cols-4 gap-3">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
       <Card>
-        <CardContent class="px-3 py-3">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <p class="text-[11px] text-muted-foreground leading-none mb-1">主账号</p>
-              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.totalParents }}</p>
-            </div>
-            <Folder class="h-4 w-4 text-blue-500 shrink-0" />
+        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
+          <div>
+            <p class="text-xs text-muted-foreground mb-0.5">主账号</p>
+            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalParents }}</p>
           </div>
+          <Folder class="h-8 w-8 text-blue-400 shrink-0" />
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="px-3 py-3">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <p class="text-[11px] text-muted-foreground leading-none mb-1">活跃</p>
-              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.activeParents }}</p>
-            </div>
-            <CheckCircle2 class="h-4 w-4 text-emerald-500 shrink-0" />
+        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
+          <div>
+            <p class="text-xs text-muted-foreground mb-0.5">活跃</p>
+            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.activeParents }}</p>
           </div>
+          <CheckCircle2 class="h-8 w-8 text-emerald-500 shrink-0" />
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="px-3 py-3">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <p class="text-[11px] text-muted-foreground leading-none mb-1">子账号</p>
-              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.totalSubs }}</p>
-            </div>
-            <Users class="h-4 w-4 text-violet-500 shrink-0" />
+        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
+          <div>
+            <p class="text-xs text-muted-foreground mb-0.5">子账号</p>
+            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalSubs }}</p>
           </div>
+          <Users class="h-8 w-8 text-violet-500 shrink-0" />
         </CardContent>
       </Card>
       <Card>
-        <CardContent class="px-3 py-3">
-          <div class="flex items-center gap-2">
-            <div class="flex-1 min-w-0">
-              <p class="text-[11px] text-muted-foreground leading-none mb-1">已停用</p>
-              <p class="text-3xl font-semibold tabular-nums leading-none">{{ summary.inactiveSubs }}</p>
-            </div>
-            <EyeOff class="h-4 w-4 text-gray-400 shrink-0" />
+        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
+          <div>
+            <p class="text-xs text-muted-foreground mb-0.5">已停用</p>
+            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.inactiveSubs }}</p>
           </div>
+          <EyeOff class="h-8 w-8 text-gray-400 shrink-0" />
         </CardContent>
       </Card>
     </div>
 
-    <!-- ============ 搜索 + 过滤 ============ -->
+    <!-- ============ 搜索 + 展开折叠 + 过滤 ============ -->
     <Card>
       <CardContent class="py-3 space-y-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="relative flex-1 min-w-[160px] sm:min-w-[200px]">
+        <!-- 搜索栏 + 展开折叠 合并一行 -->
+        <div class="flex items-center gap-2">
+          <div class="relative flex-1">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="search" placeholder="搜索主账号 / 子账号 / 税号" class="pl-9 h-9" />
+            <Input v-model="search" placeholder="搜索账号 / 税号" class="pl-9 h-8 text-sm" />
           </div>
-          <Button size="sm" variant="ghost" @click="expandAll" class="text-xs px-2 sm:px-3" title="展开全部">
-            <ChevronDown class="h-3 w-3 sm:mr-1" />
-            <span class="hidden sm:inline">展开</span>
-          </Button>
-          <Button size="sm" variant="ghost" @click="collapseAll" class="text-xs px-2 sm:px-3" title="折叠全部">
-            <ChevronRight class="h-3 w-3 sm:mr-1" />
-            <span class="hidden sm:inline">折叠</span>
+          <Button size="sm" variant="ghost" @click="toggleExpandAll" class="shrink-0" :title="allExpanded ? '折叠全部' : '展开全部'">
+            <ChevronDown v-if="!allExpanded" class="h-4 w-4" />
+            <ChevronRight v-else class="h-4 w-4" />
           </Button>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="flex items-center gap-1 text-xs text-muted-foreground">
-            <Filter class="h-3 w-3" />类型
+        <div class="flex flex-wrap items-center gap-1.5">
+          <!-- 类型：分段控件 -->
+          <div class="inline-flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
+            <span class="px-2 text-muted-foreground">类型</span>
+            <button v-for="t in typeOptions" :key="t.value"
+              type="button"
+              :class="['px-2 h-6 rounded-sm transition-colors', typeFilter === t.value ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground']"
+              @click="typeFilter = t.value">
+              {{ t.label }}
+            </button>
           </div>
-          <div class="flex gap-1">
-            <Button v-for="t in ['all','1_public','2_cash','3_export']" :key="t"
-              size="sm" :variant="typeFilter === t ? 'default' : 'outline'" @click="typeFilter = t as any"
-              class="h-7 text-xs">
-              {{ t === 'all' ? '全部' : accountTypes.find(x => x.value === t)?.label }}
-            </Button>
-          </div>
-          <div class="w-px h-4 bg-border mx-1" />
-          <div class="flex items-center gap-1 text-xs text-muted-foreground">
-            <Filter class="h-3 w-3" />状态
-          </div>
-          <div class="flex gap-1">
-            <Button v-for="s in ['all','active','inactive'] as const" :key="s"
-              size="sm" :variant="statusFilter === s ? 'default' : 'outline'" @click="statusFilter = s"
-              class="h-7 text-xs">
-              {{ s === 'all' ? '全部' : s === 'active' ? '活跃' : '停用' }}
-            </Button>
+          <!-- 状态：分段控件 -->
+          <div class="inline-flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
+            <span class="px-2 text-muted-foreground">状态</span>
+            <button v-for="s in statusOptions" :key="s.value"
+              type="button"
+              :class="['px-2 h-6 rounded-sm transition-colors', statusFilter === s.value ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground']"
+              @click="statusFilter = s.value">
+              {{ s.label }}
+            </button>
           </div>
         </div>
         <div v-if="error" class="text-sm text-red-600 border border-red-200 bg-red-50 rounded-md p-3">
@@ -852,8 +861,8 @@ const goImport = () => router.push('/admin/accounts/import')
     </Transition>
 
     <!-- ============ 加载 / 空 ============ -->
-    <div v-if="loading && parents.length === 0" class="text-center text-sm text-muted-foreground py-10">
-      <Loader2 class="h-5 w-5 mx-auto mb-2 animate-spin" />加载中...
+    <div v-if="loading && parents.length === 0" class="space-y-2">
+      <AccountRowSkeleton v-for="i in 5" :key="i" />
     </div>
     <div v-else-if="filteredParents.length === 0" class="text-center py-12 border border-dashed rounded-lg">
       <Database class="h-10 w-10 mx-auto mb-2 text-muted-foreground/50" />
@@ -1248,20 +1257,9 @@ const goImport = () => router.push('/admin/accounts/import')
         <!-- ---------- Tab：历史记录 ---------- -->
         <div v-if="inviteTab === 'history'">
 
-          <!-- 加载中骨架：移动端友好，不依赖 table 列 -->
-          <div v-if="invMgr.loading.value" class="space-y-3 py-2">
-            <div v-for="i in 4" :key="i" class="border rounded-md p-3 space-y-2 animate-pulse">
-              <div class="flex justify-between">
-                <div class="h-3 bg-muted rounded w-24"></div>
-                <div class="h-5 bg-muted rounded w-16"></div>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <div class="h-3 bg-muted rounded w-16"></div>
-                <div class="h-3 bg-muted rounded w-16"></div>
-                <div class="h-3 bg-muted rounded w-16"></div>
-                <div class="h-3 bg-muted rounded w-16"></div>
-              </div>
-            </div>
+          <!-- 加载中骨架 -->
+          <div v-if="invMgr.loading.value" class="space-y-2 py-2">
+            <AccountRowSkeleton v-for="i in 4" :key="i" />
           </div>
 
           <!-- 有数据：统计 + 列表 -->
