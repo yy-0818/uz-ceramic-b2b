@@ -6,7 +6,7 @@
   - 子 CRUD + 标记主联系 + 状态切换
   - 父 → 库存分类（12J/12P/12F/12K...）分配
   - "上传档案库" 跳到导入页
-  v2: 响应式更紧凑、KPI 卡片、分页、列对齐、暗色适配
+  - 5 个对话框已抽到 ./accounts-admin/*.vue；本页只剩列表 + 控制器
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
@@ -26,24 +26,27 @@ import CardContent from '@/components/ui/CardContent.vue'
 import CardDescription from '@/components/ui/CardDescription.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Input from '@/components/ui/Input.vue'
-import Label from '@/components/ui/Label.vue'
-import Dialog from '@/components/ui/Dialog.vue'
 import AccountRowSkeleton from '@/components/ui/AccountRowSkeleton.vue'
 
 import { useAccounts, type Account, type AccountType } from '@/composables/useAccounts'
 import { useStockGroups, type StockGroup } from '@/composables/useStockGroups'
 import { useCustomerAuth } from '@/composables/useCustomerAuth'
 import { useCustomerInvites } from '@/composables/useCustomerInvites'
-import { useI18n } from '@/lib/i18n'
-import type { Locale } from '@/lib/i18n'
+
+// 拆出的对话框组件
+import ParentEditDialog from './accounts-admin/ParentEditDialog.vue'
+import SubEditDialog from './accounts-admin/SubEditDialog.vue'
+import AssignStockDialog from './accounts-admin/AssignStockDialog.vue'
+import InviteDialog from './accounts-admin/InviteDialog.vue'
+import ResetPasswordDialog from './accounts-admin/ResetPasswordDialog.vue'
 
 const router = useRouter()
 const acc = useAccounts()
 const stockGroups = useStockGroups()
 const customerAuth = useCustomerAuth()
 const invMgr = useCustomerInvites()
-const { t, locale, tForLocale } = useI18n()
 
+// ============ 主列表状态 ============
 const parents = ref<Account[]>([])
 const subsByParent = ref<Record<string, Account[]>>({})
 const loading = ref(false)
@@ -55,59 +58,37 @@ const statusFilter = ref<'all' | 'active' | 'inactive'>('all')
 const page = ref(1)
 const PAGE_SIZE = 12
 
-// 选择（批量操作用）
 const selected = ref<Set<string>>(new Set())
 const lastSelectedId = ref<string | null>(null)
 
-// 菜单面板（"更多"下拉）
+// 行菜单
 const openMenuId = ref<string | null>(null)
-// 菜单 fixed 定位坐标：基于 ⋯ 按钮的 getBoundingClientRect
-const menuPos = ref({ top: 0, left: 0, width: 208 }) // 208 = w-52
-
+const menuPos = ref({ top: 0, left: 0, width: 208 })
 const triggerRefs = ref<Record<string, HTMLElement | null>>({})
 const setTriggerRef = (id: string, el: any) => {
-  // el 可能为 component instance → 用 $el
   triggerRefs.value[id] = el?.$el ?? el
 }
-
 const toggleMenu = (id: string) => {
-  if (openMenuId.value === id) {
-    openMenuId.value = null
-    return
-  }
+  if (openMenuId.value === id) { openMenuId.value = null; return }
   openMenuId.value = id
-  // 计算 fixed 坐标：放在按钮下方、右对齐
   const btn = triggerRefs.value[id]
   if (btn) {
     const r = btn.getBoundingClientRect()
-    menuPos.value = {
-      top: r.bottom + 4,         // mt-1
-      left: r.right - 208,       // right-0
-      width: 208,
-    }
+    menuPos.value = { top: r.bottom + 4, left: r.right - 208, width: 208 }
   }
 }
 const closeMenu = () => { openMenuId.value = null }
-
-// 当前打开菜单对应的主账号行（给 Teleport 菜单渲染用）
 const currentMenuParent = computed(() =>
   openMenuId.value ? pagedParents.value.find(p => p.id === openMenuId.value) ?? null : null,
 )
-
-// 移动端判断：< 640px（sm 断点）把行内按钮折叠进 ···
 const isMobileMenu = ref(false)
 const mql = typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)') : null
 const syncMobile = () => { isMobileMenu.value = !!mql?.matches }
 
-// 全局：Esc 关闭 + 外点关闭 + 滚动/resize 重算坐标
-const onKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') closeMenu()
-}
+const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu() }
 const onDocClick = (e: MouseEvent) => {
   if (!openMenuId.value) return
-  const target = e.target as HTMLElement
-  // 点击下拉触发按钮或菜单本体时由 @click.stop 拦截
-  if (target.closest('[data-row-menu]')) return
+  if ((e.target as HTMLElement).closest('[data-row-menu]')) return
   closeMenu()
 }
 const reposition = () => {
@@ -115,63 +96,41 @@ const reposition = () => {
   const btn = triggerRefs.value[openMenuId.value]
   if (!btn) return
   const r = btn.getBoundingClientRect()
-  menuPos.value = {
-    top: r.bottom + 4,
-    left: r.right - 208,
-    width: 208,
-  }
+  menuPos.value = { top: r.bottom + 4, left: r.right - 208, width: 208 }
 }
 
-// dialogs
+// ============ Dialog 控制器状态 ============
 const parentEditOpen = ref(false)
 const parentEditTarget = ref<Account | null>(null)
+
 const subEditOpen = ref(false)
 const subEditTarget = ref<Account | null>(null)
+const subEditDefaultParentId = ref('')
+const subEditDefaultType = ref<AccountType>('1_public')
+
 const assignOpen = ref(false)
 const assignTarget = ref<Account | null>(null)
-const assignCategoriesState = ref<string[]>([])
+const assignInitialCodes = ref<string[]>([])
+const assignBatchCount = ref(0)
 const allStockGroups = ref<StockGroup[]>([])
+
 const inviteOpen = ref(false)
 const inviteTarget = ref<Account | null>(null)
 const inviteResult = ref<{
-  url: string
-  loginEmail: string
-  expiresAt: string
-  token: string
+  url: string; loginEmail: string; expiresAt: string; token: string
 } | null>(null)
+
 const resetOpen = ref(false)
 const resetTarget = ref<Account | null>(null)
 const resetTempPassword = ref<string | null>(null)
 
+// ============ 常量 ============
 const accountTypes: Array<{ value: AccountType; label: string; desc: string; class: string }> = [
   { value: '1_public', label: '1 公户', desc: '对公大客户', class: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: '2_cash',   label: '2 现金', desc: '现金客户',     class: 'bg-amber-100 text-amber-800 border-amber-200' },
-  { value: '3_export', label: '3 出口', desc: '出口客户',     class: 'bg-violet-100 text-violet-800 border-violet-200' },
-]
-const typeOptions = [
-  { value: 'all' as const, label: '全部' },
-  ...accountTypes.map(t => ({ value: t.value as 'all' | AccountType, label: t.label })),
-]
-const statusOptions = [
-  { value: 'all' as const, label: '全部' },
-  { value: 'active' as const, label: '活跃' },
-  { value: 'inactive' as const, label: '停用' },
+  { value: '2_cash',   label: '2 现金', desc: '现金客户',   class: 'bg-amber-100 text-amber-800 border-amber-200' },
+  { value: '3_export', label: '3 出口', desc: '出口客户',   class: 'bg-violet-100 text-violet-800 border-violet-200' },
 ]
 const typeClass = (t: AccountType) => accountTypes.find((x) => x.value === t)?.class ?? ''
-
-const parentForm = ref({
-  account_name: '',
-  account_type: '1_public' as AccountType,
-  login_email: '',
-})
-const subForm = ref({
-  parent_id: '',
-  account_name: '',
-  account_type: '1_public' as AccountType,
-  inn: '',
-  is_main: false,
-  status: 'active' as 'active' | 'inactive',
-})
 
 // ============ 数据加载 ============
 const load = async () => {
@@ -194,7 +153,6 @@ const load = async () => {
 }
 
 onMounted(() => {
-  // 恢复展开状态
   try {
     const saved = JSON.parse(localStorage.getItem('admin.accounts.expanded') || '{}')
     expanded.value = saved
@@ -247,12 +205,7 @@ const summary = computed(() => {
   const totalSubs = Object.values(subsByParent.value).reduce((s, arr) => s + arr.length, 0)
   const activeParents = parents.value.filter((p) => p.status === 'active').length
   const inactiveSubs = Object.values(subsByParent.value).flat().filter((s) => s.status === 'inactive').length
-  return {
-    totalParents: parents.value.length,
-    activeParents,
-    totalSubs,
-    inactiveSubs,
-  }
+  return { totalParents: parents.value.length, activeParents, totalSubs, inactiveSubs }
 })
 
 const toggleExpand = (id: string) => {
@@ -263,24 +216,17 @@ const expandAll = () => {
   for (const p of filteredParents.value) next[p.id] = true
   expanded.value = next
 }
-const collapseAll = () => {
-  expanded.value = {}
-}
+const collapseAll = () => { expanded.value = {} }
 const allExpanded = computed(() => {
   const list = filteredParents.value
-  if (list.length === 0) return false
-  return list.every(p => expanded.value[p.id])
+  return list.length > 0 && list.every(p => expanded.value[p.id])
 })
-const toggleExpandAll = () => {
-  if (allExpanded.value) collapseAll()
-  else expandAll()
-}
+const toggleExpandAll = () => allExpanded.value ? collapseAll() : expandAll()
 
 // ============ 选择 ============
 const toggleSelect = (id: string, shift: boolean) => {
   const s = new Set(selected.value)
   if (shift && lastSelectedId.value) {
-    // 范围选择
     const ids = pagedParents.value.map((p) => p.id)
     const a = ids.indexOf(lastSelectedId.value)
     const b = ids.indexOf(id)
@@ -288,11 +234,8 @@ const toggleSelect = (id: string, shift: boolean) => {
       const [lo, hi] = a < b ? [a, b] : [b, a]
       for (let i = lo; i <= hi; i++) s.add(ids[i])
     }
-  } else if (s.has(id)) {
-    s.delete(id)
-  } else {
-    s.add(id)
-  }
+  } else if (s.has(id)) s.delete(id)
+  else s.add(id)
   selected.value = s
   lastSelectedId.value = id
 }
@@ -304,49 +247,33 @@ const toggleSelectPage = () => {
   else ids.forEach((id) => s.add(id))
   selected.value = s
 }
-const clearSelection = () => {
-  selected.value = new Set()
-  lastSelectedId.value = null
-}
+const clearSelection = () => { selected.value = new Set(); lastSelectedId.value = null }
 
-// ============ 父 CRUD ============
+// ============ 父：open + submit ============
 const openParentCreate = () => {
   parentEditTarget.value = null
-  parentForm.value = { account_name: '', account_type: '1_public', login_email: '' }
   parentEditOpen.value = true
 }
 const openParentEdit = (p: Account) => {
   parentEditTarget.value = p
-  parentForm.value = {
-    account_name: p.account_name,
-    account_type: p.account_type,
-    login_email: (p as any).login_email ?? '',
-  }
   openMenuId.value = null
   parentEditOpen.value = true
 }
-const submitParent = async () => {
-  if (!parentForm.value.account_name) {
-    error.value = '请填写主账号名'
-    return
-  }
-  if (parentForm.value.login_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentForm.value.login_email)) {
-    error.value = '登录邮箱格式不正确'
-    return
-  }
+const submitParent = async ({ form }: { form: { account_name: string; account_type: AccountType; login_email: string } }) => {
   loading.value = true
+  error.value = null
   try {
     if (parentEditTarget.value) {
       await acc.updateParent(parentEditTarget.value.id, {
-        account_name: parentForm.value.account_name,
-        account_type: parentForm.value.account_type,
-        login_email: parentForm.value.login_email || null,
+        account_name: form.account_name,
+        account_type: form.account_type,
+        login_email: form.login_email || null,
       } as any)
     } else {
       await acc.createParent({
-        account_name: parentForm.value.account_name,
-        account_type: parentForm.value.account_type,
-        login_email: parentForm.value.login_email || null,
+        account_name: form.account_name,
+        account_type: form.account_type,
+        login_email: form.login_email || null,
       } as any)
     }
     parentEditOpen.value = false
@@ -371,55 +298,39 @@ const toggleParent = async (p: Account) => {
   }
 }
 
-// ============ 子 CRUD ============
+// ============ 子：open + submit ============
 const openSubCreate = (parent: Account) => {
   openMenuId.value = null
   subEditTarget.value = null
-  subForm.value = {
-    parent_id: parent.id,
-    account_name: '',
-    account_type: parent.account_type,
-    inn: '',
-    is_main: false,
-    status: 'active',
-  }
+  subEditDefaultParentId.value = parent.id
+  subEditDefaultType.value = parent.account_type
   subEditOpen.value = true
 }
 const openSubEdit = (parent: Account, sub: Account) => {
   subEditTarget.value = sub
-  subForm.value = {
-    parent_id: parent.id,
-    account_name: sub.account_name,
-    account_type: sub.account_type,
-    inn: sub.inn,
-    is_main: sub.is_main,
-    status: sub.status,
-  }
+  subEditDefaultParentId.value = parent.id
   subEditOpen.value = true
 }
-const submitSub = async () => {
-  if (!subForm.value.account_name) {
-    error.value = '请填写子账号名'
-    return
-  }
+const submitSub = async ({ form }: { form: { parent_id: string; account_name: string; account_type: AccountType; inn: string; is_main: boolean; status: 'active' | 'inactive' } }) => {
   loading.value = true
+  error.value = null
   try {
     if (subEditTarget.value) {
       await acc.updateSub(subEditTarget.value.id, {
-        account_name: subForm.value.account_name,
-        account_type: subForm.value.account_type,
-        inn: subForm.value.inn || '-',
-        is_main: subForm.value.is_main,
-        status: subForm.value.status,
+        account_name: form.account_name,
+        account_type: form.account_type,
+        inn: form.inn || '-',
+        is_main: form.is_main,
+        status: form.status,
       })
     } else {
       await acc.createSub({
-        parent_id: subForm.value.parent_id,
-        account_name: subForm.value.account_name,
-        account_type: subForm.value.account_type,
-        inn: subForm.value.inn || '-',
-        is_main: subForm.value.is_main,
-        status: subForm.value.status,
+        parent_id: form.parent_id,
+        account_name: form.account_name,
+        account_type: form.account_type,
+        inn: form.inn || '-',
+        is_main: form.is_main,
+        status: form.status,
       })
     }
     subEditOpen.value = false
@@ -435,7 +346,7 @@ const setMain = async (parentId: string, sub: Account) => {
   await load()
 }
 
-// ============ 分配库存组 ============
+// ============ 分配：open + submit ============
 const openAssign = async (parent: Account) => {
   openMenuId.value = null
   assignTarget.value = parent
@@ -444,199 +355,36 @@ const openAssign = async (parent: Account) => {
     if (allStockGroups.value.length === 0) {
       allStockGroups.value = await stockGroups.fetchAll()
     }
-    assignCategoriesState.value = await stockGroups.fetchAssignedForParent(parent.id)
+    assignInitialCodes.value = await stockGroups.fetchAssignedForParent(parent.id)
     assignOpen.value = true
   } finally {
     loading.value = false
   }
 }
-const submitAssign = async () => {
-  if (!assignTarget.value) return
-  loading.value = true
-  try {
-    await stockGroups.assignForParent(assignTarget.value.id, assignCategoriesState.value)
-    assignOpen.value = false
-  } catch (e: any) {
-    error.value = e.message ?? String(e)
-  } finally {
-    loading.value = false
-  }
-}
-const toggleCategory = (cat: string) => {
-  if (assignCategoriesState.value.includes(cat)) {
-    assignCategoriesState.value = assignCategoriesState.value.filter((c) => c !== cat)
-  } else {
-    assignCategoriesState.value = [...assignCategoriesState.value, cat]
-  }
-}
-const selectAllAssigned = () => {
-  assignCategoriesState.value = allStockGroups.value.map((g) => g.code)
-}
-const selectNoneAssigned = () => {
-  assignCategoriesState.value = []
-}
-
-// ============ 邀请 / 重置密码 ============
-// Tab 状态
-const inviteTab = ref<'send' | 'history'>('send')
-const inviteTplLang = ref<'ru' | 'uz' | 'zh'>('ru')
-
-const inviteTabs = computed((): { key: 'send' | 'history'; label: string }[] => [
-  { key: 'send', label: t('admin.invites.tabSend') },
-  { key: 'history', label: t('admin.invites.tabHistory') },
-])
-
-const switchInviteTab = async (key: 'send' | 'history') => {
-  inviteTab.value = key
-  if (key === 'history') {
-    invMgr.invites.value = []   // 清旧数据，避免残留
-    if (inviteTarget.value) {
-      await invMgr.fetchForAccount(inviteTarget.value.id)
-    }
-  }
-}
-
-// 多语言模板（用 inviteTplLang 选语言，tForLocale 查对应语言文案）
-const inviteTemplate = (result: NonNullable<typeof inviteResult.value>) => {
-  const accountName = inviteTarget.value?.account_name ?? ''
-  const greeting = inviteTplLang.value === 'zh' ? '您好' : inviteTplLang.value === 'uz' ? 'Assalomu alaykum' : 'Здравствуйте'
-  const brand = inviteTplLang.value === 'zh' ? '陶瓷 · B2B' : inviteTplLang.value === 'uz' ? 'Keramika · B2B' : 'Керамика · B2B'
-  return tForLocale(inviteTplLang.value, 'admin.invites.templateBody', {
-    greeting,
-    accountName,
-    expiresDays: 7,
-    url: result.url,
-    loginEmail: result.loginEmail,
-    brand,
-  })
-}
-
-// 统计 badge
-const inviteStats = computed(() => [
-  { key: 'pending', label: t('admin.invites.statPending'), count: invMgr.stats.value.pending, cls: 'bg-blue-400' },
-  { key: 'used', label: t('admin.invites.statUsed'), count: invMgr.stats.value.used, cls: 'bg-green-400' },
-  { key: 'expired', label: t('admin.invites.statExpired'), count: invMgr.stats.value.expired, cls: 'bg-gray-400' },
-  { key: 'revoked', label: t('admin.invites.statRevoked'), count: invMgr.stats.value.revoked, cls: 'bg-red-400' },
-])
-
-const inviteStatusLabel = (s: string) => {
-  const map: Record<string, string> = {
-    pending: t('admin.invites.statusPending'),
-    used: t('admin.invites.statusUsed'),
-    expired: t('admin.invites.statusExpired'),
-    revoked: t('admin.invites.statusRevoked'),
-  }
-  return map[s] ?? s
-}
-
-const copyInviteUrlFor = async (inv: (typeof invMgr.invites.value)[number]) => {
-  const url = `${window.location.origin}/customer-invite?token=${inv.token}`
-  await navigator.clipboard.writeText(url)
-  alert(t('admin.invites.copied'))
-}
-
-const handleRevoke = async (inv: (typeof invMgr.invites.value)[number]) => {
-  if (!confirm(t('admin.invites.revokeConfirm'))) return
-  await invMgr.revokeInvite(inv.id)
-  alert(t('admin.invites.revokeDone'))
-}
-
-const openInvite = (parent: Account) => {
-  openMenuId.value = null
-  inviteTarget.value = parent
-  inviteResult.value = null
-  error.value = null
-  inviteTab.value = 'send'
-  invMgr.invites.value = []   // 清历史，避免切账号时残留旧数据
-  inviteOpen.value = true
-}
-
-const submitInvite = async () => {
-  if (!inviteTarget.value) return
-  try {
-    const { url, loginEmail } = await customerAuth.createInvite(
-      inviteTarget.value.id,
-      inviteTarget.value.account_name,
-      inviteTarget.value.id,
-    )
-    inviteResult.value = {
-      url,
-      loginEmail,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-      token: url.split('token=')[1] ?? '',
-    }
-  } catch (e: any) {
-    error.value = e.message ?? String(e)
-  }
-}
-const copyInviteUrl = async () => {
-  if (!inviteResult.value) return
-  try {
-    await navigator.clipboard.writeText(inviteResult.value.url)
-    alert(t('admin.invites.copied'))
-  } catch {
-    prompt('复制这一行：', inviteResult.value.url)
-  }
-}
-const copyLoginEmail = async () => {
-  if (!inviteResult.value) return
-  try {
-    await navigator.clipboard.writeText(inviteResult.value.loginEmail)
-    alert(t('admin.invites.copied'))
-  } catch {
-    prompt('复制这一行：', inviteResult.value.loginEmail)
-  }
-}
-
-const copyTempPassword = async () => {
-  if (!resetTempPassword.value) return
-  try {
-    await navigator.clipboard.writeText(resetTempPassword.value)
-    alert('已复制临时密码')
-  } catch {
-    prompt('复制这一行：', resetTempPassword.value)
-  }
-}
-
-const openReset = (parent: Account) => {
-  openMenuId.value = null
-  resetTarget.value = parent
-  resetTempPassword.value = null
-  resetOpen.value = true
-}
-const submitReset = async () => {
-  if (!resetTarget.value) return
-  loading.value = true
-  try {
-    resetTempPassword.value = await customerAuth.resetPassword(resetTarget.value.id)
-  } catch (e: any) {
-    error.value = e.message ?? String(e)
-  } finally {
-    loading.value = false
-  }
-}
-
-// ============ 批量操作 ============
 const batchAssign = async () => {
   const ids = Array.from(selected.value)
   if (ids.length === 0) return
   if (allStockGroups.value.length === 0) {
     allStockGroups.value = await stockGroups.fetchAll()
   }
-  // 用第一个选中做初始值
   const first = ids[0]
-  assignCategoriesState.value = await stockGroups.fetchAssignedForParent(first)
   assignTarget.value = null
+  assignInitialCodes.value = await stockGroups.fetchAssignedForParent(first)
+  assignBatchCount.value = ids.length
   assignOpen.value = true
 }
-const submitBatchAssign = async () => {
+const submitAssign = async ({ codes }: { codes: string[] }) => {
   loading.value = true
   try {
-    for (const id of selected.value) {
-      await stockGroups.assignForParent(id, assignCategoriesState.value)
+    if (assignTarget.value) {
+      await stockGroups.assignForParent(assignTarget.value.id, codes)
+    } else {
+      for (const id of selected.value) {
+        await stockGroups.assignForParent(id, codes)
+      }
+      clearSelection()
     }
     assignOpen.value = false
-    clearSelection()
   } catch (e: any) {
     error.value = e.message ?? String(e)
   } finally {
@@ -653,6 +401,62 @@ const batchToggle = async (to: 'active' | 'inactive') => {
     }
     clearSelection()
     await load()
+  } catch (e: any) {
+    error.value = e.message ?? String(e)
+  } finally {
+    loading.value = false
+  }
+}
+
+// ============ 邀请：open + submit ============
+const openInvite = (parent: Account) => {
+  openMenuId.value = null
+  inviteTarget.value = parent
+  inviteResult.value = null
+  error.value = null
+  invMgr.invites.value = []
+  inviteOpen.value = true
+}
+const submitInvite = async () => {
+  if (!inviteTarget.value) return
+  try {
+    const { url, loginEmail } = await customerAuth.createInvite(
+      inviteTarget.value.id,
+      inviteTarget.value.account_name,
+      inviteTarget.value.id,
+    )
+    inviteResult.value = {
+      url, loginEmail,
+      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+      token: url.split('token=')[1] ?? '',
+    }
+  } catch (e: any) {
+    error.value = e.message ?? String(e)
+  }
+}
+const fetchInviteHistory = async () => {
+  invMgr.invites.value = []
+  if (inviteTarget.value) {
+    await invMgr.fetchForAccount(inviteTarget.value.id)
+  }
+}
+const revokeInvite = async (id: string) => {
+  await invMgr.revokeInvite(id)
+  alert('已撤销邀请')
+}
+
+// ============ 重置密码：open + submit ============
+const openReset = (parent: Account) => {
+  openMenuId.value = null
+  resetTarget.value = parent
+  resetTempPassword.value = null
+  resetOpen.value = true
+}
+const submitReset = async () => {
+  if (!resetTarget.value) return
+  loading.value = true
+  try {
+    resetTempPassword.value = await customerAuth.resetPassword(resetTarget.value.id)
   } catch (e: any) {
     error.value = e.message ?? String(e)
   } finally {
@@ -732,7 +536,6 @@ const goImport = () => router.push('/admin/accounts/import')
     <!-- ============ 搜索 + 展开折叠 + 过滤 ============ -->
     <Card>
       <CardContent class="py-3 space-y-3">
-        <!-- 搜索栏 + 展开折叠 合并一行 -->
         <div class="flex items-center gap-2">
           <div class="relative flex-1">
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -743,30 +546,23 @@ const goImport = () => router.push('/admin/accounts/import')
             <ChevronRight v-else class="h-4 w-4" />
           </Button>
         </div>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <!-- 类型：分段控件 -->
-          <div class="inline-flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
-            <span class="px-2 text-muted-foreground">类型</span>
-            <button v-for="t in typeOptions" :key="t.value"
-              type="button"
-              :class="['px-2 h-6 rounded-sm transition-colors', typeFilter === t.value ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground']"
-              @click="typeFilter = t.value">
-              {{ t.label }}
-            </button>
-          </div>
-          <!-- 状态：分段控件 -->
-          <div class="inline-flex items-center rounded-md border bg-muted/30 p-0.5 text-xs">
-            <span class="px-2 text-muted-foreground">状态</span>
-            <button v-for="s in statusOptions" :key="s.value"
-              type="button"
-              :class="['px-2 h-6 rounded-sm transition-colors', statusFilter === s.value ? 'bg-background shadow-sm font-medium' : 'text-muted-foreground hover:text-foreground']"
-              @click="statusFilter = s.value">
-              {{ s.label }}
-            </button>
-          </div>
-        </div>
-        <div v-if="error" class="text-sm text-red-600 border border-red-200 bg-red-50 rounded-md p-3">
-          {{ error }}
+        <div class="flex flex-wrap gap-1.5">
+          <Button size="sm" variant="outline" class="h-7 text-xs"
+            :class="typeFilter === 'all' ? 'border-primary text-primary' : ''"
+            @click="typeFilter = 'all'">全部</Button>
+          <Button v-for="t in accountTypes" :key="t.value" size="sm" variant="outline" class="h-7 text-xs"
+            :class="typeFilter === t.value ? 'border-primary text-primary' : ''"
+            @click="typeFilter = t.value">{{ t.label }}</Button>
+          <span class="w-px h-5 bg-border mx-1" />
+          <Button size="sm" variant="outline" class="h-7 text-xs"
+            :class="statusFilter === 'all' ? 'border-primary text-primary' : ''"
+            @click="statusFilter = 'all'">全部状态</Button>
+          <Button size="sm" variant="outline" class="h-7 text-xs"
+            :class="statusFilter === 'active' ? 'border-primary text-primary' : ''"
+            @click="statusFilter = 'active'">活跃</Button>
+          <Button size="sm" variant="outline" class="h-7 text-xs"
+            :class="statusFilter === 'inactive' ? 'border-primary text-primary' : ''"
+            @click="statusFilter = 'inactive'">停用</Button>
         </div>
       </CardContent>
     </Card>
@@ -785,39 +581,31 @@ const goImport = () => router.push('/admin/accounts/import')
         role="menu"
         @click.stop
       >
-        <!-- 手机额外：分配分类 / 加子账号 -->
         <template v-if="isMobileMenu">
-          <button
-            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="openAssign(currentMenuParent); closeMenu()">
             <Tag class="h-4 w-4 text-muted-foreground" />分配分类
           </button>
-          <button
-            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="openSubCreate(currentMenuParent); closeMenu()">
             <Plus class="h-4 w-4 text-muted-foreground" />加子账号
           </button>
           <div class="my-1 border-t" />
         </template>
-        <!-- 账号管理 -->
-        <button
-          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openParentEdit(currentMenuParent); closeMenu()">
           <Edit class="h-4 w-4 text-muted-foreground" />编辑
         </button>
-        <button
-          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openInvite(currentMenuParent); closeMenu()">
           <Mail class="h-4 w-4 text-muted-foreground" />邀请客户登录
         </button>
-        <button
-          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="openReset(currentMenuParent); closeMenu()">
           <KeyRound class="h-4 w-4 text-muted-foreground" />重置密码
         </button>
         <div class="my-1 border-t" />
-        <button
-          class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
+        <button class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
           @click="toggleParent(currentMenuParent); closeMenu()">
           <PowerOff v-if="currentMenuParent.status === 'active'" class="h-4 w-4" />
           <Power v-else class="h-4 w-4" />
@@ -881,42 +669,26 @@ const goImport = () => router.push('/admin/accounts/import')
 
     <!-- ============ 树（分页） ============ -->
     <div v-else class="space-y-2">
-      <!-- 当前页全选 -->
       <div class="flex items-center justify-between text-xs text-muted-foreground px-1">
         <label class="flex items-center gap-2 cursor-pointer hover:text-foreground">
-          <input
-            type="checkbox"
-            class="rounded"
+          <input type="checkbox" class="rounded"
             :checked="pagedParents.every(p => selected.has(p.id)) && pagedParents.length > 0"
-            @change="toggleSelectPage"
-          />
+            @change="toggleSelectPage" />
           第 {{ page }} / {{ totalPages }} 页 · {{ filteredParents.length }} 个主账号
         </label>
         <span v-if="selected.size > 0" class="text-primary">已选 {{ selected.size }} 个</span>
       </div>
 
       <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
-        <!-- 父头 -->
-        <div
-          class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
-          :class="selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-muted/40'"
-        >
-          <!-- checkbox -->
-          <input
-            type="checkbox"
-            class="rounded shrink-0"
+        <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
+          :class="selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-muted/40'">
+          <input type="checkbox" class="rounded shrink-0"
             :checked="selected.has(p.id)"
             @click.stop
-            @change="toggleSelect(p.id, ($event as MouseEvent).shiftKey)"
-          />
-          <!-- 展开：▶ 唯一入口 -->
-          <button
-            class="shrink-0 p-1 -m-1 rounded hover:bg-muted"
-            @click.stop="toggleExpand(p.id)"
-          >
+            @change="toggleSelect(p.id, ($event as MouseEvent).shiftKey)" />
+          <button class="shrink-0 p-1 -m-1 rounded hover:bg-muted" @click.stop="toggleExpand(p.id)">
             <component :is="expanded[p.id] ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
           </button>
-          <!-- 名称 + meta -->
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-semibold truncate">{{ p.account_name }}</span>
@@ -940,9 +712,7 @@ const goImport = () => router.push('/admin/accounts/import')
               </span>
             </p>
           </div>
-          <!-- 操作 -->
           <div class="flex items-center gap-1 shrink-0">
-            <!-- ≥sm 才显示文字按钮；手机端折叠进 ··· -->
             <Button size="sm" variant="outline" @click.stop="openAssign(p)" class="h-8 hidden sm:inline-flex">
               <Tag class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">分配分类</span>
@@ -952,474 +722,93 @@ const goImport = () => router.push('/admin/accounts/import')
               <span class="hidden md:inline">加子账号</span>
             </Button>
             <div class="relative" data-row-menu>
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-8 w-8 p-0"
+              <Button size="sm" variant="ghost" class="h-8 w-8 p-0"
                 :ref="el => setTriggerRef(p.id, el)"
-                @click.stop="toggleMenu(p.id)"
-              >
+                @click.stop="toggleMenu(p.id)">
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
-              <!-- 菜单通过 Teleport 挂在 body 上，单例渲染 -->
             </div>
           </div>
         </div>
 
-        <!-- 子 -->
         <div v-show="expanded[p.id]" class="border-t bg-muted/20 px-4 py-3 space-y-2">
           <p class="text-xs font-medium text-muted-foreground flex items-center gap-1">
             <Users class="h-3 w-3" />
             子账号 ({{ (subsByParent[p.id] ?? []).length }})
           </p>
-          <div v-if="(subsByParent[p.id] ?? []).length === 0"
-            class="text-xs text-muted-foreground italic px-2 py-3 border border-dashed rounded-md">
-            暂无子账号 —— 点右上角"加子账号"创建
+          <div v-if="(subsByParent[p.id] ?? []).length === 0" class="text-xs text-muted-foreground py-2 text-center">
+            暂无子账号
           </div>
-          <ul v-else class="space-y-1">
-            <li
-              v-for="s in subsByParent[p.id]"
-              :key="s.id"
-              class="flex items-center justify-between gap-2 bg-background rounded-md border px-3 py-2 text-sm hover:border-primary/30 transition"
-            >
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <button
-                  class="shrink-0 text-amber-500 hover:scale-110 transition"
-                  :title="s.is_main ? '已设为主联系' : '设为主联系'"
-                  @click="!s.is_main && setMain(p.id, s)"
-                  :disabled="s.is_main"
-                >
-                  <Star class="h-3.5 w-3.5" :class="{ 'fill-current': s.is_main, 'opacity-30': !s.is_main }" />
-                </button>
-                <span class="font-mono truncate">{{ s.account_name }}</span>
-                <span class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border shrink-0"
-                  :class="typeClass(s.account_type)">
-                  {{ s.account_type }}
-                </span>
-                <span v-if="s.inn && s.inn !== '-'" class="text-xs text-muted-foreground font-mono truncate shrink-0">
-                  INN {{ s.inn }}
-                </span>
-                <span v-if="s.status === 'inactive'"
-                  class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200 shrink-0">
-                  停用
-                </span>
-              </div>
-              <Button size="sm" variant="ghost" class="h-7 w-7 p-0" @click="openSubEdit(p, s)">
+          <div v-else class="space-y-1.5">
+            <div v-for="s in subsByParent[p.id]" :key="s.id"
+              class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 transition">
+              <Star v-if="s.is_main" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
+              <Users v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span class="text-sm flex-1 truncate">{{ s.account_name }}</span>
+              <span v-if="s.inn" class="text-xs text-muted-foreground font-mono hidden sm:inline">{{ s.inn }}</span>
+              <span class="text-xs px-1.5 py-0.5 rounded"
+                :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'">
+                {{ s.status === 'active' ? '可用' : '停用' }}
+              </span>
+              <Button v-if="!s.is_main" size="sm" variant="ghost" class="h-6 w-6 p-0"
+                @click="setMain(p.id, s)" title="设为主联系">
+                <Star class="h-3 w-3" />
+              </Button>
+              <Button size="sm" variant="ghost" class="h-6 w-6 p-0"
+                @click="openSubEdit(p, s)" title="编辑">
                 <Edit class="h-3 w-3" />
               </Button>
-            </li>
-          </ul>
+            </div>
+          </div>
         </div>
       </Card>
-
-      <!-- 分页 -->
-      <div v-if="totalPages > 1" class="flex items-center justify-between pt-2">
-        <p class="text-xs text-muted-foreground">
-          共 {{ filteredParents.length }} 条 · 第 {{ page }} / {{ totalPages }} 页
-        </p>
-        <div class="flex items-center gap-1">
-          <Button size="sm" variant="outline" :disabled="page === 1" @click="page = 1">首页</Button>
-          <Button size="sm" variant="outline" :disabled="page === 1" @click="page--">上一页</Button>
-          <span class="px-3 text-sm tabular-nums">{{ page }} / {{ totalPages }}</span>
-          <Button size="sm" variant="outline" :disabled="page === totalPages" @click="page++">下一页</Button>
-          <Button size="sm" variant="outline" :disabled="page === totalPages" @click="page = totalPages">末页</Button>
-        </div>
-      </div>
     </div>
 
-    <!-- ============ 父账号 表单 ============ -->
-    <Dialog v-model:open="parentEditOpen"
-      :title="parentEditTarget ? `编辑主账号：${parentEditTarget.account_name}` : '新建主账号'"
-      description="主账号对应客户分类，所有子账号共享此主账号的白名单">
-      <form class="space-y-3" @submit.prevent="submitParent">
-        <div>
-          <Label>主账号名 *</Label>
-          <Input v-model="parentForm.account_name" placeholder="例如：贾汉 / I客户 / W客户" class="h-9" />
-        </div>
-        <div>
-          <Label>客户登录邮箱 <span class="text-xs text-muted-foreground">（邀请时使用，留空自动生成占位邮箱）</span></Label>
-          <Input v-model="parentForm.login_email" type="email" placeholder="customer@example.com" class="h-9" />
-        </div>
-        <div>
-          <Label>类型</Label>
-          <div class="grid grid-cols-3 gap-2 mt-1">
-            <button v-for="t in accountTypes" :key="t.value"
-              type="button"
-              class="border rounded-md px-2 py-2 text-sm transition text-left"
-              :class="parentForm.account_type === t.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted'"
-              @click="parentForm.account_type = t.value">
-              <p class="font-medium">{{ t.label }}</p>
-              <p class="text-xs text-muted-foreground">{{ t.desc }}</p>
-            </button>
-          </div>
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" @click="parentEditOpen = false">取消</Button>
-          <Button type="submit" :disabled="loading">
-            <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
-            {{ parentEditTarget ? '保存' : '创建' }}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+    <!-- ============ 拆出的对话框 ============ -->
+    <ParentEditDialog
+      v-model:open="parentEditOpen"
+      :target="parentEditTarget"
+      :loading="loading"
+      @submit="submitParent"
+    />
 
-    <!-- ============ 子账号 表单 ============ -->
-    <Dialog v-model:open="subEditOpen"
-      :title="subEditTarget ? `编辑子账号：${subEditTarget.account_name}` : '新建子账号'">
-      <form class="space-y-3" @submit.prevent="submitSub">
-        <div>
-          <Label>子账号名 *</Label>
-          <Input v-model="subForm.account_name" placeholder="例如：1账户 贾汉 ASM" class="h-9" />
-        </div>
-        <div>
-          <Label>类型</Label>
-          <div class="grid grid-cols-3 gap-2 mt-1">
-            <button v-for="t in accountTypes" :key="t.value"
-              type="button"
-              class="border rounded-md px-2 py-2 text-sm transition text-left"
-              :class="subForm.account_type === t.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted'"
-              @click="subForm.account_type = t.value">
-              <p class="font-medium">{{ t.label }}</p>
-            </button>
-          </div>
-        </div>
-        <div class="grid grid-cols-2 gap-3">
-          <div>
-            <Label>税号</Label>
-            <Input v-model="subForm.inn" placeholder="可空" class="h-9" />
-          </div>
-          <div>
-            <Label>状态</Label>
-            <select v-model="subForm.status" class="w-full h-9 rounded-md border bg-background px-3 text-sm">
-              <option value="active">可用</option>
-              <option value="inactive">停用</option>
-            </select>
-          </div>
-        </div>
-        <label class="flex items-center gap-2 text-sm cursor-pointer">
-          <input type="checkbox" v-model="subForm.is_main" class="rounded" />
-          <Star class="h-3.5 w-3.5 text-amber-500" />
-          设为主联系（默认显示）
-        </label>
-        <div class="flex justify-end gap-2 pt-2">
-          <Button type="button" variant="outline" @click="subEditOpen = false">取消</Button>
-          <Button type="submit" :disabled="loading">
-            <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
-            {{ subEditTarget ? '保存' : '创建' }}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
+    <SubEditDialog
+      v-model:open="subEditOpen"
+      :target="subEditTarget"
+      :default-parent-id="subEditDefaultParentId"
+      :default-account-type="subEditDefaultType"
+      :loading="loading"
+      @submit="submitSub"
+    />
 
-    <!-- ============ 分配库存组 ============ -->
-    <Dialog v-model:open="assignOpen"
-      :title="assignTarget ? `分配库存组：${assignTarget.account_name}` : '批量分配库存组'"
-      :description="assignTarget ? '勾选该主账号能看到的库存组（= 库存表 A 列客户组）' : `将 ${selected.size} 个主账号绑定到相同库存组`">
-      <div v-if="allStockGroups.length === 0" class="text-sm text-muted-foreground">
-        还没有库存组 —— 请先在"库存表上传"页面导入库存表
-      </div>
-      <div v-else class="space-y-2">
-        <div class="flex items-center justify-between">
-          <p class="text-xs text-muted-foreground">
-            已分配: <strong>{{ assignCategoriesState.length }}</strong> / {{ allStockGroups.length }}
-            <span class="ml-2">触及 SKU 总数: <strong>{{ assignCategoriesState.reduce((s, c) => s + (allStockGroups.find(g => g.code === c)?.sku_count ?? 0), 0) }}</strong></span>
-          </p>
-          <div class="flex gap-1">
-            <Button size="sm" variant="ghost" class="h-7 text-xs" @click="selectAllAssigned">全选</Button>
-            <Button size="sm" variant="ghost" class="h-7 text-xs" @click="selectNoneAssigned">清空</Button>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2 max-h-80 overflow-y-auto border rounded-md p-3">
-          <button v-for="g in allStockGroups" :key="g.id"
-            type="button"
-            class="text-sm px-2.5 py-1 rounded-md border transition"
-            :class="assignCategoriesState.includes(g.code)
-              ? 'bg-primary text-primary-foreground border-primary'
-              : 'hover:bg-muted hover:border-muted-foreground/30'"
-            @click="toggleCategory(g.code)">
-            <span class="inline-flex items-center gap-1">
-              <Check v-if="assignCategoriesState.includes(g.code)" class="h-3 w-3" />
-              {{ g.code }}
-              <span class="text-xs opacity-70">·{{ g.sku_count }} SKU</span>
-            </span>
-          </button>
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <Button variant="outline" @click="assignOpen = false">取消</Button>
-          <Button @click="assignTarget ? submitAssign() : submitBatchAssign()" :disabled="loading">
-            <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
-            {{ assignTarget ? '保存' : `应用到 ${selected.size} 个主账号` }}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
+    <AssignStockDialog
+      v-model:open="assignOpen"
+      :target="assignTarget"
+      :stock-groups="allStockGroups"
+      :initial-codes="assignInitialCodes"
+      :apply-count="assignBatchCount"
+      :loading="loading"
+      @submit="submitAssign"
+    />
 
-    <!-- ============ 邀请链接 ============ -->
-    <Dialog v-model:open="inviteOpen"
-      :title="`${t('admin.invites.title')}：${inviteTarget?.account_name ?? ''}`"
-      description=""
-      class="lg:!max-w-2xl">
-      <div class="space-y-3">
+    <InviteDialog
+      v-model:open="inviteOpen"
+      :target="inviteTarget"
+      :inv-mgr="invMgr"
+      :invite-result="inviteResult"
+      :loading="loading"
+      @generate="submitInvite"
+      @fetch-history="fetchInviteHistory"
+      @revoke="revokeInvite"
+    />
 
-        <!-- Tab 切换：移动端更大点击区域 -->
-        <div class="flex border-b -mx-4 px-1">
-          <button
-            v-for="tab in inviteTabs"
-            :key="tab.key"
-            class="flex-1 px-2 py-2.5 text-sm border-b-2 -mb-px transition-colors text-center"
-            :class="inviteTab === tab.key
-              ? 'border-primary text-primary font-medium'
-              : 'border-transparent text-muted-foreground hover:text-foreground'"
-            @click="switchInviteTab(tab.key)"
-          >{{ tab.label }}</button>
-        </div>
-
-        <!-- ---------- Tab：发链接 ---------- -->
-        <div v-if="inviteTab === 'send'" class="space-y-3">
-          <div v-if="!inviteResult" class="space-y-2">
-            <div class="text-xs text-muted-foreground space-y-1">
-              <p>{{ t('admin.invites.sendHint1') }}</p>
-              <p>{{ t('admin.invites.sendHint2') }}</p>
-            </div>
-            <div v-if="!inviteTarget?.login_email?.trim()" class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
-              ✗ {{ t('admin.invites.noEmail') }}
-            </div>
-            <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
-              {{ t('admin.invites.willUseEmail') }}：<span class="font-mono">{{ inviteTarget.login_email }}</span>
-            </div>
-            <div class="flex justify-end gap-2 pt-2">
-              <Button variant="outline" @click="inviteOpen = false">{{ t('common.cancel') }}</Button>
-              <Button @click="submitInvite" :disabled="invMgr.loading.value || !inviteTarget?.login_email?.trim()">
-                <Loader2 v-if="invMgr.loading.value" class="mr-2 h-4 w-4 animate-spin" />
-                <Mail class="mr-2 h-4 w-4" />
-                {{ t('admin.invites.generateBtn') }}
-              </Button>
-            </div>
-          </div>
-
-          <!-- 成功：显示链接 + 模板 -->
-          <div v-else class="space-y-3">
-            <div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
-              {{ t('admin.invites.generated') }}
-              {{ t('admin.invites.expiresAt', { d: new Date(inviteResult.expiresAt).toLocaleDateString(locale) }) }}
-            </div>
-
-            <!-- 邀请链接 -->
-            <div>
-              <Label class="text-xs text-muted-foreground">{{ t('admin.invites.colUrl') }}</Label>
-              <div class="flex items-center gap-2 mt-1">
-                <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
-                <Button size="sm" variant="outline" @click="copyInviteUrl">
-                  <Copy class="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            <!-- 登录邮箱 -->
-            <div>
-              <Label class="text-xs text-muted-foreground">{{ t('admin.invites.colLoginEmail') }}</Label>
-              <div class="flex items-center gap-2 mt-1">
-                <Input :value="inviteResult.loginEmail" readonly class="font-mono text-xs h-9" />
-                <Button size="sm" variant="outline" @click="copyLoginEmail">
-                  <Copy class="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            </div>
-
-            <!-- 多语言发送模板 -->
-            <div>
-              <Label class="text-xs text-muted-foreground mb-1 block">{{ t('admin.invites.template') }}</Label>
-              <div class="flex flex-wrap gap-1 mb-2">
-                <button
-                  v-for="lang in [{ code: 'ru', label: 'Русский' }, { code: 'uz', label: 'Oʻzbek' }, { code: 'zh', label: '中文' }]"
-                  :key="lang.code"
-                  class="px-2 py-0.5 text-xs rounded border transition-colors"
-                  :class="inviteTplLang === lang.code
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'"
-                  @click="inviteTplLang = lang.code as 'ru' | 'uz' | 'zh'"
-                >{{ lang.label }}</button>
-              </div>
-              <div class="p-3 bg-muted rounded-md font-mono text-xs whitespace-pre-wrap">
-                {{ inviteTemplate(inviteResult) }}
-              </div>
-            </div>
-
-            <div class="flex justify-end gap-2 pt-2">
-              <Button variant="outline" @click="inviteResult = null">
-                <RefreshCw class="h-3.5 w-3.5 mr-1" />{{ t('admin.invites.generateAnother') }}
-              </Button>
-              <Button @click="inviteOpen = false">{{ t('common.confirm') }}</Button>
-            </div>
-          </div>
-        </div>
-
-        <!-- ---------- Tab：历史记录 ---------- -->
-        <div v-if="inviteTab === 'history'">
-
-          <!-- 加载中骨架 -->
-          <div v-if="invMgr.loading.value" class="space-y-2 py-2">
-            <AccountRowSkeleton v-for="i in 4" :key="i" />
-          </div>
-
-          <!-- 有数据：统计 + 列表 -->
-          <template v-else>
-
-            <!-- 统计 bar：移动端换行 -->
-            <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs">
-              <span v-for="s in inviteStats" :key="s.key" class="flex items-center gap-1">
-                <span class="inline-block w-2 h-2 rounded-full flex-shrink-0" :class="s.cls"></span>
-                <span class="whitespace-nowrap">{{ s.label }}：<strong>{{ s.count }}</strong></span>
-              </span>
-            </div>
-
-            <!-- 空状态 -->
-            <div v-if="!invMgr.invites.value.length" class="text-center text-xs text-muted-foreground py-8">
-              {{ t('admin.invites.empty') }}
-            </div>
-
-            <!-- 列表：桌面=表格，移动=卡片 -->
-            <div v-else class="space-y-2 overflow-y-auto max-h-[55vh] sm:max-h-none">
-
-              <!-- 桌面端：表格 -->
-              <div class="hidden sm:block border rounded-md overflow-hidden">
-                <table class="w-full text-xs">
-                  <thead>
-                    <tr class="bg-muted/50 border-b">
-                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedAt') }}</th>
-                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</th>
-                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</th>
-                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</th>
-                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colStatus') }}</th>
-                      <th class="px-2 py-1.5 text-right font-medium text-muted-foreground">{{ t('admin.invites.colActions') }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="inv in invMgr.invites.value"
-                      :key="inv.id"
-                      class="border-b last:border-0 hover:bg-muted/30"
-                    >
-                      <td class="px-2 py-2">{{ new Date(inv.created_at).toLocaleDateString(locale) }}</td>
-                      <td class="px-2 py-2">{{ inv.created_by_name ?? '—' }}</td>
-                      <td class="px-2 py-2">{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</td>
-                      <td class="px-2 py-2">{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</td>
-                      <td class="px-2 py-2">
-                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
-                          :class="{
-                            'bg-blue-50 text-blue-700': inv.status === 'pending',
-                            'bg-green-50 text-green-700': inv.status === 'used',
-                            'bg-gray-100 text-gray-500': inv.status === 'expired',
-                            'bg-red-50 text-red-700': inv.status === 'revoked',
-                          }"
-                        >{{ inviteStatusLabel(inv.status) }}</span>
-                      </td>
-                      <td class="px-2 py-2 text-right">
-                        <Button
-                          v-if="inv.status === 'pending'"
-                          size="sm" variant="ghost" class="h-6 px-1.5"
-                          @click="copyInviteUrlFor(inv)"
-                          :title="t('admin.invites.copyLink')"
-                        >
-                          <Copy class="h-3 w-3" />
-                        </Button>
-                        <Button
-                          v-if="inv.status === 'pending'"
-                          size="sm" variant="ghost" class="h-6 px-1.5 text-amber-600 hover:text-amber-700"
-                          @click="handleRevoke(inv)"
-                          :title="t('admin.invites.revoke')"
-                        >
-                          <X class="h-3 w-3" />
-                        </Button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <!-- 移动端：卡片列表 -->
-              <div class="sm:hidden space-y-2">
-                <div
-                  v-for="inv in invMgr.invites.value"
-                  :key="inv.id"
-                  class="border rounded-md p-3"
-                >
-                  <!-- 顶栏：创建时间 + 状态 -->
-                  <div class="flex items-center justify-between mb-2">
-                    <span class="text-xs text-muted-foreground">
-                      {{ new Date(inv.created_at).toLocaleDateString(locale) }}
-                    </span>
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
-                      :class="{
-                        'bg-blue-50 text-blue-700': inv.status === 'pending',
-                        'bg-green-50 text-green-700': inv.status === 'used',
-                        'bg-gray-100 text-gray-500': inv.status === 'expired',
-                        'bg-red-50 text-red-700': inv.status === 'revoked',
-                      }"
-                    >{{ inviteStatusLabel(inv.status) }}</span>
-                  </div>
-                  <!-- 详情行 -->
-                  <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
-                    <div>
-                      <span class="text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</span>
-                      <div class="font-medium">{{ inv.created_by_name ?? '—' }}</div>
-                    </div>
-                    <div>
-                      <span class="text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</span>
-                      <div>{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</div>
-                    </div>
-                    <div>
-                      <span class="text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</span>
-                      <div>{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</div>
-                    </div>
-                  </div>
-                  <!-- 操作按钮 -->
-                  <div v-if="inv.status === 'pending'" class="flex gap-2 mt-2 pt-2 border-t">
-                    <Button size="sm" variant="outline" class="flex-1 text-xs h-7" @click="copyInviteUrlFor(inv)">
-                      <Copy class="h-3 w-3 mr-1" />{{ t('admin.invites.copyLink') }}
-                    </Button>
-                    <Button size="sm" variant="outline" class="flex-1 text-xs h-7 text-amber-600 border-amber-200 hover:bg-amber-50" @click="handleRevoke(inv)">
-                      <X class="h-3 w-3 mr-1" />{{ t('admin.invites.revoke') }}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          </template>
-        </div>
-      </div>
-    </Dialog>
-
-    <!-- ============ 重置密码 ============ -->
-    <Dialog v-model:open="resetOpen"
-      :title="`重置密码：${resetTarget?.account_name ?? ''}`"
-      description="生成一个临时密码，请通过其他渠道（微信 / 电话）告知客户。客户首次登录后应自行修改。">
-      <div class="space-y-3">
-        <div v-if="!resetTempPassword" class="flex justify-end gap-2 pt-2">
-          <Button variant="outline" @click="resetOpen = false">取消</Button>
-          <Button @click="submitReset" :disabled="loading">
-            <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
-            <KeyRound class="mr-2 h-4 w-4" />
-            生成临时密码
-          </Button>
-        </div>
-        <div v-else class="space-y-2">
-          <div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
-            临时密码已生成。请复制后告知客户。
-          </div>
-          <div class="flex items-center gap-2">
-            <Input :value="resetTempPassword" readonly class="font-mono text-sm h-9" />
-            <Button size="sm" variant="outline" @click="copyTempPassword">
-              <Copy class="h-3.5 w-3.5" />
-            </Button>
-          </div>
-          <div class="flex justify-end gap-2 pt-2">
-            <Button @click="resetOpen = false">完成</Button>
-          </div>
-        </div>
-      </div>
-    </Dialog>
+    <ResetPasswordDialog
+      v-model:open="resetOpen"
+      :target="resetTarget"
+      :loading="loading"
+      :temp-password="resetTempPassword"
+      @generate="submitReset"
+    />
   </div>
 </template>
 
