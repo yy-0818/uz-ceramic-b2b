@@ -1,32 +1,32 @@
 <!--
   src/views/admin/ProductImportPage.vue
   后台：CSV 库存导入向导（色号 + 客户组映射版）
-
   步骤：
-    1. 上传 CSV
-    2. 预览（按分类归纳 + 色号前缀二级汇总）
+    1. 上传 CSV        → ImportUploadCard
+    2. 预览（两层归纳）  → ImportPreviewCard（aggregate() 从 useCategoryAggregate）
     3. 选择策略 + 一键写入 products / stock_colors / account_products
+  清空旧数据 → ClearAllPanel；未映射客户组 → UnmappedGroupsDialog
 -->
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Upload, Loader2, FileSpreadsheet, CheckCircle2, AlertTriangle, Eye, EyeOff, Boxes, ChevronDown, ChevronRight, X, Trash2 } from 'lucide-vue-next'
-import { useI18n } from '@/lib/i18n'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { CheckCircle2, AlertTriangle } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
-import CardHeader from '@/components/ui/CardHeader.vue'
-import CardTitle from '@/components/ui/CardTitle.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import Badge from '@/components/ui/Badge.vue'
-import Input from '@/components/ui/Input.vue'
-import Label from '@/components/ui/Label.vue'
-import Dialog from '@/components/ui/Dialog.vue'
+import { useI18n } from '@/lib/i18n'
 
-import { useInventoryCsv, type ProductCandidate } from '@/composables/useInventoryCsv'
+import { useInventoryCsv } from '@/composables/useInventoryCsv'
 import { useProducts } from '@/composables/useProducts'
 import { useCustomerGroupMappings } from '@/composables/useCustomerGroupMappings'
+import { aggregate, type CategoryAgg } from '@/composables/useCategoryAggregate'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'vue-router'
+
+import ClearAllPanel from './product-import/ClearAllPanel.vue'
+import ImportUploadCard from './product-import/ImportUploadCard.vue'
+import ImportPreviewCard from './product-import/ImportPreviewCard.vue'
+import UnmappedGroupsDialog from './product-import/UnmappedGroupsDialog.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -35,7 +35,6 @@ const csv = useInventoryCsv()
 const products = useProducts()
 const mappings = useCustomerGroupMappings()
 
-const fileInput = ref<HTMLInputElement | null>(null)
 const search = ref('')
 const strategy = ref<'upsert' | 'skip_existing'>('upsert')
 const importing = ref(false)
@@ -47,30 +46,24 @@ const importResult = ref<{
 } | null>(null)
 const importError = ref<string | null>(null)
 
-// 折叠状态：key=category, value=展开?
 const expanded = ref<Record<string, boolean>>({})
-
-// 客户组未映射 modal
 const unmappedDialogOpen = ref(false)
 
-// ========== 清空旧数据 ==========
+const involvedAccountIds = ref<string[]>([])
+
+// ===== 清空旧数据 =====
 const clearing = ref(false)
 const clearResult = ref<{ products: number; colors: number; whiteRows: number } | null>(null)
 const clearError = ref<string | null>(null)
-const clearConfirmText = ref('')
+const clearPanelRef = ref<InstanceType<typeof ClearAllPanel> | null>(null)
 
 const onClearAll = async () => {
-  if (clearConfirmText.value !== 'CLEAR') {
-    clearError.value = '请输入确认码 CLEAR 后再执行'
-    return
-  }
-  if (!confirm('⚠️ 此操作将物理删除：account_products / stock_colors / products 三张表所有数据，且不可恢复。确认继续？')) return
   clearing.value = true
   clearError.value = null
   clearResult.value = null
   try {
     clearResult.value = await products.clearAll()
-    clearConfirmText.value = ''
+    clearPanelRef.value?.reset()
   } catch (e) {
     clearError.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -78,22 +71,18 @@ const onClearAll = async () => {
   }
 }
 
-const onPickFile = () => fileInput.value?.click()
-
-const onFileChange = async (e: Event) => {
-  const file = (e.target as HTMLInputElement).files?.[0]
-  if (!file) return
+// ===== 上传 =====
+const onFilePicked = async (file: File) => {
   const existing = await products.fetchAll()
   const set = new Set(existing.map((p) => p.model))
   await csv.parseFile(file, set)
   await mappings.fetchAll()
   await refreshAccountIds()
-  // 默认全部展开第一个分类
   const first = csv.products.value[0]
   if (first) expanded.value[first.category] = true
 }
 
-// 搜索过滤（按 model / category / 客户组）
+// ===== 搜索过滤 =====
 const filteredProducts = computed(() => {
   const q = search.value.trim().toLowerCase()
   if (!q) return csv.products.value
@@ -105,7 +94,7 @@ const filteredProducts = computed(() => {
   )
 })
 
-// 未映射的客户组
+// ===== 未映射客户组 =====
 const unmappedGroups = computed(() => {
   const mapped = new Set(mappings.items.value.map((m) => m.customer_group))
   const all = new Set<string>()
@@ -113,13 +102,25 @@ const unmappedGroups = computed(() => {
   return Array.from(all).filter((g) => !mapped.has(g)).sort()
 })
 
-const involvedAccountIds = ref<string[]>([])
 const refreshAccountIds = async () => {
   const allGroups = new Set<string>()
   csv.products.value.forEach((p) => p.customerGroups.forEach((g) => allGroups.add(g)))
   involvedAccountIds.value = await mappings.resolveAccountIds(Array.from(allGroups))
 }
 
+// ===== 全局统计 =====
+const totalColors = computed(() => csv.products.value.reduce((s, p) => s + p.colors.length, 0))
+const totalBoxesL1 = computed(() => csv.products.value.reduce((s, p) => s + p.totalLevel1, 0))
+const totalBoxesL2 = computed(() => csv.products.value.reduce((s, p) => s + p.totalLevel2, 0))
+
+// ===== 两层归纳 =====
+const aggregatedCategories = computed<CategoryAgg[]>(() => aggregate(filteredProducts.value))
+
+const toggleCategory = (cat: string) => {
+  expanded.value[cat] = !expanded.value[cat]
+}
+
+// ===== 导入 =====
 const onImport = async () => {
   if (csv.products.value.length === 0) return
   importing.value = true
@@ -140,7 +141,6 @@ const onImport = async () => {
     const accountIds = involvedAccountIds.value
     const result = await products.bulkImportWithColors(toImport, accountIds)
 
-    // 写后回读：核对 DB 实际数据
     const [pCnt, cData, l1Agg, l2Agg] = await Promise.all([
       supabase.from('products').select('*', { count: 'exact', head: true }),
       supabase.from('stock_colors').select('*', { count: 'exact', head: true }),
@@ -168,377 +168,59 @@ const onImport = async () => {
 }
 
 const goAssign = () => router.push('/admin/assign')
-
-// === 两层归纳：分类 → 色号前缀 ===
-type PrefixAgg = {
-  prefix: string
-  boxes: number
-  models: number
-  colors: Array<{ code: string; boxes: number }>
-}
-type CategoryAgg = {
-  category: string
-  totalBoxes: number
-  totalL1: number
-  totalL2: number
-  models: number
-  prefixes: PrefixAgg[]
-  products: ProductCandidate[]
-}
-
-function colorPrefix(code: string): string {
-  // D1..D22 → D, A1..A14 → A, A → A, 其它 → 首字母
-  const m = code.match(/^([A-Z])/i)
-  return m ? m[1].toUpperCase() : '#'
-}
-
-function aggregate(items: ProductCandidate[]): CategoryAgg[] {
-  const catMap = new Map<string, CategoryAgg>()
-  for (const p of items) {
-    let agg = catMap.get(p.category)
-    if (!agg) {
-      agg = {
-        category: p.category,
-        totalBoxes: 0,
-        totalL1: 0,
-        totalL2: 0,
-        models: 0,
-        prefixes: [],
-        products: [],
-      }
-      catMap.set(p.category, agg)
-    }
-    agg.totalBoxes += p.totalLevel1 + p.totalLevel2
-    agg.totalL1 += p.totalLevel1
-    agg.totalL2 += p.totalLevel2
-    agg.models += 1
-    agg.products.push(p)
-
-    // 合并色号前缀
-    const prefMap = new Map<string, PrefixAgg>()
-    for (const c of p.colors) {
-      const pref = colorPrefix(c.colorCode)
-      let pa = prefMap.get(pref)
-      if (!pa) {
-        pa = { prefix: pref, boxes: 0, models: 0, colors: [] }
-        prefMap.set(pref, pa)
-      }
-      pa.boxes += c.boxes
-      const exists = pa.colors.find((x) => x.code === c.colorCode)
-      if (exists) exists.boxes += c.boxes
-      else pa.colors.push({ code: c.colorCode, boxes: c.boxes })
-    }
-    for (const [pref, pa] of prefMap) {
-      let exist = agg.prefixes.find((x) => x.prefix === pref)
-      if (exist) {
-        exist.boxes += pa.boxes
-        for (const cc of pa.colors) {
-          const e = exist.colors.find((x) => x.code === cc.code)
-          if (e) e.boxes += cc.boxes
-          else exist.colors.push(cc)
-        }
-      } else {
-        agg.prefixes.push(pa)
-      }
-    }
-  }
-  for (const a of catMap.values()) {
-    a.prefixes.sort((x, y) => x.prefix.localeCompare(y.prefix))
-    a.prefixes.forEach((pf) => pf.colors.sort((x, y) => x.code.localeCompare(y.code)))
-  }
-  return Array.from(catMap.values()).sort((a, b) => a.category.localeCompare(b.category))
-}
-
-const aggregatedCategories = computed(() => aggregate(filteredProducts.value))
-
-// 全局统计
-const totalColors = computed(() =>
-  csv.products.value.reduce((s, p) => s + p.colors.length, 0),
-)
-const totalBoxesL1 = computed(() =>
-  csv.products.value.reduce((s, p) => s + p.totalLevel1, 0),
-)
-const totalBoxesL2 = computed(() =>
-  csv.products.value.reduce((s, p) => s + p.totalLevel2, 0),
-)
-
-const toggleCategory = (cat: string) => {
-  expanded.value[cat] = !expanded.value[cat]
-}
 </script>
 
 <template>
   <div class="space-y-4">
-    <!-- 清空旧数据（危险操作） -->
-    <Card class="border-red-200 bg-red-50/30">
-      <CardHeader class="pb-3">
-        <CardTitle class="flex items-center gap-2 text-red-700">
-          <Trash2 class="h-5 w-5" />
-          清空旧数据（危险操作）
-        </CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-3">
-        <p class="text-sm text-muted-foreground">
-          将物理删除 <code class="px-1 rounded bg-red-100 text-red-800">account_products</code> ·
-          <code class="px-1 rounded bg-red-100 text-red-800">stock_colors</code> ·
-          <code class="px-1 rounded bg-red-100 text-red-800">products</code> 三张表的所有数据，
-          用于在重新导入前重置库。不可恢复，请确认后再操作。
-        </p>
-        <div class="flex flex-wrap items-center gap-2">
-          <Input
-            v-model="clearConfirmText"
-            placeholder='输入 "CLEAR" 以确认'
-            class="w-56"
-          />
-          <Button
-            variant="destructive"
-            :disabled="clearing || clearConfirmText !== 'CLEAR'"
-            @click="onClearAll"
-          >
-            <Loader2 v-if="clearing" class="mr-2 h-4 w-4 animate-spin" />
-            <Trash2 v-else class="mr-2 h-4 w-4" />
-            {{ clearing ? '清空中…' : '清空全部' }}
-          </Button>
-          <span v-if="clearResult" class="text-xs text-emerald-700">
-            ✓ 已删除：{{ clearResult.products }} 商品 ·
-            {{ clearResult.colors }} 色号 ·
-            {{ clearResult.whiteRows }} 白名单行
-          </span>
-          <span v-if="clearError" class="text-xs text-red-700">{{ clearError }}</span>
-        </div>
-      </CardContent>
-    </Card>
+    <!-- 清空旧数据 -->
+    <ClearAllPanel
+      ref="clearPanelRef"
+      :clearing="clearing"
+      :result="clearResult"
+      :error="clearError"
+      @execute="onClearAll"
+    />
 
     <!-- 步骤 1：上传 -->
-    <Card>
-      <CardHeader>
-        <CardTitle class="flex items-center gap-2">
-          <Upload class="h-5 w-5" />
-          {{ t('admin.import.step1') }}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".csv,text/csv"
-          class="hidden"
-          @change="onFileChange"
-        />
-        <div
-          class="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer
-                 hover:border-primary/60 hover:bg-muted/30 transition"
-          @click="onPickFile"
-        >
-          <FileSpreadsheet class="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-          <p class="text-sm text-muted-foreground">
-            {{ csv.filename.value || t('admin.import.dropHint') }}
-          </p>
-          <Button size="sm" class="mt-3" variant="outline" :disabled="csv.parsing.value">
-            <Loader2 v-if="csv.parsing.value" class="mr-2 h-4 w-4 animate-spin" />
-            {{ t('admin.import.chooseFile') }}
-          </Button>
-        </div>
+    <ImportUploadCard
+      :csv="csv"
+      :total-colors="totalColors"
+      :total-l1="totalBoxesL1"
+      :total-l2="totalBoxesL2"
+      :unmapped-count="unmappedGroups.length"
+      @pick-file="onFilePicked"
+    />
 
-        <div v-if="csv.products.value.length > 0" class="mt-3 flex flex-wrap gap-2 text-xs">
-          <Badge variant="secondary">{{ t('admin.import.statRows', { n: csv.totalRows.value }) }}</Badge>
-          <Badge variant="secondary">{{ t('admin.import.statProducts', { n: csv.totalProducts.value }) }}</Badge>
-          <Badge variant="secondary">{{ t('admin.import.statColors', { n: totalColors }) }}</Badge>
-          <Badge variant="secondary">
-            L1: {{ totalBoxesL1.toLocaleString() }} · L2: {{ totalBoxesL2.toLocaleString() }}
-          </Badge>
-          <Badge :variant="unmappedGroups.length === 0 ? 'secondary' : 'destructive'">
-            {{ t('admin.import.statGroups', { n: csv.totalGroups.value }) }}
-            <span v-if="unmappedGroups.length > 0" class="ml-1">
-              · !{{ unmappedGroups.length }}
-            </span>
-          </Badge>
-        </div>
-      </CardContent>
-    </Card>
+    <!-- 步骤 2：预览 -->
+    <ImportPreviewCard
+      v-if="csv.products.value.length > 0"
+      :categories="aggregatedCategories"
+      :expanded="expanded"
+      :unmapped-count="unmappedGroups.length"
+      :strategy="strategy"
+      :importing="importing"
+      :search="search"
+      :empty="filteredProducts.length === 0"
+      @toggle-category="toggleCategory"
+      @change-strategy="s => strategy = s"
+      @update:search="v => search = v"
+      @import="onImport"
+      @show-unmapped="unmappedDialogOpen = true"
+      @go-assign="goAssign"
+    />
 
-    <!-- 步骤 2：预览（两层归纳） -->
-    <Card v-if="csv.products.value.length > 0" class="flex flex-col" style="height: calc(100vh - 220px); min-height: 480px;">
-      <CardHeader class="shrink-0 pb-3">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle class="flex items-center gap-2">
-              <Boxes class="h-5 w-5" />
-              {{ t('admin.import.step2') }}
-            </CardTitle>
-          </div>
-          <div class="flex items-center gap-2 shrink-0">
-            <Label class="text-xs">{{ t('admin.import.search') }}</Label>
-            <Input v-model="search" class="w-56" :placeholder="t('admin.import.searchPh')" />
-          </div>
-        </div>
-      </CardHeader>
-
-      <CardContent class="flex-1 min-h-0 p-0">
-        <div class="h-full overflow-y-auto px-6 pb-3">
-          <div v-for="agg in aggregatedCategories" :key="agg.category" class="mb-4 border rounded-lg overflow-hidden">
-            <!-- 分类头（可点击展开） -->
-            <button
-              class="w-full flex items-center gap-3 px-4 py-2.5 bg-muted/40 hover:bg-muted/60 transition text-left"
-              @click="toggleCategory(agg.category)"
-            >
-              <component :is="expanded[agg.category] ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
-              <Badge>{{ agg.category }}</Badge>
-              <span class="text-xs text-muted-foreground">
-                {{ agg.models }} {{ t('admin.import.modelsUnit') }}
-              </span>
-              <span class="text-xs text-muted-foreground">·</span>
-              <span class="text-xs text-emerald-700">
-                L1 {{ agg.totalL1.toLocaleString() }}
-              </span>
-              <span class="text-xs text-muted-foreground">·</span>
-              <span class="text-xs text-sky-700">
-                L2 {{ agg.totalL2.toLocaleString() }}
-              </span>
-              <span class="text-xs text-muted-foreground">·</span>
-              <span class="text-xs">
-                <span
-                  v-for="pf in agg.prefixes"
-                  :key="pf.prefix"
-                  class="inline-flex items-center px-1.5 py-0.5 rounded bg-background border mr-1 font-mono text-[10px]"
-                >
-                  {{ pf.prefix }}: {{ pf.boxes.toLocaleString() }}
-                </span>
-              </span>
-            </button>
-
-            <!-- 分类下：商品列表 -->
-            <div v-show="expanded[agg.category]" class="divide-y">
-              <div
-                v-for="p in agg.products"
-                :key="p.model"
-                class="px-4 py-2 grid grid-cols-12 gap-2 items-start text-sm"
-              >
-                <!-- 型号 + 分类 -->
-                <div class="col-span-3">
-                  <div class="flex items-center gap-1">
-                    <span class="font-mono font-medium truncate">{{ p.model }}</span>
-                    <span v-if="p.isVisible" class="text-emerald-600"><Eye class="h-3 w-3" /></span>
-                    <span v-else class="text-muted-foreground"><EyeOff class="h-3 w-3" /></span>
-                  </div>
-                  <p v-if="p.remark" class="text-xs text-muted-foreground truncate">{{ p.remark }}</p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ p.conversionRate }} м²/ящ
-                  </p>
-                </div>
-
-                <!-- 色号 + 箱数 -->
-                <div class="col-span-6 flex flex-wrap gap-1">
-                  <Badge
-                    v-for="c in p.colors"
-                    :key="c.colorCode + c.stockLevel"
-                    variant="outline"
-                    class="font-mono"
-                  >
-                    {{ c.colorCode }}: {{ c.boxes }}
-                  </Badge>
-                  <span v-if="p.colors.length === 0" class="text-xs text-muted-foreground italic">
-                    {{ t('admin.import.noColors') }}
-                  </span>
-                </div>
-
-                <!-- 总库存 + 客户组 + 状态 -->
-                <div class="col-span-3 text-xs text-muted-foreground">
-                  <div>
-                    L1: <span class="font-medium text-foreground">{{ p.totalLevel1 }}</span>
-                    ·
-                    L2: <span class="font-medium text-foreground">{{ p.totalLevel2 }}</span>
-                  </div>
-                  <div class="truncate" :title="p.customerGroups.join(', ')">
-                    {{ t('admin.import.groups') }}: {{ p.customerGroups.length }}
-                  </div>
-                  <div>
-                    <Badge v-if="p.existsInDb" class="bg-amber-100 text-amber-800 text-[10px] py-0">
-                      {{ t('admin.import.exists') }}
-                    </Badge>
-                    <Badge v-else class="bg-emerald-100 text-emerald-800 text-[10px] py-0">
-                      {{ t('admin.import.new') }}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-if="filteredProducts.length === 0" class="py-10 text-center text-sm text-muted-foreground">
-            {{ t('admin.import.empty') }}
-          </div>
-        </div>
-      </CardContent>
-
-      <!-- 底部固定操作条（精简版） -->
-      <div class="shrink-0 border-t bg-card px-6 py-3 flex items-center justify-between gap-3">
-        <!-- 左侧：唯一的危险提示 → 触发 modal -->
-        <div class="flex items-center gap-2 text-xs">
-          <Button
-            v-if="unmappedGroups.length > 0"
-            variant="outline"
-            size="sm"
-            class="text-amber-700 border-amber-200 hover:bg-amber-50"
-            @click="unmappedDialogOpen = true"
-          >
-            <AlertTriangle class="h-3 w-3 mr-1" />
-            {{ t('admin.import.unmappedWarn', { n: unmappedGroups.length }) }}
-          </Button>
-          <span v-else class="text-emerald-700">
-            ✓ {{ t('admin.import.allMapped') }}
-          </span>
-        </div>
-
-        <div class="flex items-center gap-2">
-          <div class="flex items-center rounded-md border text-xs">
-            <button
-              class="px-3 py-1.5 transition"
-              :class="strategy === 'upsert' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'"
-              @click="strategy = 'upsert'"
-            >
-              {{ t('admin.import.stratUpsert') }}
-            </button>
-            <button
-              class="px-3 py-1.5 border-l transition"
-              :class="strategy === 'skip_existing' ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'"
-              @click="strategy = 'skip_existing'"
-            >
-              {{ t('admin.import.stratSkip') }}
-            </button>
-          </div>
-          <Button :disabled="importing" @click="onImport">
-            <Loader2 v-if="importing" class="mr-2 h-4 w-4 animate-spin" />
-            {{ t('admin.import.importBtn') }}
-          </Button>
-        </div>
-      </div>
-    </Card>
-
-    <!-- 未映射客户组 modal -->
-    <Dialog v-model:open="unmappedDialogOpen" title="未映射客户组" description="这些客户组不会出现在任何账户的白名单中，需先在客户组映射中关联账户">
-      <div class="space-y-3">
-        <p class="text-sm text-muted-foreground">
-          CSV 中出现 <strong>{{ unmappedGroups.length }}</strong> 个客户组未关联到任何账户：
-        </p>
-        <div class="max-h-60 overflow-y-auto rounded-md border bg-muted/30 p-2 flex flex-wrap gap-1">
-          <Badge v-for="g in unmappedGroups" :key="g" variant="outline" class="font-mono text-xs">
-            {{ g }}
-          </Badge>
-        </div>
-        <div class="flex justify-end gap-2 pt-2">
-          <Button variant="outline" @click="unmappedDialogOpen = false">稍后处理</Button>
-          <Button @click="goAssign">前往分配</Button>
-        </div>
-      </div>
-    </Dialog>
+    <!-- 未映射客户组 -->
+    <UnmappedGroupsDialog
+      v-model:open="unmappedDialogOpen"
+      :groups="unmappedGroups"
+      @go-assign="goAssign"
+    />
 
     <!-- 步骤 3：结果 -->
     <Card v-if="importResult || importError || csv.error.value">
       <CardContent class="py-4 space-y-3">
-        <div
-          v-if="importResult"
-          class="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm"
-        >
+        <div v-if="importResult"
+          class="flex items-start gap-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm">
           <CheckCircle2 class="h-5 w-5 text-emerald-600 mt-0.5" />
           <div class="flex-1">
             <p class="font-medium text-emerald-900">{{ t('admin.import.successTitle') }}</p>
@@ -557,20 +239,16 @@ const toggleCategory = (cat: string) => {
             </div>
           </div>
         </div>
-        <div
-          v-if="importError"
-          class="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm"
-        >
+        <div v-if="importError"
+          class="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm">
           <AlertTriangle class="h-5 w-5 text-red-600 mt-0.5" />
           <div>
             <p class="font-medium text-red-900">导入失败</p>
             <p class="text-red-800 font-mono text-xs">{{ importError }}</p>
           </div>
         </div>
-        <div
-          v-if="csv.error.value"
-          class="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm"
-        >
+        <div v-if="csv.error.value"
+          class="flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm">
           <AlertTriangle class="h-5 w-5 text-red-600 mt-0.5" />
           <p class="text-red-800">{{ csv.error.value }}</p>
         </div>
