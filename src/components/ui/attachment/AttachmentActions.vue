@@ -1,0 +1,9 @@
+<script setup lang="ts">
+import { cn } from '@/lib/utils'
+defineProps<{ class?: string }>()
+</script>
+<template>
+  <div :class="cn('flex shrink-0 items-center gap-1', $props.class)">
+    <slot />
+  </div>
+</template>

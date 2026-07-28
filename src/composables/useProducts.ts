@@ -12,6 +12,8 @@ export interface Product {
   remark: string | null
   image_url: string | null
   display_order: number
+  /** 库存表 A 列"客户组"——导入时写入 */
+  stock_group: string | null
 }
 
 export interface ProductColor {
@@ -220,6 +222,66 @@ export function useProducts() {
     return (data ?? []) as unknown as ProductWithColors[]
   }
 
+  /**
+   * 清空库存相关三张表：account_products → stock_colors → products。
+   * 注意顺序：必须先删依赖表，再删 products。
+   * 分批执行避免 URL / body 超限（Cloudflare 520）。
+   */
+  const clearAll = async (): Promise<{ products: number; colors: number; whiteRows: number }> => {
+    const CHUNK = 200
+
+    // 1. account_products
+    const { count: whiteCount, error: wErr } = await supabase
+      .from('account_products')
+      .select('*', { count: 'exact', head: true })
+    if (wErr) { error.value = wErr.message; throw wErr }
+    if ((whiteCount ?? 0) > 0) {
+      const { data: whiteRows } = await supabase
+        .from('account_products')
+        .select('id')
+      const ids = (whiteRows ?? []).map((r: any) => r.id)
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const slice = ids.slice(i, i + CHUNK)
+        const { error: dErr } = await supabase
+          .from('account_products')
+          .delete()
+          .in('id', slice)
+        if (dErr) { error.value = dErr.message; throw dErr }
+      }
+    }
+
+    // 2. stock_colors（必须先于 products，因为外键依赖）
+    const { data: colorIds } = await supabase
+      .from('stock_colors')
+      .select('id')
+    const cIds = (colorIds ?? []).map((r: any) => r.id)
+    for (let i = 0; i < cIds.length; i += CHUNK) {
+      const slice = cIds.slice(i, i + CHUNK)
+      const { error: cErr } = await supabase
+        .from('stock_colors')
+        .delete()
+        .in('id', slice)
+      if (cErr) { error.value = cErr.message; throw cErr }
+    }
+
+    // 3. products
+    const { data: pRows } = await supabase
+      .from('products')
+      .select('id')
+    const pIds = (pRows ?? []).map((r: any) => r.id)
+    for (let i = 0; i < pIds.length; i += CHUNK) {
+      const slice = pIds.slice(i, i + CHUNK)
+      const { error: pErr } = await supabase
+        .from('products')
+        .delete()
+        .in('id', slice)
+      if (pErr) { error.value = pErr.message; throw pErr }
+    }
+
+    items.value = []
+    return { products: pIds.length, colors: cIds.length, whiteRows: whiteCount ?? 0 }
+  }
+
   return {
     items,
     loading,
@@ -228,5 +290,6 @@ export function useProducts() {
     fetchAllWithColors,
     bulkUpsert,
     bulkImportWithColors,
+    clearAll,
   }
 }

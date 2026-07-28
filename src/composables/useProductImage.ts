@@ -15,9 +15,17 @@ import { supabase } from '@/lib/supabase'
 const MAX_SIZE = 5 * 1024 * 1024   // 5 MB
 const ALLOWED = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 
+export interface UploadProductImageOptions {
+  /** 上传进度回调 0~100 */
+  onProgress?: (percent: number) => void
+  /** 模拟进度（当 storage 不发进度事件时使用） */
+  simulateProgress?: boolean
+}
+
 export async function uploadProductImage(
   productId: string,
   file: File,
+  options: UploadProductImageOptions = {},
 ): Promise<string> {
   if (!ALLOWED.includes(file.type)) {
     throw new Error(`不支持的文件类型: ${file.type}（仅 jpg/png/webp/gif）`)
@@ -28,21 +36,44 @@ export async function uploadProductImage(
   const ext = file.name.split('.').pop()?.toLowerCase() || 'png'
   const path = `products/${productId}.${ext}`
 
-  const { error: upErr } = await supabase.storage
-    .from('product-images')
-    .upload(path, file, {
-      upsert: true,
-      contentType: file.type,
-      cacheControl: '3600',
-    })
-  if (upErr) throw upErr
+  const { onProgress, simulateProgress } = options
+  if (onProgress) {
+    if (simulateProgress) {
+      // Storage 客户端不暴露进度事件 — 用定时器模拟直到完成/失败
+      let p = 0
+      const tick = setInterval(() => {
+        p = Math.min(90, p + Math.random() * 12 + 5)
+        onProgress(Math.round(p))
+      }, 100)
+      try {
+        const { error: upErr } = await supabase.storage
+          .from('product-images')
+          .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' })
+        if (upErr) { clearInterval(tick); throw upErr }
+        onProgress(100)
+      } finally {
+        clearInterval(tick)
+      }
+    } else {
+      onProgress(50)
+      const { error: upErr } = await supabase.storage
+        .from('product-images')
+        .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' })
+      if (upErr) throw upErr
+      onProgress(100)
+    }
+  } else {
+    const { error: upErr } = await supabase.storage
+      .from('product-images')
+      .upload(path, file, { upsert: true, contentType: file.type, cacheControl: '3600' })
+    if (upErr) throw upErr
+  }
 
   const { data } = supabase.storage
     .from('product-images')
     .getPublicUrl(path)
 
   const publicUrl = data.publicUrl
-  // 写回 products.image_url
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { error: dbErr } = await (supabase as any)
     .from('products')
@@ -54,7 +85,6 @@ export async function uploadProductImage(
 }
 
 export async function removeProductImage(productId: string): Promise<void> {
-  // 尝试匹配常见扩展名删 storage
   const candidates = ['jpg', 'jpeg', 'png', 'webp', 'gif']
   for (const ext of candidates) {
     await supabase.storage
@@ -67,4 +97,22 @@ export async function removeProductImage(productId: string): Promise<void> {
     .update({ image_url: null })
     .eq('id', productId)
   if (dbErr) throw dbErr
+}
+
+/** 文件大小 → "1.2 MB" / "820 KB" */
+export function fmtFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** mime → "PNG" / "JPG" / "WEBP" */
+export function fmtFileType(mime: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'JPG',
+    'image/png': 'PNG',
+    'image/webp': 'WEBP',
+    'image/gif': 'GIF',
+  }
+  return map[mime] ?? mime.replace('image/', '').toUpperCase()
 }

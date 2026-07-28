@@ -9,7 +9,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { Upload, Loader2, FileSpreadsheet, CheckCircle2, AlertTriangle, Eye, EyeOff, Boxes, ChevronDown, ChevronRight, X } from 'lucide-vue-next'
+import { Upload, Loader2, FileSpreadsheet, CheckCircle2, AlertTriangle, Eye, EyeOff, Boxes, ChevronDown, ChevronRight, X, Trash2 } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 
 import Button from '@/components/ui/Button.vue'
@@ -52,6 +52,31 @@ const expanded = ref<Record<string, boolean>>({})
 
 // 客户组未映射 modal
 const unmappedDialogOpen = ref(false)
+
+// ========== 清空旧数据 ==========
+const clearing = ref(false)
+const clearResult = ref<{ products: number; colors: number; whiteRows: number } | null>(null)
+const clearError = ref<string | null>(null)
+const clearConfirmText = ref('')
+
+const onClearAll = async () => {
+  if (clearConfirmText.value !== 'CLEAR') {
+    clearError.value = '请输入确认码 CLEAR 后再执行'
+    return
+  }
+  if (!confirm('⚠️ 此操作将物理删除：account_products / stock_colors / products 三张表所有数据，且不可恢复。确认继续？')) return
+  clearing.value = true
+  clearError.value = null
+  clearResult.value = null
+  try {
+    clearResult.value = await products.clearAll()
+    clearConfirmText.value = ''
+  } catch (e) {
+    clearError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    clearing.value = false
+  }
+}
 
 const onPickFile = () => fileInput.value?.click()
 
@@ -143,7 +168,6 @@ const onImport = async () => {
 }
 
 const goAssign = () => router.push('/admin/assign')
-const goGroupMapping = () => router.push('/admin/customer-groups')
 
 // === 两层归纳：分类 → 色号前缀 ===
 type PrefixAgg = {
@@ -245,6 +269,46 @@ const toggleCategory = (cat: string) => {
 
 <template>
   <div class="space-y-4">
+    <!-- 清空旧数据（危险操作） -->
+    <Card class="border-red-200 bg-red-50/30">
+      <CardHeader class="pb-3">
+        <CardTitle class="flex items-center gap-2 text-red-700">
+          <Trash2 class="h-5 w-5" />
+          清空旧数据（危险操作）
+        </CardTitle>
+      </CardHeader>
+      <CardContent class="space-y-3">
+        <p class="text-sm text-muted-foreground">
+          将物理删除 <code class="px-1 rounded bg-red-100 text-red-800">account_products</code> ·
+          <code class="px-1 rounded bg-red-100 text-red-800">stock_colors</code> ·
+          <code class="px-1 rounded bg-red-100 text-red-800">products</code> 三张表的所有数据，
+          用于在重新导入前重置库。不可恢复，请确认后再操作。
+        </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <Input
+            v-model="clearConfirmText"
+            placeholder='输入 "CLEAR" 以确认'
+            class="w-56"
+          />
+          <Button
+            variant="destructive"
+            :disabled="clearing || clearConfirmText !== 'CLEAR'"
+            @click="onClearAll"
+          >
+            <Loader2 v-if="clearing" class="mr-2 h-4 w-4 animate-spin" />
+            <Trash2 v-else class="mr-2 h-4 w-4" />
+            {{ clearing ? '清空中…' : '清空全部' }}
+          </Button>
+          <span v-if="clearResult" class="text-xs text-emerald-700">
+            ✓ 已删除：{{ clearResult.products }} 商品 ·
+            {{ clearResult.colors }} 色号 ·
+            {{ clearResult.whiteRows }} 白名单行
+          </span>
+          <span v-if="clearError" class="text-xs text-red-700">{{ clearError }}</span>
+        </div>
+      </CardContent>
+    </Card>
+
     <!-- 步骤 1：上传 -->
     <Card>
       <CardHeader>
@@ -463,7 +527,7 @@ const toggleCategory = (cat: string) => {
         </div>
         <div class="flex justify-end gap-2 pt-2">
           <Button variant="outline" @click="unmappedDialogOpen = false">稍后处理</Button>
-          <Button @click="goGroupMapping">前往映射</Button>
+          <Button @click="goAssign">前往分配</Button>
         </div>
       </div>
     </Dialog>
@@ -512,7 +576,6 @@ const toggleCategory = (cat: string) => {
         </div>
         <div class="flex gap-2">
           <Button variant="outline" @click="goAssign">{{ t('admin.import.goAssign') }}</Button>
-          <Button variant="outline" @click="goGroupMapping">{{ t('admin.import.goMapping') }}</Button>
         </div>
       </CardContent>
     </Card>

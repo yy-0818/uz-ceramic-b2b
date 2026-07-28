@@ -1,0 +1,12 @@
+/**
+ * Local shadcn-style Attachment components
+ * 与 https://www.shadcn-vue.com/docs/components/attachment 接口对齐
+ */
+export { default as Attachment } from './Attachment.vue'
+export { default as AttachmentMedia } from './AttachmentMedia.vue'
+export { default as AttachmentContent } from './AttachmentContent.vue'
+export { default as AttachmentTitle } from './AttachmentTitle.vue'
+export { default as AttachmentDescription } from './AttachmentDescription.vue'
+export { default as AttachmentActions } from './AttachmentActions.vue'
+export { default as AttachmentAction } from './AttachmentAction.vue'
+export { default as AttachmentGroup } from './AttachmentGroup.vue'
