@@ -469,8 +469,11 @@ const inviteTabs = computed((): { key: 'send' | 'history'; label: string }[] => 
 
 const switchInviteTab = async (key: 'send' | 'history') => {
   inviteTab.value = key
-  if (key === 'history' && inviteTarget.value) {
-    await invMgr.fetchForAccount(inviteTarget.value.id)
+  if (key === 'history') {
+    invMgr.invites.value = []   // 清旧数据，避免残留
+    if (inviteTarget.value) {
+      await invMgr.fetchForAccount(inviteTarget.value.id)
+    }
   }
 }
 
@@ -525,6 +528,7 @@ const openInvite = (parent: Account) => {
   inviteResult.value = null
   error.value = null
   inviteTab.value = 'send'
+  invMgr.invites.value = []   // 清历史，避免切账号时残留旧数据
   inviteOpen.value = true
 }
 
