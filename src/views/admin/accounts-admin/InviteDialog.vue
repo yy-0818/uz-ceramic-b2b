@@ -66,10 +66,16 @@ const tplLangs = [
   { code: 'zh', label: '中文' },
 ] as const
 
+/** 模板问候 / 品牌字面量（zh.ts / ru.ts / uz.ts 对应 key）。 */
+const tplGreeting = (lang: 'ru' | 'uz' | 'zh') =>
+  tForLocale(lang as Locale, 'admin.invites.tplGreeting')
+const tplBrand = (lang: 'ru' | 'uz' | 'zh') =>
+  tForLocale(lang as Locale, 'admin.invites.tplBrand')
+
 const inviteTemplate = (result: InviteResult) => {
   const accountName = props.target?.account_name ?? ''
-  const greeting = inviteTplLang.value === 'zh' ? '您好' : inviteTplLang.value === 'uz' ? 'Assalomu alaykum' : 'Здравствуйте'
-  const brand = inviteTplLang.value === 'zh' ? '陶瓷 · B2B' : inviteTplLang.value === 'uz' ? 'Keramika · B2B' : 'Керамика · B2B'
+  const greeting = tplGreeting(inviteTplLang.value)
+  const brand = tplBrand(inviteTplLang.value)
   return tForLocale(inviteTplLang.value as Locale, 'admin.invites.templateBody', {
     greeting,
     accountName,

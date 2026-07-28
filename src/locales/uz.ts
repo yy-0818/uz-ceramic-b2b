@@ -85,6 +85,9 @@ export default {
       statusRevoked: 'Bekor qilingan',
       copyLink: 'Havolani nusxalash',
       copied: 'Havola nusxalandi',
+      copyPrompt: 'Bu satrni nusxalang:',
+      tplGreeting: 'Assalomu alaykum',
+      tplBrand: 'Keramika · B2B',
     },
     import: {
       step1: '1-qadam · CSV yuklash',

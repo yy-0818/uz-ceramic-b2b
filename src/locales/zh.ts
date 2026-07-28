@@ -99,6 +99,8 @@ export default {
       copyLink: '复制链接',
       copied: '已复制',
       copyPrompt: '复制这一行：',
+      tplGreeting: '您好',
+      tplBrand: '陶瓷 · B2B',
     },
     import: {
       step1: '步骤 1 · 上传 CSV',

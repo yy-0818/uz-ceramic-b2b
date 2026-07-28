@@ -86,6 +86,9 @@ export default {
       statusRevoked: 'Отозвано',
       copyLink: 'Копировать ссылку',
       copied: 'Ссылка скопирована',
+      copyPrompt: 'Скопировать эту строку:',
+      tplGreeting: 'Здравствуйте',
+      tplBrand: 'Керамика · B2B',
     },
     import: {
       step1: 'Шаг 1 · Загрузить CSV',
