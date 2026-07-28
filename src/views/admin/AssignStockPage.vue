@@ -18,13 +18,14 @@ import CardTitle from '@/components/ui/CardTitle.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import Checkbox from '@/components/ui/Checkbox.vue'
 import Badge from '@/components/ui/Badge.vue'
-import Dialog from '@/components/ui/Dialog.vue'
 
 import { useProducts } from '@/composables/useProducts'
 import { useAccounts } from '@/composables/useAccounts'
 import { useAccountProducts } from '@/composables/useAccountProducts'
 import { useCustomerGroupMappings } from '@/composables/useCustomerGroupMappings'
 import { supabase } from '@/lib/supabase'
+
+import BindAccountsDialog from './assign-stock/BindAccountsDialog.vue'
 
 // 每个 product 的 L1 / L2 总箱数（来自 stock_colors 实时聚合）
 const productStockSums = ref<Map<string, { l1: number; l2: number }>>(new Map())
@@ -164,9 +165,11 @@ onMounted(onInit)
 
 /**
  * 客户组 → 主账号 绑定（多选 modal）。
+ * 业务逻辑在父级；UI 状态由 BindAccountsDialog 自管理。
  */
+const bindDialogOpen = ref(false)
 const bindGroup = ref<string | null>(null)
-const bindSelection = ref<Set<string>>(new Set())
+const bindInitialSelection = ref<string[]>([])
 const savingBind = ref(false)
 
 const getAccountName = (id: string) => {
@@ -176,23 +179,14 @@ const getAccountName = (id: string) => {
 
 const openBindModal = (group: string) => {
   bindGroup.value = group
-  bindSelection.value = new Set(groupToAccount.value[group] ?? [])
+  bindInitialSelection.value = [...(groupToAccount.value[group] ?? [])]
+  bindDialogOpen.value = true
 }
-const onBindDialogClose = (open: boolean | undefined) => {
-  if (open === undefined) return
-  if (!open) bindGroup.value = null
-}
-const toggleBind = (id: string) => {
-  const s = new Set(bindSelection.value)
-  s.has(id) ? s.delete(id) : s.add(id)
-  bindSelection.value = s
-}
-const saveBind = async () => {
-  if (!bindGroup.value) return
+
+const onSubmitBindSelection = async ({ group, selection }: { group: string; selection: string[] }) => {
   savingBind.value = true
   try {
-    const group = bindGroup.value
-    const wanted = bindSelection.value
+    const wanted = new Set(selection)
     const existing = mappings.items.value.filter((m) => m.customer_group === group && m.is_active)
     const existingIds = new Set(existing.map((m) => m.account_id))
 
@@ -208,7 +202,7 @@ const saveBind = async () => {
     for (const it of toRemove) await mappings.remove(it.id)
 
     await mappings.fetchAll()
-    bindGroup.value = null
+    bindDialogOpen.value = false
   } catch (e) {
     alert(e instanceof Error ? e.message : '保存失败')
   } finally {
@@ -471,36 +465,14 @@ const onSubmit = async () => {
       <p class="text-red-800">{{ ap.error.value }}</p>
     </div>
 
-    <!-- 绑定主账号 modal -->
-    <Dialog
-      :open="bindGroup !== null"
-      @update:open="onBindDialogClose"
-      :title="bindGroup ? `「${bindGroup}」绑定主账号` : ''"
-      description="可多选；勾选确定后写入 DB。"
-    >
-      <div class="flex flex-wrap gap-1.5 max-h-72 overflow-auto py-2">
-        <button
-          v-for="a in allParents"
-          :key="a.id"
-          type="button"
-          class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition"
-          :class="bindSelection.has(a.id)
-            ? 'bg-primary text-primary-foreground border-primary'
-            : 'bg-background hover:bg-muted'"
-          @click="toggleBind(a.id)"
-        >
-          <span class="font-medium truncate max-w-[160px]">{{ a.account_name }}</span>
-          <span
-            class="text-[10px]"
-            :class="bindSelection.has(a.id) ? 'opacity-80' : 'text-muted-foreground'"
-          >{{ a.account_type }}</span>
-        </button>
-      </div>
-
-      <div class="mt-4 flex justify-end gap-2">
-        <Button variant="outline" @click="onBindDialogClose(false)">取消</Button>
-        <Button @click="saveBind">保存绑定</Button>
-      </div>
-    </Dialog>
+    <!-- 绑定主账号 dialog -->
+    <BindAccountsDialog
+      v-model:open="bindDialogOpen"
+      :group="bindGroup"
+      :initial-selection="bindInitialSelection"
+      :all-parents="allParents"
+      :saving="savingBind"
+      @submit="onSubmitBindSelection"
+    />
   </div>
 </template>

@@ -17,7 +17,6 @@ import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
-import Dialog from '@/components/ui/Dialog.vue'
 import CategoryCardSkeleton from '@/components/ui/CategoryCardSkeleton.vue'
 import ModelCardSkeleton from '@/components/ui/ModelCardSkeleton.vue'
 
@@ -26,6 +25,8 @@ import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { supabase } from '@/lib/supabase'
+
+import CartDrawer from './product-browse/CartDrawer.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -214,6 +215,8 @@ const back = () => {
     view.value = 'categories'
   }
 }
+
+const goCheckout = () => router.push('/customer/checkout')
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
   const cur = cart.qtyOf(productId)
@@ -529,41 +532,10 @@ const cartTotalM2 = computed(() => cart.totalM2())
     </div>
 
     <!-- 购物车抽屉 -->
-    <Dialog v-model:open="showCart" :title="t('customer.cart.title')">
-      <div v-if="cart.items.value.length === 0" class="text-sm text-muted-foreground text-center py-6">
-        {{ t('customer.cart.empty') }}
-      </div>
-      <ul v-else class="space-y-2 max-h-80 overflow-auto">
-        <li
-          v-for="c in cart.items.value"
-          :key="c.product_id"
-          class="flex items-center justify-between border rounded-md p-2"
-        >
-          <div class="min-w-0 flex-1">
-            <p class="font-mono text-sm truncate">{{ c.model }}</p>
-            <p class="text-xs text-muted-foreground">
-              {{ c.boxes }} ящ. × {{ c.conversion_rate }} = {{ fmtM2(c.boxes * c.conversion_rate) }}
-            </p>
-          </div>
-          <Button size="sm" variant="ghost" @click="cart.remove(c.product_id)">
-            {{ t('customer.cart.remove') }}
-          </Button>
-        </li>
-      </ul>
-
-      <div v-if="cart.items.value.length > 0" class="mt-4 border-t pt-3 space-y-2">
-        <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">{{ t('customer.cart.totalBoxes') }}</span>
-          <span class="font-medium">{{ cartTotalBoxes }}</span>
-        </div>
-        <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">{{ t('customer.cart.totalM2') }}</span>
-          <span class="font-medium">{{ fmtM2(cartTotalM2) }}</span>
-        </div>
-        <Button class="w-full" @click="router.push('/customer/checkout')">
-          {{ t('customer.cart.checkout') }}
-        </Button>
-      </div>
-    </Dialog>
+    <CartDrawer
+      v-model:open="showCart"
+      :cart="cart"
+      @checkout="goCheckout"
+    />
   </div>
 </template>
