@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Link2, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
+import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import { useCart } from '@/composables/useCart'
@@ -34,7 +34,6 @@ const navItems = computed<NavItem[]>(() => {
   if (isAdmin.value) {
     items.push({ name: t('nav.import'), to: '/admin/import', icon: Upload })
     items.push({ name: t('nav.allProducts'), to: '/admin/products', icon: Database })
-    items.push({ name: t('nav.customerGroups'), to: '/admin/customer-groups', icon: Link2 })
     items.push({ name: t('nav.assign'), to: '/admin/assign', icon: Filter })
     items.push({ name: t('nav.accounts'), to: '/admin/accounts', icon: Users })
   }
@@ -53,7 +52,7 @@ const navItems = computed<NavItem[]>(() => {
 // 移动端：底部固定 4 项 = catalog/orders + 当前角色最高频入口 + "更多"
 // 这样在 admin 视角下也能露出核心 + 抽屉。
 const MOBILE_PRIMARY: Record<string, string[]> = {
-  admin:     ['/admin/import', '/admin/products', '/admin/assign', '/admin/customer-groups'],
+  admin:     ['/admin/import', '/admin/products', '/admin/assign', '/admin/accounts'],
   customer:  ['/catalog', '/orders'],
   checker:   ['/audit'],
   finance:   ['/finance'],

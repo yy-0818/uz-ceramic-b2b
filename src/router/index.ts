@@ -38,8 +38,6 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['admin'] } },
       { path: 'admin/products', name: 'admin.products', component: () => import('@/views/admin/AllProductsPage.vue'),
         meta: { roles: ['admin'] } },
-      { path: 'admin/customer-groups', name: 'admin.customerGroups', component: () => import('@/views/admin/CustomerGroupMappingPage.vue'),
-        meta: { roles: ['admin'] } },
       { path: 'admin/assign', name: 'admin.assign', component: () => import('@/views/admin/AssignStockPage.vue'),
         meta: { roles: ['admin'] } },
       { path: 'admin/accounts', name: 'admin.accounts', component: () => import('@/views/admin/AccountsAdminPage.vue'),
