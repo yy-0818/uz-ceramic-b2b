@@ -191,10 +191,14 @@ async function bindAndMark(accountId, userId, loginEmail, inviteId, supabaseAdmi
       full_name: loginEmail, // 后续用户可在个人中心改
     }, { onConflict: 'id' })
 
-  // 3. 标记 invite.used_at
+  // 3. 标记 invite.used_at + status='used' + used_by（由 migration 0011 加的列）
   await supabaseAdmin
     .from('customer_invites')
-    .update({ used_at: new Date().toISOString() })
+    .update({
+      used_at: new Date().toISOString(),
+      status: 'used',
+      used_by: userId,
+    })
     .eq('id', inviteId)
 }
 

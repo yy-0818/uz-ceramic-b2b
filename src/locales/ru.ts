@@ -40,6 +40,53 @@ export default {
     admin: 'Админ',
   },
   admin: {
+    invites: {
+      title: 'История приглашений',
+      colCreatedAt: 'Создано',
+      colCreatedBy: 'Кто создал',
+      colExpiresAt: 'Истекает',
+      colUsedAt: 'Активировано',
+      colStatus: 'Статус',
+      colActions: 'Действия',
+      empty: 'Нет приглашений',
+      used: 'Активирован',
+      regenerate: 'Пересоздать',
+      revoke: 'Отозвать',
+      revokeConfirm: 'Отозвать это приглашение?',
+      revokeDone: 'Отозвано',
+      regenerateDone: 'Создано новое приглашение',
+      templateSubject: 'Ваше приглашение — {brand}',
+      templateBody:
+        '{greeting} {accountName},\n\n' +
+        'вам отправлена ссылка для входа в систему.\n\n' +
+        'Нажмите на ссылку ниже и установите пароль (ссылка действительна {expiresDays} дней):\n\n' +
+        '{url}\n\n' +
+        'Ваш логин: {loginEmail}\n\n' +
+        '{brand}',
+      tabSend: 'Отправить ссылку',
+      tabHistory: 'История',
+      sendHint1: 'Ссылка действительна 7 дней, только для одного использования.',
+      sendHint2: 'Клиент нажмёт ссылку → задаст пароль → войдёт автоматически.',
+      noEmail: 'У этого аккаунта нет логина. Сначала заполните email в редактировании аккаунта.',
+      willUseEmail: 'Будет использован логин',
+      generateBtn: 'Создать ссылку',
+      generated: 'Ссылка создана. Отправьте её клиенту.',
+      expiresAt: 'Истекает: {d}',
+      colUrl: 'Ссылка',
+      colLoginEmail: 'Логин клиента',
+      template: 'Шаблон для отправки',
+      generateAnother: 'Создать ещё одну',
+      statPending: 'Ожидает',
+      statUsed: 'Активировано',
+      statExpired: 'Истекло',
+      statRevoked: 'Отозвано',
+      statusPending: 'Ожидает',
+      statusUsed: 'Активировано',
+      statusExpired: 'Истекло',
+      statusRevoked: 'Отозвано',
+      copyLink: 'Копировать ссылку',
+      copied: 'Ссылка скопирована',
+    },
     import: {
       step1: 'Шаг 1 · Загрузить CSV',
       step1Desc: 'Файл ежедневной выгрузки с завода',

@@ -58,6 +58,15 @@ function format(template: unknown, values?: Record<string, any>): string {
 }
 
 /**
+ * 按指定 locale 翻译（用于 admin 选语言预览模板）。
+ */
+export function tForLocale(lang: Locale, key: string, values?: Record<string, any>): string {
+  const dict = MESSAGES[lang]
+  const raw = lookup(dict, key) ?? lookup(MESSAGES[DEFAULT_LOCALE], key)
+  return format(raw, values)
+}
+
+/**
  * 解析当前 locale 下 key 对应的字符串，找不到则走 fallback (ru)。
  */
 function translate(key: string, values?: Record<string, any>): string {
@@ -73,6 +82,7 @@ export function useI18n() {
   return {
     locale: readonly(currentLocale),
     t: (key: string, values?: Record<string, any>) => translate(key, values),
+    tForLocale: (lang: Locale, key: string, values?: Record<string, any>) => tForLocale(lang, key, values),
     d: (value: Date | number | string) => {
       try { return new Intl.DateTimeFormat(currentLocale.value).format(new Date(value)) }
       catch { return String(value) }

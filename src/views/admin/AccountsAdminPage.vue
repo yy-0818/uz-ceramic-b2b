@@ -32,11 +32,16 @@ import Dialog from '@/components/ui/Dialog.vue'
 import { useAccounts, type Account, type AccountType } from '@/composables/useAccounts'
 import { useStockGroups, type StockGroup } from '@/composables/useStockGroups'
 import { useCustomerAuth } from '@/composables/useCustomerAuth'
+import { useCustomerInvites } from '@/composables/useCustomerInvites'
+import { useI18n } from '@/lib/i18n'
+import type { Locale } from '@/lib/i18n'
 
 const router = useRouter()
 const acc = useAccounts()
 const stockGroups = useStockGroups()
 const customerAuth = useCustomerAuth()
+const invMgr = useCustomerInvites()
+const { t, locale, tForLocale } = useI18n()
 
 const parents = ref<Account[]>([])
 const subsByParent = ref<Record<string, Account[]>>({})
@@ -130,7 +135,6 @@ const inviteTarget = ref<Account | null>(null)
 const inviteResult = ref<{
   url: string
   loginEmail: string
-  emailSource: 'preset' | 'generated'
   expiresAt: string
   token: string
 } | null>(null)
@@ -454,18 +458,80 @@ const selectNoneAssigned = () => {
 }
 
 // ============ 邀请 / 重置密码 ============
+// Tab 状态
+const inviteTab = ref<'send' | 'history'>('send')
+const inviteTplLang = ref<'ru' | 'uz' | 'zh'>('ru')
+
+const inviteTabs = computed((): { key: 'send' | 'history'; label: string }[] => [
+  { key: 'send', label: t('admin.invites.tabSend') },
+  { key: 'history', label: t('admin.invites.tabHistory') },
+])
+
+const switchInviteTab = async (key: 'send' | 'history') => {
+  inviteTab.value = key
+  if (key === 'history' && inviteTarget.value) {
+    await invMgr.fetchForAccount(inviteTarget.value.id)
+  }
+}
+
+// 多语言模板（用 inviteTplLang 选语言，tForLocale 查对应语言文案）
+const inviteTemplate = (result: NonNullable<typeof inviteResult.value>) => {
+  const accountName = inviteTarget.value?.account_name ?? ''
+  const greeting = inviteTplLang.value === 'zh' ? '您好' : inviteTplLang.value === 'uz' ? 'Assalomu alaykum' : 'Здравствуйте'
+  const brand = inviteTplLang.value === 'zh' ? '陶瓷 · B2B' : inviteTplLang.value === 'uz' ? 'Keramika · B2B' : 'Керамика · B2B'
+  return tForLocale(inviteTplLang.value, 'admin.invites.templateBody', {
+    greeting,
+    accountName,
+    expiresDays: 7,
+    url: result.url,
+    loginEmail: result.loginEmail,
+    brand,
+  })
+}
+
+// 统计 badge
+const inviteStats = computed(() => [
+  { key: 'pending', label: t('admin.invites.statPending'), count: invMgr.stats.value.pending, cls: 'bg-blue-400' },
+  { key: 'used', label: t('admin.invites.statUsed'), count: invMgr.stats.value.used, cls: 'bg-green-400' },
+  { key: 'expired', label: t('admin.invites.statExpired'), count: invMgr.stats.value.expired, cls: 'bg-gray-400' },
+  { key: 'revoked', label: t('admin.invites.statRevoked'), count: invMgr.stats.value.revoked, cls: 'bg-red-400' },
+])
+
+const inviteStatusLabel = (s: string) => {
+  const map: Record<string, string> = {
+    pending: t('admin.invites.statusPending'),
+    used: t('admin.invites.statusUsed'),
+    expired: t('admin.invites.statusExpired'),
+    revoked: t('admin.invites.statusRevoked'),
+  }
+  return map[s] ?? s
+}
+
+const copyInviteUrlFor = async (inv: (typeof invMgr.invites.value)[number]) => {
+  const url = `${window.location.origin}/customer-invite?token=${inv.token}`
+  await navigator.clipboard.writeText(url)
+  alert(t('admin.invites.copied'))
+}
+
+const handleRevoke = async (inv: (typeof invMgr.invites.value)[number]) => {
+  if (!confirm(t('admin.invites.revokeConfirm'))) return
+  await invMgr.revokeInvite(inv.id)
+  alert(t('admin.invites.revokeDone'))
+}
+
 const openInvite = (parent: Account) => {
   openMenuId.value = null
   inviteTarget.value = parent
   inviteResult.value = null
   error.value = null
+  inviteTab.value = 'send'
   inviteOpen.value = true
 }
+
 const submitInvite = async () => {
   if (!inviteTarget.value) return
-  loading.value = true
   try {
-    const { url, loginEmail, emailSource } = await customerAuth.createInvite(
+    const { url, loginEmail } = await customerAuth.createInvite(
       inviteTarget.value.id,
       inviteTarget.value.account_name,
       inviteTarget.value.id,
@@ -473,21 +539,18 @@ const submitInvite = async () => {
     inviteResult.value = {
       url,
       loginEmail,
-      emailSource,
       expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
       token: url.split('token=')[1] ?? '',
     }
   } catch (e: any) {
     error.value = e.message ?? String(e)
-  } finally {
-    loading.value = false
   }
 }
 const copyInviteUrl = async () => {
   if (!inviteResult.value) return
   try {
     await navigator.clipboard.writeText(inviteResult.value.url)
-    alert('已复制邀请链接')
+    alert(t('admin.invites.copied'))
   } catch {
     prompt('复制这一行：', inviteResult.value.url)
   }
@@ -496,7 +559,7 @@ const copyLoginEmail = async () => {
   if (!inviteResult.value) return
   try {
     await navigator.clipboard.writeText(inviteResult.value.loginEmail)
-    alert('已复制登录邮箱')
+    alert(t('admin.invites.copied'))
   } catch {
     prompt('复制这一行：', inviteResult.value.loginEmail)
   }
@@ -1085,83 +1148,175 @@ const goImport = () => router.push('/admin/accounts/import')
 
     <!-- ============ 邀请链接 ============ -->
     <Dialog v-model:open="inviteOpen"
-      :title="`邀请客户登录：${inviteTarget?.account_name ?? ''}`"
-      description="为客户生成 7 天有效的一次性邀请链接。客户打开链接后自己设置密码。">
+      :title="`${t('admin.invites.title')}：${inviteTarget?.account_name ?? ''}`"
+      description="">
       <div class="space-y-3">
-        <div v-if="!inviteResult" class="space-y-2">
-          <div class="text-xs text-muted-foreground space-y-1">
-            <p>链接 7 天过期，只能用一次。</p>
-            <p>客户点链接 → 设密码 → 自动登录。</p>
+
+        <!-- Tab 切换 -->
+        <div class="flex border-b">
+          <button
+            v-for="tab in inviteTabs"
+            :key="tab.key"
+            class="px-4 py-2 text-sm border-b-2 -mb-px transition-colors"
+            :class="inviteTab === tab.key
+              ? 'border-primary text-primary font-medium'
+              : 'border-transparent text-muted-foreground hover:text-foreground'"
+            @click="switchInviteTab(tab.key)"
+          >{{ tab.label }}</button>
+        </div>
+
+        <!-- ---------- Tab：发链接 ---------- -->
+        <div v-if="inviteTab === 'send'" class="space-y-3">
+          <div v-if="!inviteResult" class="space-y-2">
+            <div class="text-xs text-muted-foreground space-y-1">
+              <p>{{ t('admin.invites.sendHint1') }}</p>
+              <p>{{ t('admin.invites.sendHint2') }}</p>
+            </div>
+            <div v-if="!inviteTarget?.login_email?.trim()" class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
+              ✗ {{ t('admin.invites.noEmail') }}
+            </div>
+            <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
+              {{ t('admin.invites.willUseEmail') }}：<span class="font-mono">{{ inviteTarget.login_email }}</span>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <Button variant="outline" @click="inviteOpen = false">{{ t('common.cancel') }}</Button>
+              <Button @click="submitInvite" :disabled="invMgr.loading.value || !inviteTarget?.login_email?.trim()">
+                <Loader2 v-if="invMgr.loading.value" class="mr-2 h-4 w-4 animate-spin" />
+                <Mail class="mr-2 h-4 w-4" />
+                {{ t('admin.invites.generateBtn') }}
+              </Button>
+            </div>
           </div>
-          <div v-if="!inviteTarget?.login_email?.trim()" class="text-xs text-red-700 bg-red-50 border border-red-200 rounded-md p-2">
-            ✗ 该主账号尚未绑定真实登录邮箱。<strong>无法生成邀请链接</strong>。请先在父账号编辑里填一个有效邮箱（如 <code>customer@yourcompany.com</code>）—— Supabase Auth 会拒绝任何占位邮箱（<code>example.com</code> / <code>.local</code> / <code>.test</code> 等保留域）。
-          </div>
-          <div v-else class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
-            将使用登录邮箱：<span class="font-mono">{{ inviteTarget.login_email }}</span>
-          </div>
-          <div class="flex justify-end gap-2 pt-2">
-            <Button variant="outline" @click="inviteOpen = false">取消</Button>
-            <Button @click="submitInvite" :disabled="loading || !inviteTarget?.login_email?.trim()">
-              <Loader2 v-if="loading" class="mr-2 h-4 w-4 animate-spin" />
-              <Mail class="mr-2 h-4 w-4" />
-              生成邀请链接
-            </Button>
+
+          <!-- 成功：显示链接 + 模板 -->
+          <div v-else class="space-y-3">
+            <div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
+              {{ t('admin.invites.generated') }}
+              {{ t('admin.invites.expiresAt', { d: new Date(inviteResult.expiresAt).toLocaleDateString(locale) }) }}
+            </div>
+
+            <!-- 邀请链接 -->
+            <div>
+              <Label class="text-xs text-muted-foreground">{{ t('admin.invites.colUrl') }}</Label>
+              <div class="flex items-center gap-2 mt-1">
+                <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
+                <Button size="sm" variant="outline" @click="copyInviteUrl">
+                  <Copy class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <!-- 登录邮箱 -->
+            <div>
+              <Label class="text-xs text-muted-foreground">{{ t('admin.invites.colLoginEmail') }}</Label>
+              <div class="flex items-center gap-2 mt-1">
+                <Input :value="inviteResult.loginEmail" readonly class="font-mono text-xs h-9" />
+                <Button size="sm" variant="outline" @click="copyLoginEmail">
+                  <Copy class="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            <!-- 多语言发送模板 -->
+            <div>
+              <Label class="text-xs text-muted-foreground mb-1 block">{{ t('admin.invites.template') }}</Label>
+              <div class="flex flex-wrap gap-1 mb-2">
+                <button
+                  v-for="lang in [{ code: 'ru', label: 'Русский' }, { code: 'uz', label: 'Oʻzbek' }, { code: 'zh', label: '中文' }]"
+                  :key="lang.code"
+                  class="px-2 py-0.5 text-xs rounded border transition-colors"
+                  :class="inviteTplLang === lang.code
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-muted text-muted-foreground border-transparent hover:text-foreground'"
+                  @click="inviteTplLang = lang.code as 'ru' | 'uz' | 'zh'"
+                >{{ lang.label }}</button>
+              </div>
+              <div class="p-3 bg-muted rounded-md font-mono text-xs whitespace-pre-wrap">
+                {{ inviteTemplate(inviteResult) }}
+              </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+              <Button variant="outline" @click="inviteResult = null">
+                <RefreshCw class="h-3.5 w-3.5 mr-1" />{{ t('admin.invites.generateAnother') }}
+              </Button>
+              <Button @click="inviteOpen = false">{{ t('common.confirm') }}</Button>
+            </div>
           </div>
         </div>
-        <div v-else class="space-y-3">
-          <div class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2">
-            链接已生成。请复制后发送给客户（微信 / 邮件）。
-            过期时间：{{ new Date(inviteResult.expiresAt).toLocaleString('zh-CN') }}
+
+        <!-- ---------- Tab：历史记录 ---------- -->
+        <div v-if="inviteTab === 'history'">
+          <!-- 统计 bar -->
+          <div class="flex gap-3 mb-3 text-xs">
+            <span v-for="s in inviteStats" :key="s.key" class="flex items-center gap-1">
+              <span class="inline-block w-2 h-2 rounded-full" :class="s.cls"></span>
+              {{ s.label }}：<strong>{{ s.count }}</strong>
+            </span>
           </div>
 
-          <!-- 邀请链接 -->
-          <div>
-            <Label class="text-xs text-muted-foreground">邀请链接</Label>
-            <div class="flex items-center gap-2 mt-1">
-              <Input :value="inviteResult.url" readonly class="font-mono text-xs h-9" />
-              <Button size="sm" variant="outline" @click="copyInviteUrl">
-                <Copy class="h-3.5 w-3.5" />
-              </Button>
-            </div>
+          <!-- 空状态 -->
+          <div v-if="!invMgr.invites.value.length" class="text-center text-xs text-muted-foreground py-8">
+            {{ t('admin.invites.empty') }}
           </div>
 
-          <!-- 客户登录邮箱（关键信息）-->
-          <div>
-            <Label class="text-xs text-muted-foreground">
-              客户登录邮箱
-              <span v-if="inviteResult.emailSource === 'generated'" class="text-amber-600 ml-1">（自动生成，建议告知客户）</span>
-            </Label>
-            <div class="flex items-center gap-2 mt-1">
-              <Input :value="inviteResult.loginEmail" readonly class="font-mono text-xs h-9" />
-              <Button size="sm" variant="outline" @click="copyLoginEmail">
-                <Copy class="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          <!-- 发送模板（直接复制给客户） -->
-          <details class="text-xs">
-            <summary class="cursor-pointer text-muted-foreground hover:text-foreground">给客户的发送模板（点击展开）</summary>
-            <div class="mt-2 p-3 bg-muted rounded-md font-mono text-xs whitespace-pre-wrap">{{
-              `您好 ${inviteTarget?.account_name ?? ''}，
-
-请通过以下链接设置您的登录密码（链接 7 天内有效）：
-
-${inviteResult.url}
-
-您的登录邮箱是：
-${inviteResult.loginEmail}
-
-设置密码后即可登录。
-如有疑问请联系您的业务对接人。`
-            }}</div>
-          </details>
-
-          <div class="flex justify-end gap-2 pt-2">
-            <Button variant="outline" @click="inviteResult = null">
-              <RefreshCw class="h-3.5 w-3.5 mr-1" />再生成一个
-            </Button>
-            <Button @click="inviteOpen = false">完成</Button>
+          <!-- 表格 -->
+          <div v-else class="border rounded-md overflow-hidden">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="bg-muted/50 border-b">
+                  <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedAt') }}</th>
+                  <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</th>
+                  <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</th>
+                  <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</th>
+                  <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colStatus') }}</th>
+                  <th class="px-2 py-1.5 text-right font-medium text-muted-foreground">{{ t('admin.invites.colActions') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="inv in invMgr.invites.value"
+                  :key="inv.id"
+                  class="border-b last:border-0 hover:bg-muted/30"
+                >
+                  <td class="px-2 py-2">{{ new Date(inv.created_at).toLocaleDateString(locale) }}</td>
+                  <td class="px-2 py-2">{{ inv.created_by_name ?? '—' }}</td>
+                  <td class="px-2 py-2">{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</td>
+                  <td class="px-2 py-2">{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</td>
+                  <td class="px-2 py-2">
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
+                      :class="{
+                        'bg-blue-50 text-blue-700': inv.status === 'pending',
+                        'bg-green-50 text-green-700': inv.status === 'used',
+                        'bg-gray-100 text-gray-500': inv.status === 'expired',
+                        'bg-red-50 text-red-700': inv.status === 'revoked',
+                      }"
+                    >{{ inviteStatusLabel(inv.status) }}</span>
+                  </td>
+                  <td class="px-2 py-2 text-right">
+                    <!-- pending: 复制链接 -->
+                    <Button
+                      v-if="inv.status === 'pending'"
+                      size="sm" variant="ghost" class="h-6 px-1.5"
+                      @click="copyInviteUrlFor(inv)"
+                      :title="t('admin.invites.copyLink')"
+                    >
+                      <Copy class="h-3 w-3" />
+                    </Button>
+                    <!-- pending + 正常: 作废 + 重新生成 -->
+                    <template v-if="inv.status === 'pending'">
+                      <Button
+                        size="sm" variant="ghost" class="h-6 px-1.5 text-amber-600 hover:text-amber-700"
+                        @click="handleRevoke(inv)"
+                        :title="t('admin.invites.revoke')"
+                      >
+                        <X class="h-3 w-3" />
+                      </Button>
+                    </template>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

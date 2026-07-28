@@ -39,6 +39,53 @@ export default {
     admin: 'Admin',
   },
   admin: {
+    invites: {
+      title: 'Takliflar tarixi',
+      colCreatedAt: 'Yaratilgan',
+      colCreatedBy: 'Kim yaratdi',
+      colExpiresAt: 'Amal qilish muddati',
+      colUsedAt: 'Faollashtirilgan',
+      colStatus: 'Holat',
+      colActions: 'Amallar',
+      empty: 'Takliflar yo\'q',
+      used: 'Faollashtirilgan',
+      regenerate: 'Qayta yaratish',
+      revoke: 'Bekor qilish',
+      revokeConfirm: 'Ushbu taklifni bekor qilishni tasdiqlaysizmi?',
+      revokeDone: 'Bekor qilindi',
+      regenerateDone: 'Yangi taklif yaratildi',
+      templateSubject: 'Sizning taklifingiz — {brand}',
+      templateBody:
+        '{greeting} {accountName},\n\n' +
+        'sizga tizimga kirish havolasi yuborildi.\n\n' +
+        'Quyidagi havolani bosing va parol o\'rnatish (havola {expiresDays} kun davomida amal qiladi):\n\n' +
+        '{url}\n\n' +
+        'Tizimga kirish uchun: {loginEmail}\n\n' +
+        '{brand}',
+      tabSend: 'Havola yuborish',
+      tabHistory: 'Tarix',
+      sendHint1: 'Havola 7 kun davomida amal qiladi, faqat bir marta ishlatiladi.',
+      sendHint2: 'Mijoz havolani bosadi → parol o\'rnatadi → avtomatik kiradi.',
+      noEmail: 'Bu akkauntda email yo\'q. Avval tahrirlashda to\'ldiring.',
+      willUseEmail: 'Quyidagi login ishlatiladi',
+      generateBtn: 'Havola yaratish',
+      generated: 'Havola yaratildi. Mijozga yuboring.',
+      expiresAt: 'Amal qilish muddati: {d}',
+      colUrl: 'Havola',
+      colLoginEmail: 'Mijoz logini',
+      template: 'Yuborish shabloni',
+      generateAnother: 'Yana yaratish',
+      statPending: 'Kutilmoqda',
+      statUsed: 'Faollashtirilgan',
+      statExpired: 'Muddati o\'tgan',
+      statRevoked: 'Bekor qilingan',
+      statusPending: 'Kutilmoqda',
+      statusUsed: 'Faollashtirilgan',
+      statusExpired: 'Muddati o\'tgan',
+      statusRevoked: 'Bekor qilingan',
+      copyLink: 'Havolani nusxalash',
+      copied: 'Havola nusxalandi',
+    },
     import: {
       step1: '1-qadam · CSV yuklash',
       step1Desc: 'Zavodning kunlik eksport fayli',
