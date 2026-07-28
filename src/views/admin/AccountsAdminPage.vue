@@ -1153,15 +1153,16 @@ const goImport = () => router.push('/admin/accounts/import')
     <!-- ============ 邀请链接 ============ -->
     <Dialog v-model:open="inviteOpen"
       :title="`${t('admin.invites.title')}：${inviteTarget?.account_name ?? ''}`"
-      description="">
+      description=""
+      class="lg:!max-w-2xl"
       <div class="space-y-3">
 
-        <!-- Tab 切换 -->
-        <div class="flex border-b">
+        <!-- Tab 切换：移动端更大点击区域 -->
+        <div class="flex border-b -mx-4 px-1">
           <button
             v-for="tab in inviteTabs"
             :key="tab.key"
-            class="px-4 py-2 text-sm border-b-2 -mb-px transition-colors"
+            class="flex-1 px-2 py-2.5 text-sm border-b-2 -mb-px transition-colors text-center"
             :class="inviteTab === tab.key
               ? 'border-primary text-primary font-medium'
               : 'border-transparent text-muted-foreground hover:text-foreground'"
@@ -1251,24 +1252,31 @@ const goImport = () => router.push('/admin/accounts/import')
 
         <!-- ---------- Tab：历史记录 ---------- -->
         <div v-if="inviteTab === 'history'">
-          <!-- 加载中骨架 -->
-          <div v-if="invMgr.loading.value" class="space-y-2 py-4">
-            <div v-for="i in 4" :key="i" class="flex gap-2 animate-pulse">
-              <div class="h-4 bg-muted rounded w-24"></div>
-              <div class="h-4 bg-muted rounded w-20"></div>
-              <div class="h-4 bg-muted rounded w-32 flex-1"></div>
-              <div class="h-4 bg-muted rounded w-16"></div>
-              <div class="h-4 bg-muted rounded w-12"></div>
+
+          <!-- 加载中骨架：移动端友好，不依赖 table 列 -->
+          <div v-if="invMgr.loading.value" class="space-y-3 py-2">
+            <div v-for="i in 4" :key="i" class="border rounded-md p-3 space-y-2 animate-pulse">
+              <div class="flex justify-between">
+                <div class="h-3 bg-muted rounded w-24"></div>
+                <div class="h-5 bg-muted rounded w-16"></div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div class="h-3 bg-muted rounded w-16"></div>
+                <div class="h-3 bg-muted rounded w-16"></div>
+                <div class="h-3 bg-muted rounded w-16"></div>
+                <div class="h-3 bg-muted rounded w-16"></div>
+              </div>
             </div>
           </div>
 
-          <!-- 有数据：统计 + 表格 -->
+          <!-- 有数据：统计 + 列表 -->
           <template v-else>
-            <!-- 统计 bar -->
-            <div class="flex gap-3 mb-3 text-xs">
+
+            <!-- 统计 bar：移动端换行 -->
+            <div class="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs">
               <span v-for="s in inviteStats" :key="s.key" class="flex items-center gap-1">
-                <span class="inline-block w-2 h-2 rounded-full" :class="s.cls"></span>
-                {{ s.label }}：<strong>{{ s.count }}</strong>
+                <span class="inline-block w-2 h-2 rounded-full flex-shrink-0" :class="s.cls"></span>
+                <span class="whitespace-nowrap">{{ s.label }}：<strong>{{ s.count }}</strong></span>
               </span>
             </div>
 
@@ -1277,61 +1285,113 @@ const goImport = () => router.push('/admin/accounts/import')
               {{ t('admin.invites.empty') }}
             </div>
 
-            <!-- 表格 -->
-            <div v-else class="border rounded-md overflow-hidden">
-              <table class="w-full text-xs">
-                <thead>
-                  <tr class="bg-muted/50 border-b">
-                    <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedAt') }}</th>
-                    <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</th>
-                    <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</th>
-                    <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</th>
-                    <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colStatus') }}</th>
-                    <th class="px-2 py-1.5 text-right font-medium text-muted-foreground">{{ t('admin.invites.colActions') }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="inv in invMgr.invites.value"
-                    :key="inv.id"
-                    class="border-b last:border-0 hover:bg-muted/30"
-                  >
-                    <td class="px-2 py-2">{{ new Date(inv.created_at).toLocaleDateString(locale) }}</td>
-                    <td class="px-2 py-2">{{ inv.created_by_name ?? '—' }}</td>
-                    <td class="px-2 py-2">{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</td>
-                    <td class="px-2 py-2">{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</td>
-                    <td class="px-2 py-2">
-                      <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
-                        :class="{
-                          'bg-blue-50 text-blue-700': inv.status === 'pending',
-                          'bg-green-50 text-green-700': inv.status === 'used',
-                          'bg-gray-100 text-gray-500': inv.status === 'expired',
-                          'bg-red-50 text-red-700': inv.status === 'revoked',
-                        }"
-                      >{{ inviteStatusLabel(inv.status) }}</span>
-                    </td>
-                    <td class="px-2 py-2 text-right">
-                      <Button
-                        v-if="inv.status === 'pending'"
-                        size="sm" variant="ghost" class="h-6 px-1.5"
-                        @click="copyInviteUrlFor(inv)"
-                        :title="t('admin.invites.copyLink')"
-                      >
-                        <Copy class="h-3 w-3" />
-                      </Button>
-                      <template v-if="inv.status === 'pending'">
+            <!-- 列表：桌面=表格，移动=卡片 -->
+            <div v-else class="space-y-2 overflow-y-auto max-h-[55vh] sm:max-h-none">
+
+              <!-- 桌面端：表格 -->
+              <div class="hidden sm:block border rounded-md overflow-hidden">
+                <table class="w-full text-xs">
+                  <thead>
+                    <tr class="bg-muted/50 border-b">
+                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedAt') }}</th>
+                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</th>
+                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</th>
+                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</th>
+                      <th class="px-2 py-1.5 text-left font-medium text-muted-foreground">{{ t('admin.invites.colStatus') }}</th>
+                      <th class="px-2 py-1.5 text-right font-medium text-muted-foreground">{{ t('admin.invites.colActions') }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="inv in invMgr.invites.value"
+                      :key="inv.id"
+                      class="border-b last:border-0 hover:bg-muted/30"
+                    >
+                      <td class="px-2 py-2">{{ new Date(inv.created_at).toLocaleDateString(locale) }}</td>
+                      <td class="px-2 py-2">{{ inv.created_by_name ?? '—' }}</td>
+                      <td class="px-2 py-2">{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</td>
+                      <td class="px-2 py-2">{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</td>
+                      <td class="px-2 py-2">
+                        <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
+                          :class="{
+                            'bg-blue-50 text-blue-700': inv.status === 'pending',
+                            'bg-green-50 text-green-700': inv.status === 'used',
+                            'bg-gray-100 text-gray-500': inv.status === 'expired',
+                            'bg-red-50 text-red-700': inv.status === 'revoked',
+                          }"
+                        >{{ inviteStatusLabel(inv.status) }}</span>
+                      </td>
+                      <td class="px-2 py-2 text-right">
                         <Button
+                          v-if="inv.status === 'pending'"
+                          size="sm" variant="ghost" class="h-6 px-1.5"
+                          @click="copyInviteUrlFor(inv)"
+                          :title="t('admin.invites.copyLink')"
+                        >
+                          <Copy class="h-3 w-3" />
+                        </Button>
+                        <Button
+                          v-if="inv.status === 'pending'"
                           size="sm" variant="ghost" class="h-6 px-1.5 text-amber-600 hover:text-amber-700"
                           @click="handleRevoke(inv)"
                           :title="t('admin.invites.revoke')"
                         >
                           <X class="h-3 w-3" />
                         </Button>
-                      </template>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- 移动端：卡片列表 -->
+              <div class="sm:hidden space-y-2">
+                <div
+                  v-for="inv in invMgr.invites.value"
+                  :key="inv.id"
+                  class="border rounded-md p-3"
+                >
+                  <!-- 顶栏：创建时间 + 状态 -->
+                  <div class="flex items-center justify-between mb-2">
+                    <span class="text-xs text-muted-foreground">
+                      {{ new Date(inv.created_at).toLocaleDateString(locale) }}
+                    </span>
+                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium flex-shrink-0"
+                      :class="{
+                        'bg-blue-50 text-blue-700': inv.status === 'pending',
+                        'bg-green-50 text-green-700': inv.status === 'used',
+                        'bg-gray-100 text-gray-500': inv.status === 'expired',
+                        'bg-red-50 text-red-700': inv.status === 'revoked',
+                      }"
+                    >{{ inviteStatusLabel(inv.status) }}</span>
+                  </div>
+                  <!-- 详情行 -->
+                  <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                    <div>
+                      <span class="text-muted-foreground">{{ t('admin.invites.colCreatedBy') }}</span>
+                      <div class="font-medium">{{ inv.created_by_name ?? '—' }}</div>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">{{ t('admin.invites.colExpiresAt') }}</span>
+                      <div>{{ new Date(inv.expires_at).toLocaleDateString(locale) }}</div>
+                    </div>
+                    <div>
+                      <span class="text-muted-foreground">{{ t('admin.invites.colUsedAt') }}</span>
+                      <div>{{ inv.used_at ? new Date(inv.used_at).toLocaleDateString(locale) : '—' }}</div>
+                    </div>
+                  </div>
+                  <!-- 操作按钮 -->
+                  <div v-if="inv.status === 'pending'" class="flex gap-2 mt-2 pt-2 border-t">
+                    <Button size="sm" variant="outline" class="flex-1 text-xs h-7" @click="copyInviteUrlFor(inv)">
+                      <Copy class="h-3 w-3 mr-1" />{{ t('admin.invites.copyLink') }}
+                    </Button>
+                    <Button size="sm" variant="outline" class="flex-1 text-xs h-7 text-amber-600 border-amber-200 hover:bg-amber-50" @click="handleRevoke(inv)">
+                      <X class="h-3 w-3 mr-1" />{{ t('admin.invites.revoke') }}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
             </div>
           </template>
         </div>
