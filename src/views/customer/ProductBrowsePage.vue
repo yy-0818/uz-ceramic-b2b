@@ -7,8 +7,8 @@
   - 不显示单价；按"整箱"下单；每箱 = conversion_rate 平方米
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronUp } from 'lucide-vue-next'
+import { ref, computed, onMounted, watch } from 'vue'
+import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronUp, ShoppingCart } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -120,6 +120,7 @@ const selectedCategory = ref<string>('')
 const selectedModel = ref<ProductWithColors | null>(null)
 const search = ref('')
 const showCart = ref(false)
+const cartBarOpen = ref(false)
 
 // 第 1 级：分类列表（按白名单聚合：型号数 / 箱数 / 色号数）
 const categoriesWithCount = computed(() => {
@@ -248,6 +249,12 @@ const totalColors = computed(() => {
     }
   }
   return set.size
+})
+
+// 加商品后自动展开购物车条（一次性反馈）：让用户感知到操作生效，
+// 同时给他"我已经做了什么"的视觉确认。手动点 FAB 切换后续状态。
+watch(cartHasItems, (now, before) => {
+  if (now && !before) cartBarOpen.value = true
 })
 </script>
 
@@ -576,58 +583,87 @@ const totalColors = computed(() => {
     />
 
     <!--
-      底部购物车条（sticky 浮在屏外）— 仅在有商品时浮现。
-      设计目标：
-        - 替代 AppLayout 全局 FAB（已移除）+ catalog header 右上角小按钮（已移除）
-        - 单点入口，单个浮条即包含所有信息
-        - 可点击打开抽屉查看明细；主 CTA 一键去结算
-        - z-index 在 bottom-nav 之下，避免被遮（设计上购物车是页面专属元素）
-        - pb-24 已在外层 <div> 应用，确保最后一行卡片不被遮挡
+      购物车 FAB + 购物车条（catalog 专属）
+
+      设计：
+        - FAB 永远是入口：有商品时显示在屏幕右下角（避开底部 bottom-nav），
+          自带箱数角标。
+        - 点击 FAB → 切换 cartBarOpen，购物车条从屏外滑入到 FAB 上方；
+          条本身含摘要 + 一键去结算 CTA。
+        - 再次点 FAB → 条收回到屏外（FAB 保留可见，给用户稳定锚点）。
+        - 首次加商品（cartHasItems 由 0→1）会自动展开条，做操作反馈；
+          之后用户自行控制展开/收起。
+        - 没有商品时全部不渲染，页面和未购物状态一致。
     -->
-    <Transition
-      enter-active-class="transition-all duration-200 ease-out"
-      leave-active-class="transition-all duration-150 ease-in"
-      enter-from-class="translate-y-full opacity-0"
-      leave-to-class="translate-y-full opacity-0"
-    >
-      <div
-        v-if="cartHasItems"
-        class="fixed inset-x-0 bottom-14 md:bottom-4 z-30 px-4"
+    <template v-if="cartHasItems">
+      <!-- FAB：右下角圆形按钮（带箱数角标） -->
+      <button
+        type="button"
+        class="fixed right-4 bottom-14 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
+        :class="cartBarOpen ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
+        :aria-label="t('common.cart')"
+        @click="cartBarOpen = true"
       >
-        <div class="mx-auto max-w-screen-md rounded-xl border bg-background/95 shadow-lg backdrop-blur ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
-          <!-- 顶部：可点击的摘要（打开抽屉） -->
-          <button
-            type="button"
-            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-muted/40 active:scale-[0.99]"
-            @click="showCart = true"
-          >
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-                <ShoppingBag class="h-4 w-4" />
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="text-xs text-muted-foreground">
-                  {{ t('customer.cart.title') }} · {{ cartItemsCount }} {{ t('customer.catalog.box') }}
-                </p>
-                <p class="font-mono text-sm font-semibold leading-tight truncate">
-                  {{ cartTotalBoxes }} {{ t('customer.catalog.box') }}
-                  · {{ fmtM2(cartTotalM2) }}
-                </p>
-              </div>
-            </div>
-            <ChevronUp class="h-4 w-4 shrink-0 text-muted-foreground" />
-          </button>
-          <!-- 底部：CTA（去结算） -->
-          <div class="grid grid-cols-1">
-            <Button
-              class="w-full rounded-none h-11 font-medium"
-              @click="goCheckout"
+        <ShoppingCart class="h-6 w-6 transition-transform" />
+        <span class="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-mono font-semibold">
+          {{ cartTotalBoxes }}
+        </span>
+      </button>
+
+      <!-- 购物车条：从屏外滑入，展开后位于 FAB 上方 -->
+      <Transition
+        enter-active-class="transition-all duration-220 ease-out"
+        leave-active-class="transition-all duration-180 ease-in"
+        enter-from-class="translate-y-full opacity-0"
+        leave-to-class="translate-y-full opacity-0"
+      >
+        <div
+          v-show="cartBarOpen"
+          class="fixed inset-x-0 bottom-14 md:bottom-4 z-30 px-4"
+        >
+          <div class="mx-auto max-w-screen-md rounded-xl border bg-background/95 shadow-lg backdrop-blur ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
+            <!-- 顶部：摘要（可点击打开抽屉查看明细） -->
+            <button
+              type="button"
+              class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-muted/40 active:scale-[0.99]"
+              @click="showCart = true"
             >
-              {{ t('customer.cart.checkoutBtn') }}
-            </Button>
+              <div class="flex items-center gap-2.5 min-w-0">
+                <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                  <ShoppingBag class="h-4 w-4" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs text-muted-foreground">
+                    {{ t('customer.cart.title') }} · {{ cartItemsCount }} {{ t('customer.catalog.box') }}
+                  </p>
+                  <p class="font-mono text-sm font-semibold leading-tight truncate">
+                    {{ cartTotalBoxes }} {{ t('customer.catalog.box') }}
+                    · {{ fmtM2(cartTotalM2) }}
+                  </p>
+                </div>
+              </div>
+              <!-- 右侧：折叠按钮（关闭购物车条） -->
+              <button
+                type="button"
+                class="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-muted transition"
+                :aria-label="t('common.close')"
+                @click.stop="cartBarOpen = false"
+              >
+                <ChevronUp class="h-4 w-4 rotate-180" />
+              </button>
+            </button>
+            <!-- 底部：CTA（去结算） -->
+            <div class="grid grid-cols-1">
+              <Button
+                class="w-full rounded-none h-11 font-medium"
+                @click="goCheckout"
+              >
+                {{ t('customer.cart.checkoutBtn') }}
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
-    </Transition>
+      </Transition>
+    </template>
   </div>
 </template>
