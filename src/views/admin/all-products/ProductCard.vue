@@ -86,7 +86,7 @@ const attachmentState = () => {
 <template>
   <Card class="overflow-hidden hover:shadow-md transition flex flex-col">
     <!-- 顶部：图缩略 -->
-    <div class="relative aspect-[16/10] bg-muted/40 overflow-hidden">
+    <div class="relative aspect-[4/3] sm:aspect-[16/10] bg-muted/40 overflow-hidden">
       <img v-if="product.image_url && !isUploading()"
         :src="product.image_url" :alt="product.model"
         class="absolute inset-0 w-full h-full object-cover" loading="lazy" />
@@ -108,8 +108,8 @@ const attachmentState = () => {
       <!-- 无图 -->
       <div v-else
         class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-        <ImageIcon class="h-7 w-7 mb-0.5 opacity-60" />
-        <span class="text-[11px]">{{ t('admin.products.image.noImage') }}</span>
+        <ImageIcon class="h-6 w-6 sm:h-7 sm:w-7 opacity-60" />
+        <span class="text-[10px] sm:text-[11px]">{{ t('admin.products.image.noImage') }}</span>
       </div>
 
       <!-- 右上分类 badge -->
@@ -126,60 +126,60 @@ const attachmentState = () => {
     </div>
 
     <!-- 中部：标题 + 备注 -->
-    <div class="px-3 pt-3 pb-2">
-      <p class="font-mono font-semibold text-sm truncate">{{ product.model }}</p>
-      <p class="text-[11px] text-muted-foreground truncate min-h-[14px]">{{ product.remark || '—' }}</p>
+    <div class="px-2 sm:px-3 pt-2 sm:pt-3 pb-1.5 sm:pb-2">
+      <p class="font-mono font-semibold text-xs sm:text-sm truncate">{{ product.model }}</p>
+      <p class="text-[10px] sm:text-[11px] text-muted-foreground truncate min-h-[12px] sm:min-h-[14px]">{{ product.remark || '—' }}</p>
     </div>
 
     <!-- KPI 3 列 -->
-    <div class="grid grid-cols-3 gap-1.5 px-3">
-      <div class="rounded bg-muted/40 px-1.5 py-1 text-center">
-        <p class="text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colL1') }}</p>
-        <p class="font-mono font-semibold tabular-nums text-xs">{{ fmtBoxes(product.total_boxes_level1) }}</p>
+    <div class="grid grid-cols-3 gap-1 px-2 sm:px-3">
+      <div class="rounded bg-muted/40 px-1 py-0.5 sm:px-1.5 sm:py-1 text-center">
+        <p class="text-[8px] sm:text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colL1') }}</p>
+        <p class="font-mono font-semibold tabular-nums text-[10px] sm:text-xs">{{ fmtBoxes(product.total_boxes_level1) }}</p>
       </div>
-      <div class="rounded bg-muted/40 px-1.5 py-1 text-center">
-        <p class="text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colL2') }}</p>
-        <p class="font-mono font-semibold tabular-nums text-xs">{{ fmtBoxes(product.total_boxes_level2) }}</p>
+      <div class="rounded bg-muted/40 px-1 py-0.5 sm:px-1.5 sm:py-1 text-center">
+        <p class="text-[8px] sm:text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colL2') }}</p>
+        <p class="font-mono font-semibold tabular-nums text-[10px] sm:text-xs">{{ fmtBoxes(product.total_boxes_level2) }}</p>
       </div>
-      <div class="rounded bg-muted/40 px-1.5 py-1 text-center">
-        <p class="text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colConv') }}</p>
-        <p class="font-mono font-semibold tabular-nums text-xs">{{ product.conversion_rate }}</p>
+      <div class="rounded bg-muted/40 px-1 py-0.5 sm:px-1.5 sm:py-1 text-center">
+        <p class="text-[8px] sm:text-[9px] text-muted-foreground uppercase tracking-wide">{{ t('admin.products.colConv') }}</p>
+        <p class="font-mono font-semibold tabular-nums text-[10px] sm:text-xs">{{ product.conversion_rate }}</p>
       </div>
     </div>
 
     <!-- 色号 chips -->
-    <div class="px-3 py-2 min-h-[44px]">
-      <p class="text-[9px] text-muted-foreground mb-1 uppercase tracking-wide">{{ t('admin.products.colColors') }}</p>
-      <div class="flex flex-wrap gap-1">
+    <div class="px-2 sm:px-3 py-1.5 sm:py-2 min-h-[36px] sm:min-h-[44px]">
+      <p class="text-[8px] sm:text-[9px] text-muted-foreground mb-0.5 sm:mb-1 uppercase tracking-wide">{{ t('admin.products.colColors') }}</p>
+      <div class="flex flex-wrap gap-0.5 sm:gap-1">
         <Badge v-for="c in visibleColors()" :key="c.color_code + '_' + c.stock_level"
-          variant="outline" class="font-mono text-[10px] h-5 px-1.5">
+          variant="outline" class="font-mono text-[9px] sm:text-[10px] h-4 sm:h-5 px-1 sm:px-1.5">
           {{ c.color_code }} <span class="tabular-nums text-muted-foreground">{{ c.boxes }}</span>
         </Badge>
         <Badge v-if="extraColorsCount() > 0" variant="secondary"
-          class="font-mono text-[10px] h-5 px-1.5">
+          class="font-mono text-[9px] sm:text-[10px] h-4 sm:h-5 px-1 sm:px-1.5">
           +{{ extraColorsCount() }}
         </Badge>
         <span v-if="(product.colors ?? []).length === 0"
-          class="text-[11px] text-muted-foreground italic">—</span>
+          class="text-[10px] sm:text-[11px] text-muted-foreground italic">—</span>
       </div>
     </div>
 
     <!-- 错误信息条（upload error 时显示文件名 + 重试） -->
     <div v-if="status() === 'error'"
-      class="mx-3 mb-2 border border-destructive/30 bg-destructive/5 rounded-md px-2 py-1.5 text-[11px]">
+      class="mx-2 sm:mx-3 mb-1.5 sm:mb-2 border border-destructive/30 bg-destructive/5 rounded-md px-1.5 sm:px-2 py-1 sm:py-1.5 text-[10px] sm:text-[11px]">
       <div class="flex items-center justify-between gap-1">
         <span class="flex items-center gap-1 text-destructive truncate">
           <AlertTriangle class="h-3 w-3 shrink-0" />
           <span class="truncate">{{ fileName() || errorMsg() }}</span>
         </span>
-        <div class="flex shrink-0 items-center gap-1">
+        <div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <button v-if="uploadState?.file" type="button"
-            class="rounded px-1.5 py-0.5 font-medium text-primary hover:bg-primary/10"
+            class="rounded px-1 sm:px-1.5 py-0.5 font-medium text-primary hover:bg-primary/10 text-[10px] sm:text-[11px]"
             @click="emit('retry', uploadState.file)">
             {{ t('admin.products.image.retry') }}
           </button>
           <button type="button"
-            class="rounded px-1.5 py-0.5 font-medium text-muted-foreground hover:bg-muted"
+            class="rounded px-1 sm:px-1.5 py-0.5 font-medium text-muted-foreground hover:bg-muted text-[10px] sm:text-[11px]"
             @click="emit('clear-upload')">
             {{ t('admin.products.image.dismiss') }}
           </button>
@@ -188,7 +188,7 @@ const attachmentState = () => {
     </div>
 
     <!-- 底部操作行 -->
-    <div class="mt-auto border-t bg-muted/20 px-2 py-1.5 flex items-center gap-1 text-[11px]">
+    <div class="mt-auto border-t bg-muted/20 px-1.5 sm:px-2 py-1 sm:py-1.5 flex items-center gap-1 text-[10px] sm:text-[11px]">
       <template v-if="status() === 'uploading'">
         <Loader2 class="h-3 w-3 animate-spin text-primary shrink-0" />
         <span class="font-mono text-primary truncate">{{ t('admin.products.image.uploading') }} · {{ percent() }}%</span>
@@ -207,18 +207,18 @@ const attachmentState = () => {
         <span class="text-muted-foreground truncate">{{ t('admin.products.image.pending') }}</span>
       </template>
 
-      <div class="ml-auto flex items-center gap-1 shrink-0">
+      <div class="ml-auto flex items-center gap-0.5 sm:gap-1">
         <button type="button"
-          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-medium text-primary hover:bg-primary/10 disabled:opacity-40"
+          class="inline-flex items-center gap-0.5 rounded px-1 sm:px-1.5 py-0.5 font-medium text-primary hover:bg-primary/10 disabled:opacity-40 text-[9px] sm:text-[11px]"
           :disabled="isUploading()"
           @click="emit('pick')">
-          <UploadCloud class="h-3 w-3" />
+          <UploadCloud class="h-2.5 w-2.5 sm:h-3 sm:w-3" />
           {{ product.image_url ? t('admin.products.image.replace') : t('admin.products.image.upload') }}
         </button>
         <button v-if="product.image_url && !isUploading()" type="button"
-          class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 font-medium text-destructive hover:bg-destructive/10"
+          class="inline-flex items-center gap-0.5 rounded px-1 sm:px-1.5 py-0.5 font-medium text-destructive hover:bg-destructive/10 text-[9px] sm:text-[11px]"
           @click="emit('remove')">
-          <Trash2 class="h-3 w-3" />
+          <Trash2 class="h-2.5 w-2.5 sm:h-3 sm:w-3" />
           {{ t('admin.products.image.delete') }}
         </button>
       </div>

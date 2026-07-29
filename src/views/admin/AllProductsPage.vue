@@ -206,12 +206,12 @@ const onClearUpload = (productId: string) => {
     <input ref="fileInput" type="file" accept="image/*" class="hidden" @change="onFileSelected" />
 
     <!-- 加载中 -->
-    <div v-if="loading && items.length === 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+    <div v-if="loading && items.length === 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       <ProductCardSkeleton v-for="i in 8" :key="i" />
     </div>
 
     <!-- 列表 -->
-    <div v-else-if="filtered.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
+    <div v-else-if="filtered.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       <ProductCard
         v-for="p in filtered" :key="p.product_id"
         :product="p"

@@ -121,7 +121,7 @@ onMounted(() => {
 <template>
   <div class="min-h-dvh flex flex-col md:flex-row">
     <!-- 桌面端侧栏 -->
-    <aside class="hidden md:flex w-60 shrink-0 border-r bg-muted/30 flex-col">
+    <aside class="hidden md:sticky top-0 md:flex w-60 shrink-0 border-r bg-muted/30 flex-col h-dvh self-start">
       <div class="h-14 flex items-center gap-2 px-4 border-b">
         <div class="h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
           <Factory class="h-4 w-4" />
@@ -147,7 +147,7 @@ onMounted(() => {
     </aside>
 
     <div class="flex-1 flex flex-col min-w-0">
-      <header class="h-14 border-b flex items-center justify-between px-4">
+      <header class="sticky top-0 z-10 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur">
         <div class="flex items-center gap-2">
           <div class="md:hidden h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
             <Factory class="h-4 w-4" />
