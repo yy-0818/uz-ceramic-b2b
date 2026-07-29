@@ -15,7 +15,6 @@ import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
 import LocaleMenu from '@/components/ui/LocaleMenu.vue'
-import PageTransition from '@/components/ui/PageTransition.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -135,9 +134,12 @@ const homeByRole = (role: string | undefined) => {
 }
 import { onMounted } from 'vue'
 onMounted(() => {
-  if (route.path === '/' || route.path === '/catalog') {
+  // 只在用户访问根域名或 AppLayout 的默认 redirect 目标时才决定 landing。
+  // 不要在 /catalog 这种明确意图上劫持 — 否则刷新 /catalog 会被管理员吸到 /admin/import，
+  // 浏览器历史栈里也不再是用户期望的 /catalog。
+  if (route.path === '/') {
     const target = homeByRole(appUser.value?.role)
-    if (target !== route.path) router.replace(target)
+    if (target !== '/') router.replace(target)
   }
 })
 </script>
@@ -198,7 +200,7 @@ onMounted(() => {
       </header>
 
       <main class="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full pb-20 md:pb-6">
-        <PageTransition />
+        <RouterView />
       </main>
 
       <!-- 移动端底部 nav：精简 4 个 + "更多" -->
