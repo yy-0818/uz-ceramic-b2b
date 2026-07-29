@@ -132,8 +132,9 @@ onMounted(() => {
   // 不要在 /catalog 这种明确意图上劫持 — 否则刷新 /catalog 会被管理员吸到 /admin/import，
   // 浏览器历史栈里也不再是用户期望的 /catalog。
   if (route.path === '/') {
-    const target = homeByRole(appUser.value?.role)
-    if (target !== '/') router.replace(target)
+    // homeByRole 总是返回一条具体路由（联合字面量类型 → TS 已穷举），
+    // 没有返回 '/' 的分支，所以无需再判 target !== '/'。
+    router.replace(homeByRole(appUser.value?.role))
   }
 })
 </script>
