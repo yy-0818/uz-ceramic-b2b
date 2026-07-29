@@ -6,10 +6,9 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, X, ArrowLeft } from 'lucide-vue-next'
+import { LogOut, Factory, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, ArrowLeft } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
-import { useCart } from '@/composables/useCart'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
@@ -20,8 +19,6 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const route = useRoute()
 const { account, appUser, isAdmin, signOut } = useAuth()
-const cart = useCart()
-const cartOpen = ref(false)
 
 type NavItem = { name: string; to: string; icon: any }
 
@@ -89,9 +86,6 @@ const onLogout = async () => {
   await signOut()
   router.push('/login')
 }
-
-const cartTotalBoxes = computed(() => cart.totalBoxes())
-const cartTotalM2 = computed(() => cart.totalM2())
 
 const goAndClose = (to: string) => {
   moreOpen.value = false
@@ -256,55 +250,6 @@ onMounted(() => {
           <LocaleMenu />
           <ThemeToggle />
         </div>
-      </div>
-    </Dialog>
-
-    <!-- 全局购物车 FAB：购物车有东西时全屏右下角浮现，
-         不依赖当前在哪个页面（解决 /orders、/checkout 等看不到购物车的问题） -->
-    <button
-      v-if="cartTotalBoxes > 0"
-      class="fixed right-4 bottom-20 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
-      :aria-label="t('common.cart')"
-      @click="cartOpen = true"
-    >
-      <ShoppingCart class="h-6 w-6" />
-      <span class="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-medium">
-        {{ cartTotalBoxes }}
-      </span>
-    </button>
-
-    <!-- 全局购物车抽屉 -->
-    <Dialog v-model:open="cartOpen" :title="t('common.cart')" :description="t('common.cartHint')">
-      <div v-if="cart.items.value.length === 0" class="text-sm text-muted-foreground text-center py-6">
-        {{ t('common.cartEmpty') }}
-      </div>
-      <ul v-else class="space-y-2 max-h-80 overflow-auto">
-        <li
-          v-for="c in cart.items.value"
-          :key="c.product_id"
-          class="flex items-center justify-between border rounded-md p-2"
-        >
-          <div class="min-w-0 flex-1">
-            <p class="font-mono text-sm truncate">{{ c.model }}</p>
-            <p class="text-xs text-muted-foreground">
-              {{ c.boxes }} ящ × {{ c.conversion_rate }} = {{ (c.boxes * c.conversion_rate).toFixed(2) }} м²
-            </p>
-          </div>
-          <Button size="sm" variant="ghost" @click="cart.remove(c.product_id)">{{ t('common.delete') }}</Button>
-        </li>
-      </ul>
-      <div v-if="cart.items.value.length > 0" class="mt-4 border-t pt-3 space-y-2">
-        <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">{{ t('common.cartTotalBoxes') }}</span>
-          <span class="font-medium">{{ cartTotalBoxes }}</span>
-        </div>
-        <div class="flex justify-between text-sm">
-          <span class="text-muted-foreground">{{ t('common.cartTotalM2') }}</span>
-          <span class="font-medium">{{ cartTotalM2.toFixed(2) }} м²</span>
-        </div>
-        <Button class="w-full" @click="cartOpen = false; router.push('/customer/checkout')">
-          {{ t('common.cartCheckout') }}
-        </Button>
       </div>
     </Dialog>
   </div>

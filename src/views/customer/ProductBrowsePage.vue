@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ChevronLeft, Search, Plus, Minus, ShoppingCart, Package, ImageOff, Box, Tag, Hash } from 'lucide-vue-next'
+import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronUp } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -228,38 +228,75 @@ const onQty = (productId: string, model: string, conversionRate: number, delta: 
 const fmtM2 = (n: number) => `${n.toFixed(2)} м²`
 const cartTotalBoxes = computed(() => cart.totalBoxes())
 const cartTotalM2 = computed(() => cart.totalM2())
+const cartHasItems = computed(() => cartTotalBoxes.value > 0)
+const cartItemsCount = computed(() => cart.items.value.length)
+
+// 全局统计：白名单里有多少型号 / 多少箱 / 多少色号
+const totalModels = computed(() => ap.items.value.filter((r) => r.product).length)
+const totalBoxes = computed(() =>
+  ap.items.value.reduce((s, r) => s + r.stock_level_1 + r.stock_level_2, 0),
+)
+const totalColors = computed(() => {
+  const fullMap = new Map<string, ProductWithColors>()
+  for (const p of allProducts.value) fullMap.set(p.product_id, p)
+  const set = new Set<string>()
+  for (const row of ap.items.value) {
+    if (!row.product) continue
+    const full = fullMap.get(row.product.id)
+    for (const c of full?.colors ?? []) {
+      if (c.boxes > 0) set.add(`${row.product.id}:${c.color_code}`)
+    }
+  }
+  return set.size
+})
 </script>
 
 <template>
-  <div class="space-y-3">
-    <!-- 头部：面包屑 + 购物车 -->
-    <header class="flex items-center justify-between gap-2 sticky top-0 bg-background/95 backdrop-blur z-10 py-2">
-      <div class="flex items-center gap-2 min-w-0">
-        <Button v-if="view !== 'categories'" size="icon" variant="ghost" class="h-8 w-8" @click="back">
-          <ChevronLeft class="h-5 w-5" />
-        </Button>
-        <div class="min-w-0">
-          <h1 class="text-base font-semibold truncate">
-            <span v-if="view === 'categories'">{{ t('customer.catalog.title') }}</span>
-            <span v-else-if="view === 'models'">{{ selectedCategory }}</span>
-            <span v-else class="font-mono">{{ selectedModel?.model }}</span>
-          </h1>
-          <p class="text-xs text-muted-foreground truncate">
-            <span v-if="view === 'categories'">{{ t('customer.catalog.subtitle') }}</span>
-            <span v-else-if="view === 'models'">{{ modelsInCategory.length }} {{ t('customer.catalog.modelsUnit') }}</span>
-            <span v-else>{{ selectedModel?.category }} · {{ selectedModel?.conversion_rate }} м²/ящ</span>
-          </p>
+  <div class="space-y-3 pb-24">
+    <!-- 头部：面包屑 + 搜索（仅 categories 视图显示 totals 摘要） -->
+    <header class="sticky top-0 z-10 bg-background/95 backdrop-blur">
+      <div class="flex items-center justify-between gap-2 py-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <Button v-if="view !== 'categories'" size="icon" variant="ghost" class="h-8 w-8 shrink-0" @click="back">
+            <ChevronLeft class="h-5 w-5" />
+          </Button>
+          <div class="min-w-0">
+            <h1 class="text-base font-semibold truncate">
+              <span v-if="view === 'categories'">{{ t('customer.catalog.title') }}</span>
+              <span v-else-if="view === 'models'">{{ selectedCategory }}</span>
+              <span v-else class="font-mono">{{ selectedModel?.model }}</span>
+            </h1>
+            <p class="text-xs text-muted-foreground truncate">
+              <span v-if="view === 'categories'">{{ t('customer.catalog.subtitle') }}</span>
+              <span v-else-if="view === 'models'">{{ modelsInCategory.length }} {{ t('customer.catalog.modelsUnit') }}</span>
+              <span v-else>{{ selectedModel?.category }} · {{ selectedModel?.conversion_rate }} м²/ящ</span>
+            </p>
+          </div>
         </div>
       </div>
-      <Button size="icon" class="relative shrink-0" @click="showCart = true">
-        <ShoppingCart class="h-5 w-5" />
-        <span
-          v-if="cartTotalBoxes > 0"
-          class="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center"
-        >
-          {{ cartTotalBoxes }}
-        </span>
-      </Button>
+
+      <!-- 总览统计条（仅 categories 视图显示，让用户对库容一目了然） -->
+      <div
+        v-if="view === 'categories'"
+        class="grid grid-cols-3 gap-2 border-y bg-muted/30 px-1 py-2 text-center"
+      >
+        <div>
+          <p class="font-mono text-base font-bold leading-none">{{ totalModels }}</p>
+          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.modelsUnit') }}</p>
+        </div>
+        <div class="border-x">
+          <p class="font-mono text-base font-bold leading-none text-emerald-600 dark:text-emerald-400">
+            {{ totalBoxes.toLocaleString() }}
+          </p>
+          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.box') }}</p>
+        </div>
+        <div>
+          <p class="font-mono text-base font-bold leading-none text-blue-600 dark:text-blue-400">
+            {{ totalColors }}
+          </p>
+          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.colorsUnit') }}</p>
+        </div>
+      </div>
     </header>
 
     <!-- 搜索（仅 models 视图需要） -->
@@ -537,5 +574,60 @@ const cartTotalM2 = computed(() => cart.totalM2())
       :cart="cart"
       @checkout="goCheckout"
     />
+
+    <!--
+      底部购物车条（sticky 浮在屏外）— 仅在有商品时浮现。
+      设计目标：
+        - 替代 AppLayout 全局 FAB（已移除）+ catalog header 右上角小按钮（已移除）
+        - 单点入口，单个浮条即包含所有信息
+        - 可点击打开抽屉查看明细；主 CTA 一键去结算
+        - z-index 在 bottom-nav 之下，避免被遮（设计上购物车是页面专属元素）
+        - pb-24 已在外层 <div> 应用，确保最后一行卡片不被遮挡
+    -->
+    <Transition
+      enter-active-class="transition-all duration-200 ease-out"
+      leave-active-class="transition-all duration-150 ease-in"
+      enter-from-class="translate-y-full opacity-0"
+      leave-to-class="translate-y-full opacity-0"
+    >
+      <div
+        v-if="cartHasItems"
+        class="fixed inset-x-0 bottom-14 md:bottom-4 z-30 px-4"
+      >
+        <div class="mx-auto max-w-screen-md rounded-xl border bg-background/95 shadow-lg backdrop-blur ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
+          <!-- 顶部：可点击的摘要（打开抽屉） -->
+          <button
+            type="button"
+            class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-muted/40 active:scale-[0.99]"
+            @click="showCart = true"
+          >
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
+                <ShoppingBag class="h-4 w-4" />
+              </div>
+              <div class="min-w-0 flex-1">
+                <p class="text-xs text-muted-foreground">
+                  {{ t('customer.cart.title') }} · {{ cartItemsCount }} {{ t('customer.catalog.box') }}
+                </p>
+                <p class="font-mono text-sm font-semibold leading-tight truncate">
+                  {{ cartTotalBoxes }} {{ t('customer.catalog.box') }}
+                  · {{ fmtM2(cartTotalM2) }}
+                </p>
+              </div>
+            </div>
+            <ChevronUp class="h-4 w-4 shrink-0 text-muted-foreground" />
+          </button>
+          <!-- 底部：CTA（去结算） -->
+          <div class="grid grid-cols-1">
+            <Button
+              class="w-full rounded-none h-11 font-medium"
+              @click="goCheckout"
+            >
+              {{ t('customer.cart.checkoutBtn') }}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
