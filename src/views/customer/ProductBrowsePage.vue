@@ -214,10 +214,22 @@ const back = () => {
 // 若开着就路由切换，Transition leave 动画跑 200ms，期间抽屉仍浮在
 // 新页面之上，会让用户感觉"点了但没反应"。先关再 push 顺手解决。
 const goCheckout = async () => {
+  // eslint-disable-next-line no-console
+  console.log('[goCheckout] 开始。当前路由:', router.currentRoute.value.fullPath)
   cartDetailOpen.value = false
-  // 等一帧让 Transition 开始离场，下一次路由 push 切换到 CheckoutPage
   await nextTick()
-  router.push('/customer/checkout')
+  // eslint-disable-next-line no-console
+  console.log('[goCheckout] nextTick 之后，准备 push → /customer/checkout')
+  try {
+    const result = await router.push('/customer/checkout')
+    // eslint-disable-next-line no-console
+    console.log('[goCheckout] push 完成。新路由:', router.currentRoute.value.fullPath)
+    return result
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('[goCheckout] push 失败:', err)
+    throw err
+  }
 }
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
