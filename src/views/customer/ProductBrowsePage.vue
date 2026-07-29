@@ -38,12 +38,10 @@ const loading = ref(false)
 
 const refresh = async () => {
   loading.value = true
-  console.log('[catalog] refresh, role=', useAuth().appUser.value?.role, 'isAdmin=', isAdmin.value)
   // admin 视角：直接拉全部商品
   if (isAdmin.value) {
     try {
       allProducts.value = await productsApi.fetchAllWithColors()
-      console.log('[catalog] admin fetched products', { count: allProducts.value.length })
       ap.items.value = allProducts.value.map((p) => ({
         account_id: '',
         product_id: p.product_id,
@@ -72,7 +70,6 @@ const refresh = async () => {
       .select('customer_group')
       .eq('is_active', true)
     const myGroups = (groups ?? []).map((r: any) => r.customer_group)
-    console.log('[catalog] my stock groups', myGroups)
     if (myGroups.length === 0) {
       ap.items.value = []
       allProducts.value = []
@@ -84,7 +81,6 @@ const refresh = async () => {
       .from('products')
       .select('*')
       .in('stock_group', myGroups)
-    console.log('[catalog] whitelisted products by stock_group', { count: prods?.length })
     // 3. 拉全量带色号（view）
     allProducts.value = await productsApi.fetchAllWithColors()
     // 4. 把可白名单的产品按 AccountProductRow 装（合成）
