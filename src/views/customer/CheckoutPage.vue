@@ -118,8 +118,14 @@ const onSubmit = async () => {
     </header>
 
     <Card v-if="cart.items.value.length === 0">
-      <CardContent class="py-10 text-center text-sm text-muted-foreground">
-        {{ t('customer.cart.empty') }}
+      <CardContent class="py-10 text-center text-sm text-muted-foreground space-y-3">
+        <p>{{ t('customer.cart.empty') }}</p>
+        <p class="text-xs text-muted-foreground/70">
+          购物车目前没有商品。返回商品目录 → 选型号 → 加数量 → 再来结算。
+        </p>
+        <Button size="sm" variant="outline" class="mt-2" @click="router.push('/catalog')">
+          ← 返回商品目录
+        </Button>
       </CardContent>
     </Card>
 

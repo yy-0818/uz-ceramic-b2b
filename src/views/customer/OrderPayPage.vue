@@ -98,8 +98,15 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
     </Card>
 
     <Card v-else-if="!order">
-      <CardContent class="py-10 text-center text-sm text-muted-foreground">
-        {{ t('orders.detail.notFound') }}
+      <CardContent class="py-10 text-center text-sm text-muted-foreground space-y-3">
+        <p>{{ t('orders.detail.notFound') }}</p>
+        <p class="text-xs text-muted-foreground/70">
+          订单可能尚未同步、或你无权限查看。
+          订单 id: <code class="font-mono text-[11px]">{{ orderId }}</code>
+        </p>
+        <Button size="sm" variant="outline" class="mt-2" @click="router.push('/customer/orders')">
+          ← 返回订单列表
+        </Button>
       </CardContent>
     </Card>
 
