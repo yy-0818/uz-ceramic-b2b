@@ -194,7 +194,7 @@ onMounted(() => {
         </div>
       </header>
 
-      <main class="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full pb-20 md:pb-6">
+      <main class="flex-1 p-3 md:p-4 max-w-screen-2xl mx-auto w-full pb-20 md:pb-4">
         <RouterView />
       </main>
 
