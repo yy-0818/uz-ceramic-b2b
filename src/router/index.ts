@@ -32,6 +32,8 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['customer','admin','checker','finance','warehouse'] } },
       { path: 'orders/:id', name: 'order.detail', component: () => import('@/views/customer/OrderDetailPage.vue'),
         meta: { roles: ['customer','admin','checker','finance','warehouse'] } },
+      { path: 'orders/:id/pay', name: 'order.pay', component: () => import('@/views/customer/OrderPayPage.vue'),
+        meta: { roles: ['customer','admin','checker','finance','warehouse'] } },
 
       // 后台
       { path: 'admin/import', name: 'admin.import', component: () => import('@/views/admin/ProductImportPage.vue'),

@@ -18,6 +18,7 @@ import CardHeader from '@/components/ui/CardHeader.vue'
 import CardTitle from '@/components/ui/CardTitle.vue'
 import Label from '@/components/ui/Label.vue'
 import Textarea from '@/components/ui/Textarea.vue'
+import Badge from '@/components/ui/Badge.vue'
 
 import { useCart } from '@/composables/useCart'
 import { useOrders } from '@/composables/useOrders'
@@ -79,7 +80,7 @@ const onSubmit = async () => {
       subId.value,
     )
     cart.clear()
-    router.push(`/orders/${order.id}`)
+    router.push(`/customer/orders/${order.id}/pay`)
   } catch (e: unknown) {
     errMsg.value = e instanceof Error ? e.message : String(t('customer.checkout.submitFail'))
   } finally {
