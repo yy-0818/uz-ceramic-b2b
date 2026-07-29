@@ -249,6 +249,7 @@ export default {
       totalM2: 'Всего м²',
       checkout: 'Оформить заказ',
       remove: 'Удалить',
+      qty: 'Количество',
     },
     checkout: {
       title: 'Подтверждение',

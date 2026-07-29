@@ -394,6 +394,7 @@ export default {
       totalM2: '总面积',
       checkoutBtn: '去下单',
       remove: '移除',
+      qty: '数量',
     },
     checkout: {
       subAccountLabel: '下单子账号 *',

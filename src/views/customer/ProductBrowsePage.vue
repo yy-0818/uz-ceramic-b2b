@@ -7,7 +7,7 @@
   - 不显示单价；按"整箱"下单；每箱 = conversion_rate 平方米
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { Search, Plus, Minus, ChevronLeft, Package, ImageOff, Box, Tag, Hash, ShoppingCart, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
@@ -253,6 +253,15 @@ watch(cartItemsCount, (n) => {
   if (n === 0) cartDetailOpen.value = false
 })
 
+// 关闭详情面板前，把所有未提交的草稿一次性收敛进 cart，避免用户
+// 改了数字但没点 -/+/blur 就关掉面板，导致键入的数字被静默丢弃。
+watch(cartDetailOpen, (open) => {
+  if (open) return
+  for (const item of cart.items.value) {
+    if (lineDrafts.has(item.product_id)) commitDraft(item)
+  }
+})
+
 // 在详情面板里调整单条数量：超过该色号可用箱数则限制。
 const onLineQty = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
   const next = Math.max(0, item.boxes + delta)
@@ -265,6 +274,38 @@ const onLineQty = (item: { product_id: string; model: string; conversion_rate: n
 const stockFor = (productId: string) => {
   const full = allProducts.value.find((p) => p.product_id === productId)
   return full ? full.total_boxes_level1 + full.total_boxes_level2 : 0
+}
+
+// 数量输入框的本地草稿：键入时立即更新显示（不触发 setQty 抖动），
+// 只在 -/+ / Enter / blur 时一次性提交到 cart。
+// Map<product_id, string> — 没草稿的条目按真实 c.boxes 显示。
+const lineDrafts = reactive(new Map<string, string>())
+const draftOf = (id: string, fallback: number) => lineDrafts.get(id) ?? String(fallback)
+const setDraft = (id: string, value: string) => {
+  // 只接受数字字符；允许中间空串（用户正在清空重输）。
+  if (value === '' || /^\d+$/.test(value)) lineDrafts.set(id, value)
+  else lineDrafts.set(id, lineDrafts.get(id) ?? '0')
+}
+const clearDraft = (id: string) => lineDrafts.delete(id)
+
+// 把草稿值收敛到 [0, stock] 区间后写入 cart（0 → 移除）。
+const commitDraft = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }) => {
+  const raw = lineDrafts.get(item.product_id)
+  clearDraft(item.product_id)
+  if (raw === undefined) return
+  let n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) n = 0
+  const max = stockFor(item.product_id)
+  if (n > max) n = max
+  if (n === item.boxes) return
+  if (n === 0) cart.remove(item.product_id)
+  else cart.setQty(item.product_id, item.model, item.conversion_rate, n)
+}
+
+// - / + 点击：先把任何未提交的草稿收敛，再调整（避免点击时草稿被无视）。
+const onLineBtn = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
+  if (lineDrafts.has(item.product_id)) commitDraft(item)
+  onLineQty(item, delta)
 }
 </script>
 
@@ -676,26 +717,35 @@ const stockFor = (productId: string) => {
                       {{ c.conversion_rate }} м²/ящ · ≈ {{ fmtM2(c.boxes * c.conversion_rate) }}
                     </p>
                   </div>
-                  <!-- 步进器 -->
+                  <!-- 步进器：[-] [input] [+]，中间是可直接键入的数量框 -->
                   <div class="flex items-center gap-1.5 shrink-0">
                     <button
                       type="button"
                       class="grid h-7 w-7 place-items-center rounded-md border bg-background hover:bg-muted transition active:scale-95 disabled:opacity-40 disabled:hover:bg-background"
-                      :disabled="c.boxes <= 0"
+                      :disabled="draftOf(c.product_id, c.boxes) === '0'"
                       :aria-label="t('common.decrease')"
-                      @click="onLineQty(c, -1)"
+                      @click="onLineBtn(c, -1)"
                     >
                       <Minus class="h-3.5 w-3.5" />
                     </button>
-                    <div class="w-9 text-center font-mono text-sm font-semibold tabular-nums">
-                      {{ c.boxes }}
-                    </div>
+                    <input
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      :max="stockFor(c.product_id)"
+                      :value="draftOf(c.product_id, c.boxes)"
+                      :aria-label="t('customer.cart.qty')"
+                      class="h-7 w-12 rounded-md border bg-background text-center font-mono text-sm font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                      @input="setDraft(c.product_id, ($event.target as HTMLInputElement).value)"
+                      @blur="commitDraft(c)"
+                      @keydown.enter.prevent="commitDraft(c); ($event.target as HTMLInputElement).blur()"
+                    />
                     <button
                       type="button"
                       class="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95 disabled:opacity-40"
-                      :disabled="c.boxes >= stockFor(c.product_id)"
+                      :disabled="Number(draftOf(c.product_id, c.boxes)) >= stockFor(c.product_id)"
                       :aria-label="t('common.increase')"
-                      @click="onLineQty(c, 1)"
+                      @click="onLineBtn(c, 1)"
                     >
                       <Plus class="h-3.5 w-3.5" />
                     </button>

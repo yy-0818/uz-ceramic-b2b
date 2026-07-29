@@ -249,6 +249,7 @@ export default {
       totalM2: 'Jami m²',
       checkout: 'Buyurtma berish',
       remove: 'O\'chirish',
+      qty: 'Soni',
     },
     checkout: {
       title: 'Tasdiqlash',
