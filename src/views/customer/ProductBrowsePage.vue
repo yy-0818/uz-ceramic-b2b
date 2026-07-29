@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronDown, ShoppingCart, Trash2, GripHorizontal, X } from 'lucide-vue-next'
+import { Search, Plus, Minus, Package, ImageOff, Box, Tag, Hash, ShoppingCart, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -117,8 +117,7 @@ const view = ref<'categories' | 'models' | 'colors'>('categories')
 const selectedCategory = ref<string>('')
 const selectedModel = ref<ProductWithColors | null>(null)
 const search = ref('')
-const cartBarOpen = ref(false)        // 锚点条是否展开（购物车摘要可见）
-const cartDetailOpen = ref(false)     // 详情面板是否展开（替代原 Dialog）
+const cartDetailOpen = ref(false)     // 详情面板是否展开（FAB 直接触发）
 
 // 第 1 级：分类列表（按白名单聚合：型号数 / 箱数 / 色号数）
 const categoriesWithCount = computed(() => {
@@ -247,12 +246,6 @@ const totalColors = computed(() => {
     }
   }
   return set.size
-})
-
-// 加商品后自动展开购物车条（一次性反馈）：让用户感知到操作生效，
-// 同时给他"我已经做了什么"的视觉确认。手动点 FAB 切换后续状态。
-watch(cartHasItems, (now, before) => {
-  if (now && !before) cartBarOpen.value = true
 })
 
 // 购物车清空后，关闭详情面板（避免空列表浮在屏上）。
@@ -593,18 +586,16 @@ const stockFor = (productId: string) => {
     </div>
 
     <!--
-      购物车 FAB + 锚点条 + 详情面板（catalog 专属，三件套）
+      购物车 FAB + 详情面板（catalog 专属）
 
       状态机：
-        hasItems=false                → 全部不渲染
-        hasItems=true, bar closed     → FAB 在右下
-        hasItems=true, bar open       → 锚点条（摘要+CTA）滑入到 FAB 上方
-        hasItems=true, detail open    → 详情面板从锚点条上方滑出，显示购物
-                                          车明细（每行 -/+ 调整 + 删除），
-                                          底部带汇总和去结算
+        cart empty                → 全部不渲染
+        cart has items, panel off → FAB 在右下角（带箱数角标）
+        cart has items, panel on  → 详情面板从屏外滑入（位于 FAB 上方），
+                                    显示购物车明细（每行 -/+ 调整 + 删除），
+                                    底部带汇总和去结算
 
-      0→1 加商品自动展开锚点条；点锚点条摘要 → 详情面板从条上方滑出；
-      点面板 ✕ 或遮罩 → 关详情面板回锚点条；点锚点条 ✕ → 收条回 FAB。
+      点 FAB → 详情面板打开；点面板 ✕ / 遮罩 / 清空购物车 → 关闭。
     -->
     <template v-if="cartHasItems">
       <!-- 遮罩：详情面板打开时浮起 -->
@@ -622,13 +613,13 @@ const stockFor = (productId: string) => {
         />
       </Transition>
 
-      <!-- FAB：右下角圆形按钮（带箱数角标） -->
+      <!-- FAB：右下角圆形按钮（带箱数角标）。点击直接展开详情面板。 -->
       <button
         type="button"
         class="fixed right-4 bottom-14 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
-        :class="(cartBarOpen || cartDetailOpen) ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
+        :class="cartDetailOpen ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
         :aria-label="t('common.cart')"
-        @click="cartBarOpen = true"
+        @click="cartDetailOpen = true"
       >
         <ShoppingCart class="h-6 w-6 transition-transform" />
         <span class="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-mono font-semibold">
@@ -636,62 +627,7 @@ const stockFor = (productId: string) => {
         </span>
       </button>
 
-      <!-- 锚点条：从屏外滑入，位于 FAB 上方；展开详情面板时隐藏 -->
-      <Transition
-        enter-active-class="transition-all duration-220 ease-out"
-        leave-active-class="transition-all duration-180 ease-in"
-        enter-from-class="translate-y-full opacity-0"
-        leave-to-class="translate-y-full opacity-0"
-      >
-        <div
-          v-show="cartBarOpen && !cartDetailOpen"
-          class="fixed inset-x-0 bottom-14 md:bottom-4 z-30 px-4"
-        >
-          <div class="mx-auto max-w-screen-md rounded-xl border bg-background/95 shadow-lg backdrop-blur ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
-            <!-- 摘要（点击 → 展开详情面板） -->
-            <button
-              type="button"
-              class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-muted/40 active:scale-[0.99]"
-              @click="cartDetailOpen = true"
-            >
-              <div class="flex items-center gap-2.5 min-w-0">
-                <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-                  <ShoppingBag class="h-4 w-4" />
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-xs text-muted-foreground">
-                    {{ t('customer.cart.title') }} · {{ cartItemsCount }} {{ t('customer.catalog.box') }}
-                  </p>
-                  <p class="font-mono text-sm font-semibold leading-tight truncate">
-                    {{ cartTotalBoxes }} {{ t('customer.catalog.box') }}
-                    · {{ fmtM2(cartTotalM2) }}
-                  </p>
-                </div>
-              </div>
-              <!-- 折叠按钮（关闭锚点条，回 FAB 态） -->
-              <button
-                type="button"
-                class="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-muted transition"
-                :aria-label="t('common.close')"
-                @click.stop="cartBarOpen = false"
-              >
-                <ChevronDown class="h-4 w-4" />
-              </button>
-            </button>
-            <!-- 底部：CTA（去结算） -->
-            <div class="grid grid-cols-1">
-              <Button
-                class="w-full rounded-none h-11 font-medium"
-                @click="goCheckout"
-              >
-                {{ t('customer.cart.checkoutBtn') }}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-
-      <!-- 详情面板：从锚点条上方滑出，承接购物车明细 -->
+      <!-- 详情面板：从屏外滑入，位于 FAB 上方 -->
       <Transition
         enter-active-class="transition-all duration-260 ease-out"
         leave-active-class="transition-all duration-180 ease-in"
