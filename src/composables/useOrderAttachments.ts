@@ -7,7 +7,9 @@
  *
  * 流程：
  *   1. 上传:  client 选图 → 校验 size / mime → upload 到
- *             storage 'order-attachments' bucket, 路径 'pending/{account_id}/{uuid}.{ext}'
+ *             storage 'order-attachments' bucket, 路径
+ *             '{account_id}/pending/{uuid}.{ext}' (首段必须是
+ *             account_id 以满足 storage RLS 约束)
  *   2. 绑定:  订单成功创建后, 把 pending 路径 + 元数据 insert 到
  *             public.order_attachments 表. 审核员/财务/仓库读详情时拿到
  *             storage_path → 拼 public URL 显示.
@@ -34,7 +36,7 @@ const ALLOWED_MIMES = [
 ]
 
 export interface PendingAttachment {
-  /** storage 中的路径, 形如 'pending/{account_id}/{uuid}.jpg' */
+  /** storage 中的路径, 形如 '{account_id}/pending/{uuid}.jpg' */
   storage_path: string
   mime: string
   size_bytes: number
@@ -74,7 +76,10 @@ export async function uploadOrderAttachment(
   const uuid = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-  const path = `pending/${options.accountId}/${uuid}.${ext}`
+  // 路径第一段必须是 account_id 以满足 storage RLS policy
+  // (order_attachments_insert_customer 要求 foldername(name)[1] = current_account_id())
+  // 第二段 'pending' 表示订单尚未创建; attachToOrder 后由后续清理脚本归档
+  const path = `${options.accountId}/pending/${uuid}.${ext}`
 
   const local_url = URL.createObjectURL(file)
 

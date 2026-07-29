@@ -430,6 +430,8 @@ export default {
       attachmentsTooBig: '图片过大（上限 5MB）',
       attachmentsBadType: '仅支持 jpg / png / webp / heic',
       attachmentsRemove: '移除',
+      attachmentsPrev: '上一张',
+      attachmentsNext: '下一张',
       attachmentsCaptionPh: '为这张图加一句说明（可选）',
       submit: '提交订单',
       submitting: '提交中…',

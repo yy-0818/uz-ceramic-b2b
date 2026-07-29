@@ -285,6 +285,8 @@ export default {
       attachmentsTooBig: 'Rasm juda katta (maks. 5 MB)',
       attachmentsBadType: 'Faqat jpg / png / webp / heic',
       attachmentsRemove: 'O\'chirish',
+      attachmentsPrev: 'Oldingi',
+      attachmentsNext: 'Keyingi',
       attachmentsCaptionPh: 'Rasmga izoh (ixtiyoriy)',
       submit: 'Buyurtmani tasdiqlash',
       submitting: 'Yuborilmoqda…',

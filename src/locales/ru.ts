@@ -285,6 +285,8 @@ export default {
       attachmentsTooBig: 'Файл слишком большой (макс. 5 МБ)',
       attachmentsBadType: 'Только jpg / png / webp / heic',
       attachmentsRemove: 'Удалить',
+      attachmentsPrev: 'Предыдущее',
+      attachmentsNext: 'Следующее',
       attachmentsCaptionPh: 'Подпись к фото (необязательно)',
       submit: 'Подтвердить заказ',
       submitting: 'Отправка…',
