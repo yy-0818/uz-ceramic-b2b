@@ -6,7 +6,7 @@
   - 提交后跳转到订单详情
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ArrowLeft, Loader2, CheckCircle2, Star } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
@@ -41,17 +41,36 @@ const subs = ref<Account[]>([])
 const subId = ref<string>('')
 const loadingSubs = ref(false)
 
-onMounted(async () => {
-  if (!account.value) return
+// 客户的 useAuth.account 可能是子账号本身（user_id → accounts 行）。
+// 拉子账号列表需要父账号 id；下单时 account_id 也应当是父账号。
+// 计算出一个统一的"父 id"，无父（顶层账号）就用自己。
+const parentAccountId = computed(() => account.value?.parent_id ?? account.value?.id ?? null)
+
+const loadSubs = async (parentId: string) => {
   loadingSubs.value = true
   try {
-    subs.value = await accs.fetchSubAccounts(account.value.id)
+    subs.value = await accs.fetchSubAccounts(parentId)
     // 默认：主联系 true → 否则第一行
     const main = subs.value.find((s) => s.is_main)
     subId.value = main?.id ?? subs.value[0]?.id ?? ''
   } finally {
     loadingSubs.value = false
   }
+}
+
+// useAuth 是模块级单例，init 在 onMounted 里 await — 进入 checkout 时
+// account.value 可能还为 null（旧代码直接 return 导致子账号永不加载）。
+// 用 watch 跟踪：account 一旦就绪就拉子账号；切换登录态时也能自动重拉。
+watch(
+  () => parentAccountId.value,
+  (id) => { if (id) loadSubs(id) },
+  { immediate: true },
+)
+
+onMounted(() => {
+  // 兜底：如果 immediate 时 account 已经就绪但 watch 还没 fire，
+  // 这里再触发一次（race condition 安全网）。
+  if (parentAccountId.value) loadSubs(parentAccountId.value)
 })
 
 const fmtM2 = (n: number) => `${n.toFixed(2)} м²`
@@ -59,16 +78,16 @@ const totalBoxes = computed(() => cart.totalBoxes())
 const totalM2 = computed(() => cart.totalM2())
 
 const canSubmit = computed(
-  () => cart.items.value.length > 0 && !!account.value && !!subId.value,
+  () => cart.items.value.length > 0 && !!parentAccountId.value && !!subId.value,
 )
 
 const onSubmit = async () => {
-  if (!account.value || !subId.value) return
+  if (!parentAccountId.value || !subId.value) return
   submitting.value = true
   errMsg.value = null
   try {
     const order = await orders.submit(
-      account.value.id,
+      parentAccountId.value,
       cart.items.value.map((c) => ({
         product_id: c.product_id,
         model: c.model,
