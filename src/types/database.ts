@@ -236,6 +236,29 @@ export interface Database {
         }
         Update: Partial<Database['public']['Tables']['order_status_log']['Row']>
       }
+      order_attachments: {
+        Row: {
+          id: string
+          order_id: string
+          account_id: string
+          storage_path: string
+          mime: string
+          size_bytes: number
+          caption: string | null
+          uploaded_by: string | null
+          created_at: string
+        }
+        Insert: {
+          order_id: string
+          account_id: string
+          storage_path: string
+          mime: string
+          size_bytes: number
+          caption?: string | null
+          uploaded_by?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['order_attachments']['Row']>
+      }
     }
   }
 }

@@ -29,10 +29,14 @@ import {
   Receipt,
   Users,
   MessageSquare,
+  Paperclip,
   ChevronRight,
   AlertCircle,
   Check,
   Circle,
+  ImagePlus,
+  X,
+  Upload,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
@@ -48,6 +52,11 @@ import { useCart } from '@/composables/useCart'
 import { useOrders } from '@/composables/useOrders'
 import { useAuth } from '@/composables/useAuth'
 import { useAccounts, type Account } from '@/composables/useAccounts'
+import {
+  useOrderAttachments,
+  attachToOrder,
+  removePending,
+} from '@/composables/useOrderAttachments'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -55,6 +64,7 @@ const cart = useCart()
 const orders = useOrders()
 const { account } = useAuth()
 const accs = useAccounts()
+const attachments = useOrderAttachments()
 
 const remark = ref('')
 const submitting = ref(false)
@@ -96,10 +106,68 @@ const canSubmit = computed(
   () => itemsCount.value > 0 && !!parentAccountId.value && !!subId.value,
 )
 
+// 文件输入引用
+const fileInput = ref<HTMLInputElement | null>(null)
+const attachmentError = ref<string | null>(null)
+
+const MAX_ATTACHMENTS = 5
+const MAX_BYTES = 5 * 1024 * 1024
+const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/webp', 'image/heic']
+
+const onPickClick = () => {
+  if (attachments.items.value.length >= MAX_ATTACHMENTS) {
+    attachmentError.value = t('customer.checkout.attachmentsMaxReached')
+    return
+  }
+  fileInput.value?.click()
+}
+
+const onFiles = async (files: FileList | null) => {
+  if (!files || files.length === 0) return
+  attachmentError.value = null
+  const accountId = parentAccountId.value
+  if (!accountId) {
+    attachmentError.value = '缺少主账号 id,无法上传'
+    return
+  }
+  const accepted = Array.from(files).slice(0, MAX_ATTACHMENTS - attachments.items.value.length)
+  for (const file of accepted) {
+    if (!ALLOWED_MIME.includes(file.type)) {
+      attachmentError.value = t('customer.checkout.attachmentsBadType')
+      continue
+    }
+    if (file.size > MAX_BYTES) {
+      attachmentError.value = t('customer.checkout.attachmentsTooBig')
+      continue
+    }
+    try {
+      await attachments.add(file, accountId)
+    } catch (e: any) {
+      attachmentError.value = e?.message ?? String(e)
+    }
+  }
+  if (fileInput.value) fileInput.value.value = ''   // 清空 input 允许重选同一文件
+}
+
+const onDrop = async (ev: DragEvent) => {
+  ev.preventDefault()
+  await onFiles(ev.dataTransfer?.files ?? null)
+}
+const onDragOver = (ev: DragEvent) => {
+  ev.preventDefault()
+}
+
+const fmtSize = (n: number) => {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
 const onSubmit = async () => {
   if (!parentAccountId.value || !subId.value) return
   submitting.value = true
   errMsg.value = null
+  let createdOrderId: string | null = null
   try {
     const order = await orders.submit(
       parentAccountId.value,
@@ -113,12 +181,32 @@ const onSubmit = async () => {
       remark.value.trim() || null,
       subId.value,
     )
+    createdOrderId = order.id
+
+    // 订单已创建 → 把已上传的 pending 附件绑定上去
+    const successful = attachments.successful.value
+    if (successful.length > 0) {
+      try {
+        await attachToOrder(successful, {
+          orderId: order.id,
+          accountId: parentAccountId.value,
+        })
+      } catch (attachErr: any) {
+        // 附件绑定失败不应阻塞订单跳转, 但要明确提示
+        errMsg.value = `订单已创建,但附件绑定失败: ${attachErr?.message ?? attachErr}`
+      }
+    }
+
     cart.clear()
+    // 离开页面再 reset, 否则本地预览图会立刻 revoke 不优雅
+    void attachments.reset()
     router.push(`/orders/${order.id}/pay`)
   } catch (e: unknown) {
     errMsg.value = e instanceof Error ? e.message : String(t('customer.checkout.submitFail'))
   } finally {
     submitting.value = false
+    // 订单成功 → 不要再 reset(successful 已经 attach 上去了)
+    void createdOrderId
   }
 }
 
@@ -359,7 +447,7 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
           </CardContent>
         </Card>
 
-        <!-- 备注 -->
+        <!-- 备注 + 附件 -->
         <Card>
           <CardContent class="p-0">
             <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
@@ -367,17 +455,134 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               <h2 class="font-semibold text-sm">
                 {{ t('customer.checkout.remark') }}
               </h2>
+              <Badge variant="secondary" class="ml-auto">
+                {{ t('customer.checkout.attachmentsTitle') }}
+              </Badge>
             </div>
-            <div class="p-4 sm:p-5">
-              <Label for="remark" class="sr-only">
-                {{ t('customer.checkout.remark') }}
-              </Label>
-              <Textarea
-                id="remark"
-                v-model="remark"
-                :placeholder="t('customer.checkout.remarkPh')"
-                class="min-h-24 resize-none"
-              />
+
+            <div class="p-4 sm:p-5 space-y-4">
+              <!-- 文本备注 -->
+              <div>
+                <Label for="remark" class="sr-only">
+                  {{ t('customer.checkout.remark') }}
+                </Label>
+                <Textarea
+                  id="remark"
+                  v-model="remark"
+                  :placeholder="t('customer.checkout.remarkPh')"
+                  class="min-h-24 resize-none"
+                />
+              </div>
+
+              <!-- 分隔 + 附件标题 -->
+              <div class="border-t pt-4 space-y-3">
+                <div class="flex items-center gap-2">
+                  <Paperclip class="h-3.5 w-3.5 text-primary" />
+                  <p class="text-xs font-medium text-foreground">
+                    {{ t('customer.checkout.attachmentsTitle') }}
+                  </p>
+                  <Badge variant="outline" class="text-[10px]">
+                    {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
+                  </Badge>
+                </div>
+                <p class="text-[11px] text-muted-foreground leading-relaxed">
+                  {{ t('customer.checkout.attachmentsHint') }}
+                </p>
+
+                <!-- 上传区 -->
+                <button
+                  type="button"
+                  class="w-full rounded-lg border-2 border-dashed transition p-6 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :class="attachments.items.value.length >= MAX_ATTACHMENTS
+                    ? 'border-muted bg-muted/20 cursor-not-allowed'
+                    : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
+                  :disabled="attachments.items.value.length >= MAX_ATTACHMENTS"
+                  @click="onPickClick"
+                  @drop="onDrop"
+                  @dragover="onDragOver"
+                >
+                  <div class="flex flex-col items-center gap-2 text-muted-foreground">
+                    <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                      <ImagePlus class="h-5 w-5 text-primary" />
+                    </div>
+                    <p class="text-xs font-medium text-foreground">
+                      {{ t('customer.checkout.attachmentsEmpty') }}
+                    </p>
+                    <p class="text-[10px]">
+                      jpg / png / webp / heic · ≤ 5 MB · {{ MAX_ATTACHMENTS }} {{ t('customer.checkout.itemsCount') }}
+                    </p>
+                  </div>
+                </button>
+                <input
+                  ref="fileInput"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/heic"
+                  multiple
+                  class="hidden"
+                  @change="onFiles(($event.target as HTMLInputElement).files)"
+                />
+
+                <!-- 错误提示 -->
+                <div
+                  v-if="attachmentError"
+                  class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2.5 text-xs"
+                >
+                  <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                  <p>{{ attachmentError }}</p>
+                </div>
+
+                <!-- 已上传列表 -->
+                <ul v-if="attachments.items.value.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <li
+                    v-for="(it, idx) in attachments.items.value"
+                    :key="idx"
+                    class="relative group rounded-lg border bg-card overflow-hidden"
+                  >
+                    <!-- 缩略图 -->
+                    <div class="aspect-square bg-muted relative overflow-hidden">
+                      <img
+                        :src="it.local_url"
+                        :alt="it.caption ?? 'attachment'"
+                        class="h-full w-full object-cover"
+                      />
+                      <!-- 上传进度遮罩 -->
+                      <div
+                        v-if="(it.progress ?? 0) < 100 && !it.error"
+                        class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                      >
+                        <div class="text-white text-xs font-medium flex items-center gap-1.5">
+                          <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                          {{ it.progress ?? 0 }}%
+                        </div>
+                      </div>
+                      <!-- 错误遮罩 -->
+                      <div
+                        v-if="it.error"
+                        class="absolute inset-0 bg-destructive/80 flex items-center justify-center p-2"
+                      >
+                        <p class="text-white text-[10px] text-center leading-tight">
+                          {{ it.error }}
+                        </p>
+                      </div>
+                      <!-- 移除按钮 -->
+                      <button
+                        type="button"
+                        class="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition opacity-0 group-hover:opacity-100"
+                        :title="t('customer.checkout.attachmentsRemove')"
+                        @click="attachments.remove(idx)"
+                      >
+                        <X class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <!-- 底部: 文件信息 -->
+                    <div class="px-2 py-1.5 space-y-0.5">
+                      <p class="text-[10px] text-muted-foreground truncate font-mono">
+                        {{ it.mime.replace('image/', '') }} · {{ fmtSize(it.size_bytes) }}
+                      </p>
+                    </div>
+                  </li>
+                </ul>
+              </div>
             </div>
           </CardContent>
         </Card>
