@@ -262,6 +262,17 @@ watch(cartDetailOpen, (open) => {
   }
 })
 
+// 切换 selectedModel 时清掉所有草稿：旧 product_id 的草稿已不被任何
+// input 引用，留着只是内存垃圾，并且如果用户后退到旧 model 也不会
+// 看到陈旧输入。
+watch(
+  () => selectedModel.value?.product_id,
+  (id, prev) => {
+    if (prev && lineDrafts.has(prev)) clearDraft(prev)
+    if (id && lineDrafts.has(id)) clearDraft(id)
+  },
+)
+
 // 在详情面板里调整单条数量：超过该色号可用箱数则限制。
 const onLineQty = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
   const next = Math.max(0, item.boxes + delta)
@@ -306,6 +317,30 @@ const commitDraft = (item: { product_id: string; model: string; conversion_rate:
 const onLineBtn = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
   if (lineDrafts.has(item.product_id)) commitDraft(item)
   onLineQty(item, delta)
+}
+
+// 模型/色号视图的草稿提交：输入上限是该色号的可用箱数（参数传入），
+// 且当前购物车值用 cart.qtyOf 读，不依赖 items 对象。
+const commitModelDraft = (productId: string, model: string, conversionRate: number, maxBoxes: number) => {
+  const raw = lineDrafts.get(productId)
+  clearDraft(productId)
+  if (raw === undefined) return
+  let n = parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 0) n = 0
+  if (n > maxBoxes) n = maxBoxes
+  const cur = cart.qtyOf(productId)
+  if (n === cur) return
+  if (n === 0) cart.remove(productId)
+  else cart.setQty(productId, model, conversionRate, n)
+}
+
+// 模型视图的 -/+：先 flush 草稿，再 ±1。
+const onModelQty = (productId: string, model: string, conversionRate: number, delta: number) => {
+  if (lineDrafts.has(productId)) {
+    // 上限用 stockFor 兜底（理论上色号 stepper 上限比这更严）
+    commitModelDraft(productId, model, conversionRate, stockFor(productId))
+  }
+  onQty(productId, model, conversionRate, delta)
 }
 </script>
 
@@ -604,19 +639,28 @@ const onLineBtn = (item: { product_id: string; model: string; conversion_rate: n
                 size="icon"
                 variant="outline"
                 class="h-7 w-7"
-                :disabled="cart.qtyOf(selectedModel.product_id) === 0"
-                @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
+                :disabled="Number(draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))) === 0"
+                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
               >
                 <Minus class="h-3.5 w-3.5" />
               </Button>
-              <div class="flex h-7 flex-1 items-center justify-center rounded-md border bg-background font-mono text-sm font-semibold">
-                {{ cart.qtyOf(selectedModel.product_id) }}
-              </div>
+              <input
+                type="number"
+                inputmode="numeric"
+                min="0"
+                :max="c.boxes"
+                :value="draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))"
+                :aria-label="t('customer.cart.qty')"
+                class="h-7 w-full rounded-md border bg-background text-center font-mono text-sm font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                @input="setDraft(selectedModel.product_id, ($event.target as HTMLInputElement).value)"
+                @blur="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.boxes)"
+                @keydown.enter.prevent="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.boxes); ($event.target as HTMLInputElement).blur()"
+              />
               <Button
                 size="icon"
                 class="h-7 w-7"
-                :disabled="cart.qtyOf(selectedModel.product_id) >= c.boxes"
-                @click="onQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
+                :disabled="Number(draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))) >= c.boxes"
+                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
               >
                 <Plus class="h-3.5 w-3.5" />
               </Button>
