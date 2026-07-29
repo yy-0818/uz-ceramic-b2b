@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, X } from 'lucide-vue-next'
+import { LogOut, Factory, ShoppingCart, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, X, ArrowLeft } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import { useCart } from '@/composables/useCart'
@@ -98,6 +98,29 @@ const goAndClose = (to: string) => {
   router.push(to)
 }
 
+// Sub-page back navigation: any path deeper than a primary nav item
+// (e.g. /admin/accounts/import, /orders/:id) gets a back arrow in the header.
+// router.back() handles sibling sub-pages; for direct entry we fall back to
+// the nearest parent primary nav route.
+const parentNavTo = computed(() => {
+  const path = route.path
+  // direct entry where router history is empty → pick the immediate parent
+  // route that's actually registered as a nav item
+  const parent = navItems.value.find((n) => path.startsWith(n.to + '/') && n.to !== path)
+  return parent?.to
+})
+
+const showBack = computed(() => Boolean(parentNavTo.value))
+
+const onBack = () => {
+  if (window.history.state && (window.history.state as any).back) {
+    router.back()
+  } else {
+    const to = parentNavTo.value
+    if (to) router.push(to)
+  }
+}
+
 // 按角色自动落到对应首页（避免管理员登录后落在客户式浏览页）
 const homeByRole = (role: string | undefined) => {
   switch (role) {
@@ -148,7 +171,16 @@ onMounted(() => {
 
     <div class="flex-1 flex flex-col min-w-0">
       <header class="sticky top-0 z-10 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur">
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <button
+            v-if="showBack"
+            type="button"
+            class="md:hidden -ml-1 mr-1 h-8 w-8 rounded-md flex items-center justify-center hover:bg-muted transition shrink-0"
+            :aria-label="t('common.back')"
+            @click="onBack"
+          >
+            <ArrowLeft class="h-4 w-4" />
+          </button>
           <div class="md:hidden h-8 w-8 rounded-md bg-primary/10 text-primary flex items-center justify-center">
             <Factory class="h-4 w-4" />
           </div>

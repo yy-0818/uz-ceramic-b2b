@@ -5,7 +5,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { Upload, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, X, ChevronRight, RefreshCw } from 'lucide-vue-next'
+import { Upload, FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, X, ChevronRight, RefreshCw, ArrowLeft } from 'lucide-vue-next'
 import { read, utils } from 'xlsx'
 import { useI18n } from '@/lib/i18n'
 import Button from '@/components/ui/Button.vue'
@@ -30,6 +30,14 @@ const result = ref<{ parentsAdded: number; subsAdded: number; subsUpdated: numbe
 const errMsg = ref<string | null>(null)
 
 const handlePick = () => fileInput.value?.click()
+
+const onBack = () => {
+  if (window.history.state && (window.history.state as any).back) {
+    router.back()
+  } else {
+    router.push('/admin/accounts')
+  }
+}
 
 const onFileSelected = async (e: Event) => {
   const f = (e.target as HTMLInputElement).files?.[0]
@@ -97,6 +105,21 @@ const reset = () => {
 
 <template>
   <div class="space-y-4">
+    <!-- 面包屑：返回上级（移动端复用 AppLayout header 的返回箭头；
+         这里再给一份桌面端可见的、显式链接作为兜底） -->
+    <nav class="flex items-center gap-1 text-xs text-muted-foreground">
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted hover:text-foreground transition"
+        @click="onBack"
+      >
+        <ArrowLeft class="h-3.5 w-3.5" />
+        返回账号管理
+      </button>
+      <ChevronRight class="h-3.5 w-3.5 opacity-50" />
+      <span class="text-foreground">客户档案库导入</span>
+    </nav>
+
     <Card>
       <CardHeader>
         <CardTitle class="flex items-center gap-2">
