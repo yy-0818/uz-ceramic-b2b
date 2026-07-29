@@ -12,6 +12,9 @@ export default {
     refresh: 'Обновить',
     logout: 'Выйти',
     done: 'Готово',
+    close: 'Закрыть',
+    increase: 'Увеличить',
+    decrease: 'Уменьшить',
   },
   accounts: {
     resetTitle: 'Сброс пароля',

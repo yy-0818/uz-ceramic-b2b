@@ -11,6 +11,9 @@ export default {
     back: 'Orqaga',
     logout: 'Chiqish',
     done: 'Tayyor',
+    close: 'Yopish',
+    increase: 'Oshirish',
+    decrease: 'Kamaytirish',
   },
   accounts: {
     resetTitle: 'Parolni tiklash',

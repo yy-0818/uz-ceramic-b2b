@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronUp, ShoppingCart } from 'lucide-vue-next'
+import { Search, Plus, Minus, ShoppingBag, Package, ImageOff, Box, Tag, Hash, ChevronDown, ShoppingCart, Trash2, GripHorizontal, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
@@ -25,8 +25,6 @@ import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { supabase } from '@/lib/supabase'
-
-import CartDrawer from './product-browse/CartDrawer.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -119,8 +117,8 @@ const view = ref<'categories' | 'models' | 'colors'>('categories')
 const selectedCategory = ref<string>('')
 const selectedModel = ref<ProductWithColors | null>(null)
 const search = ref('')
-const showCart = ref(false)
-const cartBarOpen = ref(false)
+const cartBarOpen = ref(false)        // 锚点条是否展开（购物车摘要可见）
+const cartDetailOpen = ref(false)     // 详情面板是否展开（替代原 Dialog）
 
 // 第 1 级：分类列表（按白名单聚合：型号数 / 箱数 / 色号数）
 const categoriesWithCount = computed(() => {
@@ -256,6 +254,25 @@ const totalColors = computed(() => {
 watch(cartHasItems, (now, before) => {
   if (now && !before) cartBarOpen.value = true
 })
+
+// 购物车清空后，关闭详情面板（避免空列表浮在屏上）。
+watch(cartItemsCount, (n) => {
+  if (n === 0) cartDetailOpen.value = false
+})
+
+// 在详情面板里调整单条数量：超过该色号可用箱数则限制。
+const onLineQty = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
+  const next = Math.max(0, item.boxes + delta)
+  if (next === 0) cart.remove(item.product_id)
+  else cart.setQty(item.product_id, item.model, item.conversion_rate, next)
+}
+
+// 详情面板里调整数量时需找到该商品对应色号的库存上限。
+// （product_id 在购物车里只有 1 个聚合条目，按 totalBoxes 限制）
+const stockFor = (productId: string) => {
+  const full = allProducts.value.find((p) => p.product_id === productId)
+  return full ? full.total_boxes_level1 + full.total_boxes_level2 : 0
+}
 </script>
 
 <template>
@@ -575,32 +592,41 @@ watch(cartHasItems, (now, before) => {
       </div>
     </div>
 
-    <!-- 购物车抽屉 -->
-    <CartDrawer
-      v-model:open="showCart"
-      :cart="cart"
-      @checkout="goCheckout"
-    />
-
     <!--
-      购物车 FAB + 购物车条（catalog 专属）
+      购物车 FAB + 锚点条 + 详情面板（catalog 专属，三件套）
 
-      设计：
-        - FAB 永远是入口：有商品时显示在屏幕右下角（避开底部 bottom-nav），
-          自带箱数角标。
-        - 点击 FAB → 切换 cartBarOpen，购物车条从屏外滑入到 FAB 上方；
-          条本身含摘要 + 一键去结算 CTA。
-        - 再次点 FAB → 条收回到屏外（FAB 保留可见，给用户稳定锚点）。
-        - 首次加商品（cartHasItems 由 0→1）会自动展开条，做操作反馈；
-          之后用户自行控制展开/收起。
-        - 没有商品时全部不渲染，页面和未购物状态一致。
+      状态机：
+        hasItems=false                → 全部不渲染
+        hasItems=true, bar closed     → FAB 在右下
+        hasItems=true, bar open       → 锚点条（摘要+CTA）滑入到 FAB 上方
+        hasItems=true, detail open    → 详情面板从锚点条上方滑出，显示购物
+                                          车明细（每行 -/+ 调整 + 删除），
+                                          底部带汇总和去结算
+
+      0→1 加商品自动展开锚点条；点锚点条摘要 → 详情面板从条上方滑出；
+      点面板 ✕ 或遮罩 → 关详情面板回锚点条；点锚点条 ✕ → 收条回 FAB。
     -->
     <template v-if="cartHasItems">
+      <!-- 遮罩：详情面板打开时浮起 -->
+      <Transition
+        enter-active-class="transition-opacity duration-200 ease-out"
+        leave-active-class="transition-opacity duration-150 ease-in"
+        enter-from-class="opacity-0"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="cartDetailOpen"
+          class="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+          aria-hidden="true"
+          @click="cartDetailOpen = false"
+        />
+      </Transition>
+
       <!-- FAB：右下角圆形按钮（带箱数角标） -->
       <button
         type="button"
         class="fixed right-4 bottom-14 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
-        :class="cartBarOpen ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
+        :class="(cartBarOpen || cartDetailOpen) ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
         :aria-label="t('common.cart')"
         @click="cartBarOpen = true"
       >
@@ -610,7 +636,7 @@ watch(cartHasItems, (now, before) => {
         </span>
       </button>
 
-      <!-- 购物车条：从屏外滑入，展开后位于 FAB 上方 -->
+      <!-- 锚点条：从屏外滑入，位于 FAB 上方；展开详情面板时隐藏 -->
       <Transition
         enter-active-class="transition-all duration-220 ease-out"
         leave-active-class="transition-all duration-180 ease-in"
@@ -618,15 +644,15 @@ watch(cartHasItems, (now, before) => {
         leave-to-class="translate-y-full opacity-0"
       >
         <div
-          v-show="cartBarOpen"
+          v-show="cartBarOpen && !cartDetailOpen"
           class="fixed inset-x-0 bottom-14 md:bottom-4 z-30 px-4"
         >
           <div class="mx-auto max-w-screen-md rounded-xl border bg-background/95 shadow-lg backdrop-blur ring-1 ring-black/5 dark:ring-white/10 overflow-hidden">
-            <!-- 顶部：摘要（可点击打开抽屉查看明细） -->
+            <!-- 摘要（点击 → 展开详情面板） -->
             <button
               type="button"
               class="flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-muted/40 active:scale-[0.99]"
-              @click="showCart = true"
+              @click="cartDetailOpen = true"
             >
               <div class="flex items-center gap-2.5 min-w-0">
                 <div class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
@@ -642,14 +668,14 @@ watch(cartHasItems, (now, before) => {
                   </p>
                 </div>
               </div>
-              <!-- 右侧：折叠按钮（关闭购物车条） -->
+              <!-- 折叠按钮（关闭锚点条，回 FAB 态） -->
               <button
                 type="button"
                 class="grid h-7 w-7 shrink-0 place-items-center rounded-md hover:bg-muted transition"
                 :aria-label="t('common.close')"
                 @click.stop="cartBarOpen = false"
               >
-                <ChevronUp class="h-4 w-4 rotate-180" />
+                <ChevronDown class="h-4 w-4" />
               </button>
             </button>
             <!-- 底部：CTA（去结算） -->
@@ -658,6 +684,110 @@ watch(cartHasItems, (now, before) => {
                 class="w-full rounded-none h-11 font-medium"
                 @click="goCheckout"
               >
+                {{ t('customer.cart.checkoutBtn') }}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 详情面板：从锚点条上方滑出，承接购物车明细 -->
+      <Transition
+        enter-active-class="transition-all duration-260 ease-out"
+        leave-active-class="transition-all duration-180 ease-in"
+        enter-from-class="translate-y-full opacity-0"
+        leave-to-class="translate-y-full opacity-0"
+      >
+        <div
+          v-if="cartDetailOpen"
+          class="fixed inset-x-0 bottom-14 md:bottom-4 z-50 px-4 pointer-events-none"
+        >
+          <div
+            class="mx-auto max-w-screen-md bg-background rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10 overflow-hidden flex flex-col pointer-events-auto"
+            style="max-height: min(70vh, 36rem)"
+          >
+            <!-- 顶部把手 + 标题 + 关闭 -->
+            <div class="shrink-0 relative">
+              <div class="absolute left-1/2 -translate-x-1/2 top-1.5 h-1 w-10 rounded-full bg-muted-foreground/30" />
+              <div class="flex items-center justify-between px-4 pt-3 pb-2">
+                <p class="text-sm font-semibold">
+                  {{ t('customer.cart.title') }}
+                  <span class="text-muted-foreground font-normal">· {{ cartItemsCount }}</span>
+                </p>
+                <button
+                  type="button"
+                  class="grid h-7 w-7 place-items-center rounded-md hover:bg-muted transition"
+                  :aria-label="t('common.close')"
+                  @click="cartDetailOpen = false"
+                >
+                  <X class="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <!-- 明细列表（可滚动） -->
+            <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-2">
+              <ul class="space-y-1.5">
+                <li
+                  v-for="c in cart.items.value"
+                  :key="c.product_id"
+                  class="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
+                >
+                  <!-- 信息 -->
+                  <div class="min-w-0 flex-1">
+                    <p class="font-mono text-sm font-semibold truncate" :title="c.model">{{ c.model }}</p>
+                    <p class="text-[11px] text-muted-foreground mt-0.5">
+                      {{ c.conversion_rate }} м²/ящ · ≈ {{ fmtM2(c.boxes * c.conversion_rate) }}
+                    </p>
+                  </div>
+                  <!-- 步进器 -->
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      class="grid h-7 w-7 place-items-center rounded-md border bg-background hover:bg-muted transition active:scale-95 disabled:opacity-40 disabled:hover:bg-background"
+                      :disabled="c.boxes <= 0"
+                      :aria-label="t('common.decrease')"
+                      @click="onLineQty(c, -1)"
+                    >
+                      <Minus class="h-3.5 w-3.5" />
+                    </button>
+                    <div class="w-9 text-center font-mono text-sm font-semibold tabular-nums">
+                      {{ c.boxes }}
+                    </div>
+                    <button
+                      type="button"
+                      class="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95 disabled:opacity-40"
+                      :disabled="c.boxes >= stockFor(c.product_id)"
+                      :aria-label="t('common.increase')"
+                      @click="onLineQty(c, 1)"
+                    >
+                      <Plus class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <!-- 移除 -->
+                  <button
+                    type="button"
+                    class="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition active:scale-95 shrink-0"
+                    :aria-label="t('customer.cart.remove')"
+                    @click="cart.remove(c.product_id)"
+                  >
+                    <Trash2 class="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              </ul>
+            </div>
+
+            <!-- 底部汇总 + 去结算 -->
+            <div class="shrink-0 border-t bg-muted/30 px-4 py-3 space-y-2">
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">{{ t('customer.cart.totalBoxes') }}</span>
+                <span class="font-mono font-semibold">{{ cartTotalBoxes }}</span>
+              </div>
+              <div class="flex items-center justify-between text-sm">
+                <span class="text-muted-foreground">{{ t('customer.cart.totalM2') }}</span>
+                <span class="font-mono font-semibold">{{ fmtM2(cartTotalM2) }}</span>
+              </div>
+              <Button class="w-full h-11 font-medium" @click="goCheckout">
                 {{ t('customer.cart.checkoutBtn') }}
               </Button>
             </div>

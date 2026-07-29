@@ -25,6 +25,9 @@ export default {
     cartCheckout: '去结算',
     currentRole: '当前身份：',
     done: '完成',
+    close: '关闭',
+    increase: '增加',
+    decrease: '减少',
   },
   accounts: {
     resetTitle: '重置密码',
