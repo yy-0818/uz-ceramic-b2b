@@ -7,7 +7,7 @@
   - 不显示单价；按"整箱"下单；每箱 = conversion_rate 平方米
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, reactive } from 'vue'
+import { ref, computed, onMounted, watch, reactive, nextTick } from 'vue'
 import { Search, Plus, Minus, ChevronLeft, Package, ImageOff, Box, Tag, Hash, ShoppingCart, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
@@ -214,7 +214,15 @@ const back = () => {
   }
 }
 
-const goCheckout = () => router.push('/customer/checkout')
+// 路由跳转前先把购物车抽屉关掉：抽屉是 fixed 定位 + z-50，
+// 若开着就路由切换，Transition leave 动画跑 200ms，期间抽屉仍浮在
+// 新页面之上，会让用户感觉"点了但没反应"。先关再 push 顺手解决。
+const goCheckout = async () => {
+  cartDetailOpen.value = false
+  // 等一帧让 Transition 开始离场，下一次路由 push 切换到 CheckoutPage
+  await nextTick()
+  router.push('/customer/checkout')
+}
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
   const cur = cart.qtyOf(productId)
