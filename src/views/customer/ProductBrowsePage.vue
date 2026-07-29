@@ -708,7 +708,7 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
       >
         <ShoppingCart class="h-6 w-6 transition-transform" />
         <span class="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-mono font-semibold">
-          {{ cartTotalBoxes }}
+          {{ cartItemsCount }}
         </span>
       </button>
 
