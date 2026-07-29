@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { Search, RefreshCw, Image as ImageIcon, Database } from 'lucide-vue-next'
+import { Search, RefreshCw, Image as ImageIcon, Database, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 
 import Button from '@/components/ui/Button.vue'
@@ -16,6 +16,7 @@ import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
 import Input from '@/components/ui/Input.vue'
 import Badge from '@/components/ui/Badge.vue'
+import Checkbox from '@/components/ui/Checkbox.vue'
 import ProductCardSkeleton from '@/components/ui/ProductCardSkeleton.vue'
 
 import { useProducts, type ProductWithColors } from '@/composables/useProducts'
@@ -153,46 +154,52 @@ const onClearUpload = (productId: string) => {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <!-- 顶部：标题 + 统计 chip -->
-    <Card>
-      <CardContent class="p-4 space-y-3">
-        <div class="flex items-center gap-2 flex-wrap">
-          <ImageIcon class="h-5 w-5 text-muted-foreground shrink-0" />
-          <h1 class="text-lg font-semibold">{{ t('admin.products.title') }}</h1>
-          <Badge variant="secondary" class="font-mono tabular-nums">{{ summary.total }}</Badge>
-          <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {{ t('admin.productsAll.withImage') }}
-            <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withImage }}</span>
-          </span>
-          <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
-            {{ t('admin.productsAll.withStock') }}
-            <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withStock }}</span>
-          </span>
-          <Button size="sm" variant="outline" class="ml-auto" @click="load" :disabled="loading">
-            <RefreshCw class="h-4 w-4 sm:mr-1.5" :class="{ 'animate-spin': loading }" />
-            <span class="hidden sm:inline">{{ t('admin.productsAll.refresh') }}</span>
-          </Button>
+  <div class="space-y-3">
+    <!-- Sticky toolbar: top-14 = below AppLayout header -->
+    <div class="sticky top-14 z-20 bg-background/95 backdrop-blur shadow-sm border rounded-lg p-3 space-y-2">
+      <!-- Row 1: 标题 + 统计 chip + 刷新 -->
+      <div class="flex items-center gap-2 flex-wrap min-h-[2rem]">
+        <ImageIcon class="h-5 w-5 text-muted-foreground shrink-0" />
+        <h1 class="text-base sm:text-lg font-semibold">{{ t('admin.products.title') }}</h1>
+        <Badge variant="secondary" class="font-mono tabular-nums text-xs">{{ summary.total }}</Badge>
+        <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          {{ t('admin.productsAll.withImage') }}
+          <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withImage }}</span>
+        </span>
+        <span class="hidden sm:inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <span class="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
+          {{ t('admin.productsAll.withStock') }}
+          <span class="font-mono font-semibold text-foreground tabular-nums">{{ summary.withStock }}</span>
+        </span>
+        <Button size="sm" variant="outline" class="ml-auto" @click="load" :disabled="loading">
+          <RefreshCw class="h-4 w-4 sm:mr-1.5" :class="{ 'animate-spin': loading }" />
+          <span class="hidden xs:inline">{{ t('admin.productsAll.refresh') }}</span>
+        </Button>
+      </div>
+      <!-- Row 2: 搜索 + 分类 + 复选框 -->
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="relative flex-1 min-w-[140px]">
+          <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')"
+            class="pl-8 pr-8 w-full h-9 text-sm" />
+          <button v-if="search" type="button"
+            class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            @click="search = ''">
+            <X class="h-3.5 w-3.5" />
+          </button>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="relative flex-1 min-w-[180px] max-w-xs">
-            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')" class="pl-8 w-full" />
-          </div>
-          <select v-model="categoryFilter"
-            class="h-9 rounded-md border bg-background px-2 text-sm shrink-0">
-            <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
-            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
-          </select>
-          <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none shrink-0">
-            <input type="checkbox" v-model="onlyWithStock" class="rounded" />
-            <span class="whitespace-nowrap">{{ t('admin.productsAll.onlyWithStock') }}</span>
-          </label>
-        </div>
-      </CardContent>
-    </Card>
+        <select v-model="categoryFilter"
+          class="h-9 rounded-md border bg-background px-2 text-sm shrink-0">
+          <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
+          <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+        </select>
+        <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none shrink-0">
+          <Checkbox :checked="onlyWithStock" @update:checked="onlyWithStock = $event" />
+          <span class="whitespace-nowrap">{{ t('admin.productsAll.onlyWithStock') }}</span>
+        </label>
+      </div>
+    </div>
 
     <!-- 错误条 -->
     <div v-if="error" class="text-sm text-destructive bg-destructive/5 border border-destructive/30 rounded-md px-3 py-2">
