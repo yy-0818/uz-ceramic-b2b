@@ -2,10 +2,15 @@
   src/components/ui/PageTransition.vue
   全局页面切换动画 — 桌面 / 移动端自适应
 
-  - 桌面端:  fade + translateY  8px  →  0  (克制的"上浮淡入")
-  - 移动端:  fade + translateX 24px → 0  (更像原生 App 的水平切换)
-  - prefers-reduced-motion / 旧浏览器: 直接禁用，瞬时切换
-  - 配合 router.recordRoute by storing each route in <RouterView> via key=$route.path
+  桌面端 (md+):
+    - 新页: clip-path circle 从 90% 中心展开到 100% + opacity 0→1 + translateY 12px→0
+    - 旧页: clip-path circle 从 100% 收缩到 90% 中心 + opacity 1→0 + translateY 0→-8px
+    - 效果: "上推+圆形揭示"，比单纯 fade 更有产品感
+  移动端 (<md):
+    - 新页: fade + translateX 24px→0  (类似原生 App)
+    - 旧页: fade + translateX 0→-12px
+  无障碍:
+    - prefers-reduced-motion → 0ms + 立即呈现
 -->
 <script setup lang="ts">
 import { computed } from 'vue'
@@ -14,87 +19,84 @@ import { useRoute, useRouter } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 
-// Detect sub-page direction: pushing deeper → forward, popping back → reverse.
-// Used by reverse enter/leave classes (not strictly necessary for fade-only,
-// but lets us pick the right slide direction on mobile).
 const transitionName = computed(() => {
-  // Heuristic: route meta may carry explicit `transition: 'slide-left'`
   const meta = route.meta?.transition as string | undefined
   return meta ?? 'page'
 })
-
-// Track last fullPath to decide direction. We keep it reactive on the
-// router state directly to avoid relying on global this.captureDirection
-// which can race with concurrent navigations.
-const fromIndex = (() => {
-  try {
-    return Number(router.options.history.state?.position ?? 0)
-  } catch {
-    return 0
-  }
-})()
-void fromIndex
+void router
 </script>
 
 <template>
   <!--
-    Wrapping <RouterView> in <Transition> lets Vue intercept component
-    mounts/unmounts and apply CSS classes for enter/leave. The :key on
-    RouterView (driven by fullPath) is what triggers the transition — if
-    a sibling route share the same component path (e.g. /orders/:id with
-    two different ids), we still remount and replay the animation.
+    关键：<RouterView> 必须用 slot 形式，<Transition> 包在 <component :is> 外层。
+    否则 vue-router 4 会持续打印 warn: "<router-view> can no longer be used
+    directly inside <transition>".
   -->
-  <Transition
-    :name="transitionName"
-    mode="out-in"
-    appear
-    :duration="{ enter: 220, leave: 140 }"
-  >
-    <RouterView v-slot="{ Component }">
-      <component :is="Component" :key="router.resolve(route).fullPath" />
-    </RouterView>
-  </Transition>
+  <RouterView v-slot="{ Component, route: r }">
+    <Transition
+      :name="transitionName"
+      mode="out-in"
+      appear
+      :duration="{ enter: 320, leave: 200 }"
+    >
+      <component :is="Component" :key="router.resolve(r).fullPath" />
+    </Transition>
+  </RouterView>
 </template>
 
 <style scoped>
 /* ============================================================
-   Desktop:  fade + 8px translateY (subtle "rise" feel)
-   Mobile:   fade + 24px translateX (slide-in feel)
-   Trigger:  CSS @media (max-width: 767px) — matches Tailwind md: breakpoint
-   Fallback: prefers-reduced-motion → 0ms; both classes no-op
+   Desktop (md+): 圆形 clip-path 揭示 + 上推
+   Mobile (<md): 水平 slide (覆盖)
    ============================================================ */
 
-/* page-enter-active / page-leave-active are picked up by <Transition name="page"> */
 .page-enter-active,
 .page-leave-active {
   transition:
-    opacity 0.22s ease,
-    transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
-  will-change: opacity, transform;
+    opacity 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    transform 0.32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    clip-path 0.32s cubic-bezier(0.7, 0, 0.3, 1);
+  will-change: opacity, transform, clip-path;
 }
 
+/* Desktop enter-from / desktop leave-to */
 .page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px) scale(0.985);
+  clip-path: circle(90% at 50% 50%);
 }
 
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+  transform: translateY(-8px) scale(0.99);
+  clip-path: circle(95% at 50% 50%);
 }
 
-/* Mobile override: horizontal slide replaces vertical rise */
+/* ============================================================
+   Mobile override: 水平 slide 替代 clip-path
+   ============================================================ */
 @media (max-width: 767px) {
+  .page-enter-active,
+  .page-leave-active {
+    transition:
+      opacity 0.24s ease,
+      transform 0.24s cubic-bezier(0.22, 0.61, 0.36, 1);
+    will-change: opacity, transform;
+  }
   .page-enter-from {
+    opacity: 0;
     transform: translateX(24px);
+    clip-path: none;
   }
   .page-leave-to {
+    opacity: 0;
     transform: translateX(-12px);
+    clip-path: none;
   }
 }
 
 /* ============================================================
-   Accessibility: respect user's motion preference
+   Accessibility: respect prefers-reduced-motion
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {
   .page-enter-active,
@@ -105,6 +107,7 @@ void fromIndex
   .page-leave-to {
     opacity: 1 !important;
     transform: none !important;
+    clip-path: none !important;
   }
 }
 </style>
