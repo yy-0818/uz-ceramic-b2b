@@ -8,7 +8,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { Search, Plus, Minus, Package, ImageOff, Box, Tag, Hash, ShoppingCart, Trash2, X } from 'lucide-vue-next'
+import { Search, Plus, Minus, ChevronLeft, Package, ImageOff, Box, Tag, Hash, ShoppingCart, Trash2, X } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useRouter } from 'vue-router'
 
