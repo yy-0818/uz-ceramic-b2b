@@ -46,7 +46,13 @@ const current = computed(() =>
 const recompute = async () => {
   if (!trigger.value) return
   await nextTick()
-  const r = trigger.value.getBoundingClientRect()
+  // trigger 是子组件 <Button> 的组件实例 proxy, 要拿到根 DOM 元素
+  // (script setup 包装的组件) 必须显式走 $el. 若 ref 已经被改成原生
+  // 元素, 则两者兼容 (HTMLElement 也有 $el 指向自身).
+  const t = trigger.value as any
+  const el: HTMLElement | undefined = t?.$el ?? t
+  if (!el || typeof el.getBoundingClientRect !== 'function') return
+  const r = el.getBoundingClientRect()
   const vw = window.innerWidth
   const vh = window.innerHeight
   // 用菜单实测高度（首次测量为 0 用估算）
@@ -74,6 +80,11 @@ const recompute = async () => {
     left: `${left}px`,
     top: `${top}px`,
     width: `${MENU_W}px`,
+    // inline style 强制写 z-index, 避免 class 上的 z-[60] 被 Tailwind
+    // purge / PostCSS 处理后失效 (在生产 build 中偶发)。
+    // 100 足以凌驾 header(z-10)、Drawer(z-50)、Dialog(z-50)、
+    // AccountsAdminPage 操作菜单(z-9999) —— z-9999 仍胜, 是预期。
+    zIndex: '100',
   }
 }
 
