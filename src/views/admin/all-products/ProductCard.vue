@@ -84,7 +84,7 @@ const attachmentState = () => {
 </script>
 
 <template>
-  <Card class="overflow-hidden hover:shadow-md transition flex flex-col">
+  <Card class="overflow-hidden hover:shadow-md transition flex flex-col" style="content-visibility: auto; contain-intrinsic-size: 0 380px;">
     <!-- 顶部：图缩略 -->
     <div class="relative aspect-[4/3] sm:aspect-[16/10] bg-muted/40 overflow-hidden">
       <img v-if="product.image_url && !isUploading()"

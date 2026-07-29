@@ -40,6 +40,7 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploadTargetId = ref<string | null>(null)
 const uploadErr = ref<string | null>(null)
 
+// Upload state
 const uploads = ref<Map<string, UploadState>>(new Map())
 const statusFor = (id: string) => uploads.value.get(id)
 
@@ -56,17 +57,20 @@ const load = async () => {
 }
 onMounted(load)
 
+// Recompute categories from items
 const categories = computed(() => {
   const set = new Set<string>()
-  items.value.forEach((p) => set.add(p.category))
+  for (const p of items.value) set.add(p.category)
   return Array.from(set).sort()
 })
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
+  const cat = categoryFilter.value
+  const stock = onlyWithStock.value
   return items.value.filter((p) => {
-    if (categoryFilter.value !== 'all' && p.category !== categoryFilter.value) return false
-    if (onlyWithStock.value && (p.total_boxes_level1 + p.total_boxes_level2) === 0) return false
+    if (cat !== 'all' && p.category !== cat) return false
+    if (stock && p.total_boxes_level1 + p.total_boxes_level2 === 0) return false
     if (!q) return true
     return p.model.toLowerCase().includes(q)
       || (p.remark?.toLowerCase().includes(q) ?? false)
@@ -74,16 +78,16 @@ const filtered = computed(() => {
   })
 })
 
-const summary = computed(() => ({
-  total: items.value.length,
-  withImage: items.value.filter((p) => p.image_url).length,
-  withStock: items.value.filter((p) => p.total_boxes_level1 + p.total_boxes_level2 > 0).length,
-}))
-
-const onPickImage = (productId: string) => {
-  uploadTargetId.value = productId
-  fileInput.value?.click()
-}
+// Single-pass summary: one loop, three counters
+const summary = computed(() => {
+  let withImage = 0
+  let withStock = 0
+  for (const p of items.value) {
+    if (p.image_url) withImage++
+    if (p.total_boxes_level1 + p.total_boxes_level2 > 0) withStock++
+  }
+  return { total: items.value.length, withImage, withStock }
+})
 
 const performUpload = async (productId: string, file: File) => {
   uploads.value.set(productId, { productId, file, percent: 0, status: 'uploading' })
@@ -151,6 +155,11 @@ const onClearUpload = (productId: string) => {
   uploads.value.delete(productId)
   uploads.value = new Map(uploads.value)
 }
+
+const onPickImage = (productId: string) => {
+  uploadTargetId.value = productId
+  fileInput.value?.click()
+}
 </script>
 
 <template>
@@ -217,7 +226,7 @@ const onClearUpload = (productId: string) => {
       <ProductCardSkeleton v-for="i in 8" :key="i" />
     </div>
 
-    <!-- 列表 -->
+    <!-- 列表：content-visibility auto skips off-screen rendering -->
     <div v-else-if="filtered.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       <ProductCard
         v-for="p in filtered" :key="p.product_id"
