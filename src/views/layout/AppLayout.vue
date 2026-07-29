@@ -15,6 +15,7 @@ import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
 import LocaleMenu from '@/components/ui/LocaleMenu.vue'
+import PageTransition from '@/components/ui/PageTransition.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -197,7 +198,7 @@ onMounted(() => {
       </header>
 
       <main class="flex-1 p-4 md:p-6 max-w-screen-2xl mx-auto w-full pb-20 md:pb-6">
-        <RouterView />
+        <PageTransition />
       </main>
 
       <!-- 移动端底部 nav：精简 4 个 + "更多" -->

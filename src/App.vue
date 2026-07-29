@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router'
+import PageTransition from '@/components/ui/PageTransition.vue'
 </script>
 
 <template>
-  <RouterView />
+  <PageTransition />
 </template>
