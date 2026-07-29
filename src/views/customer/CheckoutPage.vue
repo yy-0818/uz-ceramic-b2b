@@ -99,7 +99,7 @@ const onSubmit = async () => {
       subId.value,
     )
     cart.clear()
-    router.push(`/customer/orders/${order.id}/pay`)
+    router.push(`/orders/${order.id}/pay`)
   } catch (e: unknown) {
     errMsg.value = e instanceof Error ? e.message : String(t('customer.checkout.submitFail'))
   } finally {

@@ -104,7 +104,7 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
           订单可能尚未同步、或你无权限查看。
           订单 id: <code class="font-mono text-[11px]">{{ orderId }}</code>
         </p>
-        <Button size="sm" variant="outline" class="mt-2" @click="router.push('/customer/orders')">
+        <Button size="sm" variant="outline" class="mt-2" @click="router.push('/orders')">
           ← 返回订单列表
         </Button>
       </CardContent>
@@ -242,11 +242,11 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
 
       <!-- 底部动作 -->
       <div class="flex flex-col gap-2 pt-2">
-        <Button class="w-full h-11" @click="router.push(`/customer/orders/${order.id}`)">
+        <Button class="w-full h-11" @click="router.push(`/orders/${order.id}`)">
           <ArrowRight class="mr-2 h-4 w-4" />
           {{ t('customer.pay.btnDetail') }}
         </Button>
-        <Button variant="outline" class="w-full h-11" @click="router.push('/customer/orders')">
+        <Button variant="outline" class="w-full h-11" @click="router.push('/orders')">
           {{ t('customer.pay.btnBackList') }}
         </Button>
       </div>

@@ -214,31 +214,15 @@ const back = () => {
 // 若开着就路由切换，Transition leave 动画跑 200ms，期间抽屉仍浮在
 // 新页面之上，会让用户感觉"点了但没反应"。先关再 push 顺手解决。
 const goCheckout = async () => {
-  // 0. 立即清掉抽屉：<Transition> leave-active 本身会跑 CSS 0.32s(见
-  //    PageTransition.vue scoped css), 仅设 v-if=false 是不够的, 要等
-  //    transitionend。我们这里用 ~400ms 的硬 timeout,粗暴但稳。
+  // 1. 先关抽屉 (避免抽屉 leave (180ms) 与 page-transition leave 重叠)
   cartDetailOpen.value = false
-
-  // 1. 等一帧让 v-if 走起来
-  await new Promise((r) => setTimeout(r, 50))
-
-  // 2. 真正执行 router.push — 设了 defer:true 让 router 把跳转放进队列,
-  //    给我们机会在路由切换前再让 microtask 跑完。
-  try {
-    await router.push('/customer/checkout')
-    if (router.currentRoute.value.fullPath === '/catalog') {
-      // 罕见情况: push 答应了但 currentRoute 没动。强制 navigate
-      // eslint-disable-next-line no-console
-      console.warn('[goCheckout] router.push 实际未生效, 用 window.location 兜底')
-      window.location.assign('/customer/checkout')
-    }
-  } catch (err: any) {
-    if (err?.name !== 'NavigationFailure') {
-      // eslint-disable-next-line no-console
-      console.error('[goCheckout] push 抛错:', err)
-      window.location.assign('/customer/checkout')
-    }
-  }
+  // 2. 等一帧 + drawer leave 时长,确保抽屉已经在视觉上离场
+  await new Promise((r) => setTimeout(r, 220))
+  // 3. 跳转到 checkout (此时 page-transition leave 已被配置为 0ms,
+  //    见 PageTransition.vue, 不再与 router 争抢时机)
+  // 注意: 路由表里 checkout 用的是相对路径 path: 'checkout',
+  // 全路径是 /checkout, 不是 /customer/checkout.
+  router.push('/checkout')
 }
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
