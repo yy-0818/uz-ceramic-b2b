@@ -219,40 +219,42 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
     pb-32 给移动端底部 sticky 摘要留出空间（64 + 16 = 80 ≈ 5rem），
     pb-4 是桌面端，无 sticky 摘要。lg+ 也不需要 sticky 但有视觉留白
   -->
-  <div class="space-y-5 pb-4 lg:pb-0 lg:pb-20">
+  <div class="space-y-3 pb-4 lg:pb-12">
     <!-- 顶部 hero 区 -->
-    <header class="space-y-3">
+    <header class="space-y-2.5">
       <div class="flex items-center gap-2">
-        <Button size="icon" variant="ghost" @click="router.back()">
-          <ArrowLeft class="h-5 w-5" />
+        <Button size="icon" variant="ghost" class="h-8 w-8" @click="router.back()">
+          <ArrowLeft class="h-4 w-4" />
         </Button>
         <div class="min-w-0 flex-1">
-          <p class="text-[11px] font-medium tracking-wider text-primary uppercase">
-            {{ t('customer.checkout.stepLabel') }}
-          </p>
-          <h1 class="text-xl sm:text-2xl font-bold leading-tight">
-            {{ t('customer.checkout.stepTitle') }}
-          </h1>
-          <p class="text-xs text-muted-foreground mt-0.5">
+          <div class="flex items-center gap-2">
+            <h1 class="text-lg sm:text-xl font-bold leading-tight">
+              {{ t('customer.checkout.stepTitle') }}
+            </h1>
+            <span class="text-[10px] font-medium tracking-wider text-primary uppercase">
+              {{ t('customer.checkout.stepLabel') }}
+            </span>
+          </div>
+          <p class="text-xs text-muted-foreground mt-0.5 leading-snug">
             {{ t('customer.checkout.stepHint') }}
           </p>
         </div>
       </div>
 
       <!-- 步骤条：购物车(✓) → 确认(当前) → 报价 -->
-      <div class="flex items-center gap-2 text-xs">
+      <div class="flex items-center gap-2 text-[11px] px-1">
         <div class="flex items-center gap-1.5 text-muted-foreground">
-          <CheckCircle2 class="h-4 w-4 text-emerald-600" />
+          <CheckCircle2 class="h-3.5 w-3.5 text-emerald-600" />
           <span>{{ t('customer.checkout.stepCart') }}</span>
         </div>
         <div class="flex-1 h-px bg-border" />
         <div class="flex items-center gap-1.5 text-foreground font-medium">
-          <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">2</span>
+          <span class="h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold">2</span>
           <span>{{ t('customer.checkout.stepConfirm') }}</span>
         </div>
         <div class="flex-1 h-px bg-border" />
         <div class="flex items-center gap-1.5 text-muted-foreground">
-          <Circle class="h-4 w-4" />
+          <Circle class="h-3.5 w-3.5" />
           <span>{{ t('customer.checkout.stepPay') }}</span>
         </div>
       </div>
@@ -260,47 +262,47 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
 
     <!-- 空购物车 -->
     <Card v-if="itemsCount === 0" class="overflow-hidden">
-      <CardContent class="py-10 px-6 text-center space-y-5">
-        <div class="mx-auto h-24 w-24 rounded-full bg-muted/50 flex items-center justify-center">
-          <ShoppingCart class="h-12 w-12 text-muted-foreground/40" />
+      <CardContent class="py-8 px-6 text-center space-y-4">
+        <div class="mx-auto h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center">
+          <ShoppingCart class="h-10 w-10 text-muted-foreground/40" />
         </div>
-        <div class="space-y-1.5">
-          <p class="font-semibold text-base">{{ t('customer.checkout.emptyCartTitle') }}</p>
+        <div class="space-y-1">
+          <p class="font-semibold text-sm">{{ t('customer.checkout.emptyCartTitle') }}</p>
           <p class="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
             {{ t('customer.checkout.emptyCartHint') }}
           </p>
         </div>
-        <div class="flex items-center justify-center gap-2 pt-1">
+        <div class="flex items-center justify-center gap-2 pt-0.5">
           <Button size="sm" variant="outline" @click="router.push('/orders')">
             {{ t('orders.title') }}
           </Button>
           <Button size="sm" @click="router.push('/catalog')">
             {{ t('customer.checkout.emptyCartBack') }}
-            <ChevronRight class="ml-1 h-4 w-4" />
+            <ChevronRight class="ml-1 h-3.5 w-3.5" />
           </Button>
         </div>
       </CardContent>
     </Card>
 
     <!-- 主区：左右两栏 (lg+) / 单列堆叠 (mobile) -->
-    <div v-else class="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-5">
+    <div v-else class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
       <!-- 左侧：明细 + 子账号 + 备注 -->
-      <div class="space-y-5 min-w-0">
+      <div class="space-y-3 min-w-0">
         <!-- 商品明细 -->
         <Card>
           <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
-              <Package class="h-4 w-4 text-primary" />
-              <h2 class="font-semibold text-sm">
+            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
+              <Package class="h-3.5 w-3.5 text-primary" />
+              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
                 {{ t('customer.checkout.items') }}
               </h2>
-              <Badge variant="secondary" class="ml-auto">
+              <Badge variant="secondary" class="ml-auto text-[10px]">
                 {{ itemsCount }} {{ t('customer.checkout.itemsCount') }}
               </Badge>
             </div>
 
             <!-- 表头 (md+) -->
-            <div class="hidden md:grid grid-cols-[1fr_100px_120px_120px] gap-3 px-5 py-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground border-b">
+            <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 px-5 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground border-b">
               <span>Модель</span>
               <span class="text-right">Кол-во ящ.</span>
               <span class="text-right">м² / ящ.</span>
@@ -311,38 +313,38 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               <li
                 v-for="(i, idx) in cart.items.value"
                 :key="i.product_id"
-                class="px-4 sm:px-5 py-3 hover:bg-muted/20 transition"
+                class="px-4 sm:px-5 py-2.5 hover:bg-muted/20 transition"
               >
                 <!-- 桌面：表格行 -->
-                <div class="hidden md:grid grid-cols-[1fr_100px_120px_120px] gap-3 items-center">
+                <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 items-center">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span class="h-6 w-6 rounded-md bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
+                    <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
                       {{ idx + 1 }}
                     </span>
                     <p class="font-mono text-sm font-medium truncate">{{ i.model }}</p>
                   </div>
-                  <p class="text-right font-medium tabular-nums">
-                    {{ i.boxes }} <span class="text-xs text-muted-foreground">ящ.</span>
+                  <p class="text-right text-sm tabular-nums">
+                    {{ i.boxes }} <span class="text-[10px] text-muted-foreground">ящ.</span>
                   </p>
-                  <p class="text-right text-sm tabular-nums text-muted-foreground">
+                  <p class="text-right text-xs tabular-nums text-muted-foreground">
                     {{ i.conversion_rate.toFixed(2) }}
                   </p>
-                  <p class="text-right font-semibold tabular-nums">
+                  <p class="text-right text-sm font-semibold tabular-nums">
                     {{ fmtM2(i.boxes * i.conversion_rate) }}
                   </p>
                 </div>
                 <!-- 移动：堆叠卡片行 -->
-                <div class="md:hidden space-y-1.5">
+                <div class="md:hidden space-y-1">
                   <div class="flex items-center gap-2">
                     <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
                       {{ idx + 1 }}
                     </span>
                     <p class="font-mono text-sm font-medium truncate flex-1">{{ i.model }}</p>
-                    <p class="font-semibold tabular-nums shrink-0">
+                    <p class="text-sm font-semibold tabular-nums shrink-0">
                       {{ fmtM2(i.boxes * i.conversion_rate) }}
                     </p>
                   </div>
-                  <p class="text-xs text-muted-foreground pl-7">
+                  <p class="text-[11px] text-muted-foreground pl-7">
                     {{ i.boxes }} ящ. × {{ i.conversion_rate.toFixed(2) }} м²
                   </p>
                 </div>
@@ -354,49 +356,49 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
         <!-- 子账号选择（卡片化） -->
         <Card>
           <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
-              <Users class="h-4 w-4 text-primary" />
-              <h2 class="font-semibold text-sm">
+            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
+              <Users class="h-3.5 w-3.5 text-primary" />
+              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
                 {{ t('customer.checkout.subAccountLabel') }}
               </h2>
-              <span class="text-[10px] font-medium text-destructive uppercase tracking-wider ml-1">
+              <span class="text-[9px] font-medium text-destructive uppercase tracking-wider ml-1">
                 {{ t('customer.checkout.subAccountRequired') }}
               </span>
             </div>
 
-            <div class="p-4 sm:p-5 space-y-3">
-              <p class="text-xs text-muted-foreground leading-relaxed">
+            <div class="p-3 sm:p-4 space-y-2.5">
+              <p class="text-[11px] text-muted-foreground leading-relaxed">
                 {{ t('customer.checkout.subAccountHint') }}
               </p>
 
               <!-- 加载态 -->
-              <div v-if="loadingSubs" class="flex items-center gap-2 text-sm text-muted-foreground py-3">
-                <Loader2 class="h-4 w-4 animate-spin" />
+              <div v-if="loadingSubs" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
                 {{ t('customer.checkout.loadingSubs') }}
               </div>
 
               <!-- 空状态（无子账号） -->
               <div
                 v-else-if="subs.length === 0"
-                class="flex gap-3 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-3 text-sm"
+                class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
               >
-                <AlertCircle class="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
                 <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
               </div>
 
               <!-- 子账号卡片网格 -->
-              <div v-else class="space-y-2">
+              <div v-else class="space-y-1.5">
                 <button
                   v-for="s in subs"
                   :key="s.id"
                   type="button"
-                  class="w-full text-left rounded-lg border-2 p-3 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  class="w-full text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   :class="subId === s.id
                     ? 'border-primary bg-primary/5 shadow-sm'
                     : 'border-border hover:border-primary/40 hover:bg-muted/30'"
                   @click="subId = s.id"
                 >
-                  <div class="flex items-start gap-3">
+                  <div class="flex items-start gap-2.5">
                     <!-- 单选圆 -->
                     <div
                       class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
@@ -411,7 +413,7 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                     </div>
 
                     <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 flex-wrap">
+                      <div class="flex items-center gap-1.5 flex-wrap">
                         <span class="font-mono text-sm font-semibold truncate">
                           {{ s.account_name }}
                         </span>
@@ -432,14 +434,14 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                       </div>
                       <p
                         v-if="s.inn && s.inn !== '-'"
-                        class="text-xs text-muted-foreground mt-0.5 font-mono"
+                        class="text-[10px] text-muted-foreground mt-0.5 font-mono"
                       >
                         INN {{ s.inn }}
                       </p>
                     </div>
                   </div>
                 </button>
-                <p class="text-[11px] text-muted-foreground/70">
+                <p class="text-[10px] text-muted-foreground/70">
                   {{ t('customer.checkout.subAccountPick') }}
                 </p>
               </div>
@@ -450,25 +452,25 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
         <!-- 附件（图片）：放最前，文本备注紧随其后 -->
         <Card>
           <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
-              <Paperclip class="h-4 w-4 text-primary" />
-              <h2 class="font-semibold text-sm">
+            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
+              <Paperclip class="h-3.5 w-3.5 text-primary" />
+              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
                 {{ t('customer.checkout.attachmentsTitle') }}
               </h2>
-              <Badge variant="secondary" class="ml-auto tabular-nums">
+              <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
                 {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
               </Badge>
             </div>
 
-            <div class="p-4 sm:p-5 space-y-3">
-              <p class="text-xs text-muted-foreground leading-relaxed">
+            <div class="p-3 sm:p-4 space-y-2.5">
+              <p class="text-[11px] text-muted-foreground leading-relaxed">
                 {{ t('customer.checkout.attachmentsHint') }}
               </p>
 
               <!-- 上传区 -->
               <button
                 type="button"
-                class="w-full rounded-lg border-2 border-dashed transition p-6 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                class="w-full rounded-lg border-2 border-dashed transition p-4 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 :class="attachments.items.value.length >= MAX_ATTACHMENTS
                   ? 'border-muted bg-muted/20 cursor-not-allowed opacity-60'
                   : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
@@ -477,11 +479,11 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                 @drop="onDrop"
                 @dragover="onDragOver"
               >
-                <div class="flex flex-col items-center gap-2 text-muted-foreground">
-                  <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                    <ImagePlus class="h-5 w-5 text-primary" />
+                <div class="flex flex-col items-center gap-1.5 text-muted-foreground">
+                  <div class="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                    <ImagePlus class="h-4 w-4 text-primary" />
                   </div>
-                  <p class="text-xs font-medium text-foreground">
+                  <p class="text-[11px] font-medium text-foreground">
                     {{ t('customer.checkout.attachmentsEmpty') }}
                   </p>
                   <p class="text-[10px]">
@@ -501,16 +503,16 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               <!-- 错误提示 -->
               <div
                 v-if="attachmentError"
-                class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2.5 text-xs"
+                class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2 text-[11px]"
               >
-                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <AlertCircle class="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5" />
                 <p>{{ attachmentError }}</p>
               </div>
 
               <!-- 已上传缩略图 -->
               <ul
                 v-if="attachments.items.value.length > 0"
-                class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5"
+                class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2"
               >
                 <li
                   v-for="(it, idx) in attachments.items.value"
@@ -530,8 +532,8 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                       v-if="(it.progress ?? 0) < 100 && !it.error"
                       class="absolute inset-0 bg-black/40 flex items-center justify-center"
                     >
-                      <div class="text-white text-xs font-medium flex items-center gap-1.5">
-                        <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                      <div class="text-white text-[11px] font-medium flex items-center gap-1.5">
+                        <Loader2 class="h-3 w-3 animate-spin" />
                         {{ it.progress ?? 0 }}%
                       </div>
                     </div>
@@ -547,15 +549,15 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                     <!-- 移除按钮：移动端常驻，桌面 hover 显示 -->
                     <button
                       type="button"
-                      class="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition shadow-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      class="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition shadow-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       :title="t('customer.checkout.attachmentsRemove')"
                       @click="attachments.remove(idx)"
                     >
-                      <X class="h-3.5 w-3.5" />
+                      <X class="h-3 w-3" />
                     </button>
                   </div>
                   <!-- 底部: 文件信息 -->
-                  <div class="px-2 py-1.5">
+                  <div class="px-1.5 py-1">
                     <p class="text-[10px] text-muted-foreground truncate font-mono tabular-nums">
                       {{ it.mime.replace('image/', '').toUpperCase() }} · {{ fmtSize(it.size_bytes) }}
                     </p>
@@ -569,9 +571,9 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
         <!-- 文本备注：放在附件下方，作为补充说明 -->
         <Card>
           <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
-              <MessageSquare class="h-4 w-4 text-primary" />
-              <h2 class="font-semibold text-sm">
+            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
+              <MessageSquare class="h-3.5 w-3.5 text-primary" />
+              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
                 {{ t('customer.checkout.remark') }}
               </h2>
               <span
@@ -581,7 +583,7 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                 {{ remark.length }}
               </span>
             </div>
-            <div class="p-4 sm:p-5">
+            <div class="p-3 sm:p-4">
               <Label for="remark" class="sr-only">
                 {{ t('customer.checkout.remark') }}
               </Label>
@@ -589,7 +591,7 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                 id="remark"
                 v-model="remark"
                 :placeholder="t('customer.checkout.remarkPh')"
-                class="min-h-28 resize-none"
+                class="min-h-20 resize-none text-sm"
               />
             </div>
           </CardContent>
@@ -598,31 +600,31 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
         <!-- 错误条 -->
         <div
           v-if="errMsg"
-          class="flex gap-3 border border-destructive/30 bg-destructive/5 text-destructive rounded-lg p-3.5 text-sm"
+          class="flex gap-2.5 border border-destructive/30 bg-destructive/5 text-destructive rounded-lg p-2.5 text-xs"
         >
-          <AlertCircle class="h-5 w-5 shrink-0 mt-0.5" />
+          <AlertCircle class="h-4 w-4 shrink-0 mt-0.5" />
           <p class="leading-relaxed">{{ errMsg }}</p>
         </div>
       </div>
 
       <!-- 右侧：订单汇总（桌面 sticky，移动端底部固定） -->
-      <aside class="lg:sticky lg:top-4 lg:self-start">
+      <aside class="lg:sticky lg:top-3 lg:self-start">
         <!-- 桌面摘要卡 -->
         <Card class="hidden lg:block">
           <CardContent class="p-0">
-            <div class="px-5 py-4 border-b bg-gradient-to-br from-primary/5 to-transparent">
-              <div class="flex items-center gap-2 mb-1">
-                <Receipt class="h-4 w-4 text-primary" />
-                <h2 class="font-semibold text-sm">
+            <div class="px-4 py-3 border-b bg-gradient-to-br from-primary/5 to-transparent">
+              <div class="flex items-center gap-2 mb-0.5">
+                <Receipt class="h-3.5 w-3.5 text-primary" />
+                <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
                   {{ t('customer.checkout.summaryTitle') }}
                 </h2>
               </div>
-              <p class="text-[11px] text-muted-foreground leading-relaxed">
+              <p class="text-[10px] text-muted-foreground leading-relaxed">
                 {{ t('customer.checkout.summarySubtitle') }}
               </p>
             </div>
 
-            <div class="p-5 space-y-3 text-sm">
+            <div class="p-4 space-y-2 text-xs">
               <div class="flex justify-between">
                 <span class="text-muted-foreground">{{ t('customer.checkout.totalBoxes') }}</span>
                 <span class="font-semibold tabular-nums">{{ totalBoxes }} ящ.</span>
@@ -631,11 +633,11 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                 <span class="text-muted-foreground">{{ t('customer.checkout.totalM2') }}</span>
                 <span class="font-semibold tabular-nums">{{ fmtM2(totalM2) }}</span>
               </div>
-              <div class="border-t pt-3 flex justify-between items-baseline">
-                <span class="text-muted-foreground text-xs">
+              <div class="border-t pt-2 flex justify-between items-baseline">
+                <span class="text-muted-foreground text-[10px]">
                   {{ t('customer.checkout.totalAmount') }}
                 </span>
-                <Badge variant="secondary" class="text-[10px]">
+                <Badge variant="secondary" class="text-[9px]">
                   {{ t('customer.checkout.pendingAmount') }}
                 </Badge>
               </div>
@@ -644,13 +646,13 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
             <!-- 选中的子账号 -->
             <div
               v-if="selectedSub"
-              class="mx-5 mb-4 rounded-lg border bg-muted/30 p-3"
+              class="mx-4 mb-3 rounded-md border bg-muted/30 p-2"
             >
-              <p class="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+              <p class="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">
                 {{ t('customer.checkout.subAccountLabel') }}
               </p>
-              <div class="flex items-center gap-2">
-                <span class="font-mono text-sm font-semibold truncate">
+              <div class="flex items-center gap-1.5">
+                <span class="font-mono text-xs font-semibold truncate">
                   {{ selectedSub.account_name }}
                 </span>
                 <Star
@@ -660,22 +662,22 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               </div>
             </div>
 
-            <div class="p-5 pt-0 space-y-2">
+            <div class="p-4 pt-0 space-y-1.5">
               <Button
-                class="w-full h-11 text-base font-semibold shadow-md shadow-primary/20"
+                class="w-full h-10 text-sm font-semibold shadow-md shadow-primary/20"
                 size="lg"
                 :disabled="!canSubmit || submitting"
                 @click="onSubmit"
               >
-                <Loader2 v-if="submitting" class="mr-2 h-5 w-5 animate-spin" />
-                <CheckCircle2 v-else class="mr-2 h-5 w-5" />
+                <Loader2 v-if="submitting" class="mr-1.5 h-4 w-4 animate-spin" />
+                <CheckCircle2 v-else class="mr-1.5 h-4 w-4" />
                 {{
                   submitting
                     ? t('customer.checkout.submitting')
                     : t('customer.checkout.submit')
                 }}
               </Button>
-              <p class="text-[11px] text-muted-foreground text-center leading-relaxed">
+              <p class="text-[10px] text-muted-foreground text-center leading-relaxed">
                 {{ t('customer.checkout.submitHint') }}
               </p>
             </div>
@@ -684,29 +686,29 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
 
         <!-- 移动端底部固定摘要条 -->
         <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t shadow-lg">
-          <div class="px-4 py-3 flex items-center gap-3">
+          <div class="px-3 py-2.5 flex items-center gap-2.5">
             <div class="flex-1 min-w-0">
-              <p class="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <p class="text-[9px] uppercase tracking-wider text-muted-foreground">
                 {{ t('customer.checkout.totalBoxes') }} · {{ t('customer.checkout.totalM2') }}
               </p>
-              <p class="font-bold text-sm tabular-nums truncate">
+              <p class="font-bold text-xs tabular-nums truncate">
                 {{ totalBoxes }} ящ. · {{ fmtM2(totalM2) }}
               </p>
               <p
                 v-if="selectedSub"
-                class="text-[11px] text-muted-foreground truncate font-mono"
+                class="text-[10px] text-muted-foreground truncate font-mono"
               >
                 → {{ selectedSub.account_name }}
               </p>
             </div>
             <Button
-              class="h-11 px-5 shadow-md shadow-primary/20"
+              class="h-10 px-4 shadow-md shadow-primary/20"
               size="lg"
               :disabled="!canSubmit || submitting"
               @click="onSubmit"
             >
-              <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
-              <CheckCircle2 v-else class="mr-2 h-4 w-4" />
+              <Loader2 v-if="submitting" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              <CheckCircle2 v-else class="mr-1.5 h-3.5 w-3.5" />
               {{
                 submitting
                   ? t('customer.checkout.submitting')
