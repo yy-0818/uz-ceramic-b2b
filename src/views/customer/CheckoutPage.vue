@@ -447,7 +447,126 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
           </CardContent>
         </Card>
 
-        <!-- 备注 + 附件 -->
+        <!-- 附件（图片）：放最前，文本备注紧随其后 -->
+        <Card>
+          <CardContent class="p-0">
+            <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
+              <Paperclip class="h-4 w-4 text-primary" />
+              <h2 class="font-semibold text-sm">
+                {{ t('customer.checkout.attachmentsTitle') }}
+              </h2>
+              <Badge variant="secondary" class="ml-auto tabular-nums">
+                {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
+              </Badge>
+            </div>
+
+            <div class="p-4 sm:p-5 space-y-3">
+              <p class="text-xs text-muted-foreground leading-relaxed">
+                {{ t('customer.checkout.attachmentsHint') }}
+              </p>
+
+              <!-- 上传区 -->
+              <button
+                type="button"
+                class="w-full rounded-lg border-2 border-dashed transition p-6 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                :class="attachments.items.value.length >= MAX_ATTACHMENTS
+                  ? 'border-muted bg-muted/20 cursor-not-allowed opacity-60'
+                  : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
+                :disabled="attachments.items.value.length >= MAX_ATTACHMENTS"
+                @click="onPickClick"
+                @drop="onDrop"
+                @dragover="onDragOver"
+              >
+                <div class="flex flex-col items-center gap-2 text-muted-foreground">
+                  <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <ImagePlus class="h-5 w-5 text-primary" />
+                  </div>
+                  <p class="text-xs font-medium text-foreground">
+                    {{ t('customer.checkout.attachmentsEmpty') }}
+                  </p>
+                  <p class="text-[10px]">
+                    jpg / png / webp / heic · ≤ 5 MB · {{ MAX_ATTACHMENTS }} {{ t('customer.checkout.itemsCount') }}
+                  </p>
+                </div>
+              </button>
+              <input
+                ref="fileInput"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic"
+                multiple
+                class="hidden"
+                @change="onFiles(($event.target as HTMLInputElement).files)"
+              />
+
+              <!-- 错误提示 -->
+              <div
+                v-if="attachmentError"
+                class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2.5 text-xs"
+              >
+                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <p>{{ attachmentError }}</p>
+              </div>
+
+              <!-- 已上传缩略图 -->
+              <ul
+                v-if="attachments.items.value.length > 0"
+                class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5"
+              >
+                <li
+                  v-for="(it, idx) in attachments.items.value"
+                  :key="idx"
+                  class="relative group rounded-lg border bg-card overflow-hidden shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
+                >
+                  <!-- 缩略图 -->
+                  <div class="aspect-square bg-muted relative overflow-hidden">
+                    <img
+                      :src="it.local_url"
+                      :alt="it.caption ?? 'attachment'"
+                      class="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                    <!-- 上传进度遮罩 -->
+                    <div
+                      v-if="(it.progress ?? 0) < 100 && !it.error"
+                      class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                    >
+                      <div class="text-white text-xs font-medium flex items-center gap-1.5">
+                        <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                        {{ it.progress ?? 0 }}%
+                      </div>
+                    </div>
+                    <!-- 错误遮罩 -->
+                    <div
+                      v-if="it.error"
+                      class="absolute inset-0 bg-destructive/85 flex items-center justify-center p-2"
+                    >
+                      <p class="text-white text-[10px] text-center leading-tight">
+                        {{ it.error }}
+                      </p>
+                    </div>
+                    <!-- 移除按钮：移动端常驻，桌面 hover 显示 -->
+                    <button
+                      type="button"
+                      class="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/70 hover:bg-black/90 text-white flex items-center justify-center transition shadow-sm opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      :title="t('customer.checkout.attachmentsRemove')"
+                      @click="attachments.remove(idx)"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <!-- 底部: 文件信息 -->
+                  <div class="px-2 py-1.5">
+                    <p class="text-[10px] text-muted-foreground truncate font-mono tabular-nums">
+                      {{ it.mime.replace('image/', '').toUpperCase() }} · {{ fmtSize(it.size_bytes) }}
+                    </p>
+                  </div>
+                </li>
+              </ul>
+            </div>
+          </CardContent>
+        </Card>
+
+        <!-- 文本备注：放在附件下方，作为补充说明 -->
         <Card>
           <CardContent class="p-0">
             <div class="px-4 sm:px-5 py-3.5 flex items-center gap-2 border-b bg-muted/30">
@@ -455,134 +574,23 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               <h2 class="font-semibold text-sm">
                 {{ t('customer.checkout.remark') }}
               </h2>
-              <Badge variant="secondary" class="ml-auto">
-                {{ t('customer.checkout.attachmentsTitle') }}
-              </Badge>
+              <span
+                v-if="remark.length > 0"
+                class="ml-auto text-[10px] text-muted-foreground tabular-nums"
+              >
+                {{ remark.length }}
+              </span>
             </div>
-
-            <div class="p-4 sm:p-5 space-y-4">
-              <!-- 文本备注 -->
-              <div>
-                <Label for="remark" class="sr-only">
-                  {{ t('customer.checkout.remark') }}
-                </Label>
-                <Textarea
-                  id="remark"
-                  v-model="remark"
-                  :placeholder="t('customer.checkout.remarkPh')"
-                  class="min-h-24 resize-none"
-                />
-              </div>
-
-              <!-- 分隔 + 附件标题 -->
-              <div class="border-t pt-4 space-y-3">
-                <div class="flex items-center gap-2">
-                  <Paperclip class="h-3.5 w-3.5 text-primary" />
-                  <p class="text-xs font-medium text-foreground">
-                    {{ t('customer.checkout.attachmentsTitle') }}
-                  </p>
-                  <Badge variant="outline" class="text-[10px]">
-                    {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
-                  </Badge>
-                </div>
-                <p class="text-[11px] text-muted-foreground leading-relaxed">
-                  {{ t('customer.checkout.attachmentsHint') }}
-                </p>
-
-                <!-- 上传区 -->
-                <button
-                  type="button"
-                  class="w-full rounded-lg border-2 border-dashed transition p-6 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  :class="attachments.items.value.length >= MAX_ATTACHMENTS
-                    ? 'border-muted bg-muted/20 cursor-not-allowed'
-                    : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
-                  :disabled="attachments.items.value.length >= MAX_ATTACHMENTS"
-                  @click="onPickClick"
-                  @drop="onDrop"
-                  @dragover="onDragOver"
-                >
-                  <div class="flex flex-col items-center gap-2 text-muted-foreground">
-                    <div class="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                      <ImagePlus class="h-5 w-5 text-primary" />
-                    </div>
-                    <p class="text-xs font-medium text-foreground">
-                      {{ t('customer.checkout.attachmentsEmpty') }}
-                    </p>
-                    <p class="text-[10px]">
-                      jpg / png / webp / heic · ≤ 5 MB · {{ MAX_ATTACHMENTS }} {{ t('customer.checkout.itemsCount') }}
-                    </p>
-                  </div>
-                </button>
-                <input
-                  ref="fileInput"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp,image/heic"
-                  multiple
-                  class="hidden"
-                  @change="onFiles(($event.target as HTMLInputElement).files)"
-                />
-
-                <!-- 错误提示 -->
-                <div
-                  v-if="attachmentError"
-                  class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2.5 text-xs"
-                >
-                  <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                  <p>{{ attachmentError }}</p>
-                </div>
-
-                <!-- 已上传列表 -->
-                <ul v-if="attachments.items.value.length > 0" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-                  <li
-                    v-for="(it, idx) in attachments.items.value"
-                    :key="idx"
-                    class="relative group rounded-lg border bg-card overflow-hidden"
-                  >
-                    <!-- 缩略图 -->
-                    <div class="aspect-square bg-muted relative overflow-hidden">
-                      <img
-                        :src="it.local_url"
-                        :alt="it.caption ?? 'attachment'"
-                        class="h-full w-full object-cover"
-                      />
-                      <!-- 上传进度遮罩 -->
-                      <div
-                        v-if="(it.progress ?? 0) < 100 && !it.error"
-                        class="absolute inset-0 bg-black/40 flex items-center justify-center"
-                      >
-                        <div class="text-white text-xs font-medium flex items-center gap-1.5">
-                          <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                          {{ it.progress ?? 0 }}%
-                        </div>
-                      </div>
-                      <!-- 错误遮罩 -->
-                      <div
-                        v-if="it.error"
-                        class="absolute inset-0 bg-destructive/80 flex items-center justify-center p-2"
-                      >
-                        <p class="text-white text-[10px] text-center leading-tight">
-                          {{ it.error }}
-                        </p>
-                      </div>
-                      <!-- 移除按钮 -->
-                      <button
-                        type="button"
-                        class="absolute top-1 right-1 h-6 w-6 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition opacity-0 group-hover:opacity-100"
-                        :title="t('customer.checkout.attachmentsRemove')"
-                        @click="attachments.remove(idx)"
-                      >
-                        <X class="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                    <!-- 底部: 文件信息 -->
-                    <div class="px-2 py-1.5 space-y-0.5">
-                      <p class="text-[10px] text-muted-foreground truncate font-mono">
-                        {{ it.mime.replace('image/', '') }} · {{ fmtSize(it.size_bytes) }}
-                      </p>
-                    </div>
-                  </li>
-                </ul>
-              </div>
+            <div class="p-4 sm:p-5">
+              <Label for="remark" class="sr-only">
+                {{ t('customer.checkout.remark') }}
+              </Label>
+              <Textarea
+                id="remark"
+                v-model="remark"
+                :placeholder="t('customer.checkout.remarkPh')"
+                class="min-h-28 resize-none"
+              />
             </div>
           </CardContent>
         </Card>
