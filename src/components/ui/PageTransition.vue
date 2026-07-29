@@ -35,9 +35,7 @@ void router
   <RouterView v-slot="{ Component, route: r }">
     <Transition
       :name="transitionName"
-      mode="out-in"
-      appear
-      :duration="{ enter: 320, leave: 200 }"
+      :duration="{ enter: 240, leave: 0 }"
     >
       <component :is="Component" :key="router.resolve(r).fullPath" />
     </Transition>

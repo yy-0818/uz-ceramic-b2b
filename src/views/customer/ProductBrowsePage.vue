@@ -214,22 +214,13 @@ const back = () => {
 // 若开着就路由切换，Transition leave 动画跑 200ms，期间抽屉仍浮在
 // 新页面之上，会让用户感觉"点了但没反应"。先关再 push 顺手解决。
 const goCheckout = async () => {
-  // eslint-disable-next-line no-console
-  console.log('[goCheckout] 开始。当前路由:', router.currentRoute.value.fullPath)
+  // 1. 先关抽屉 (避免抽屉 leave (180ms) 与 page-transition leave 重叠)
   cartDetailOpen.value = false
-  await nextTick()
-  // eslint-disable-next-line no-console
-  console.log('[goCheckout] nextTick 之后，准备 push → /customer/checkout')
-  try {
-    const result = await router.push('/customer/checkout')
-    // eslint-disable-next-line no-console
-    console.log('[goCheckout] push 完成。新路由:', router.currentRoute.value.fullPath)
-    return result
-  } catch (err) {
-    // eslint-disable-next-line no-console
-    console.error('[goCheckout] push 失败:', err)
-    throw err
-  }
+  // 2. 等一帧 + drawer leave 时长,确保抽屉已经在视觉上离场
+  await new Promise((r) => setTimeout(r, 220))
+  // 3. 跳转到 checkout (此时 page-transition leave 已被配置为 0ms,
+  //    见 PageTransition.vue, 不再与 router 争抢时机)
+  router.push('/customer/checkout')
 }
 
 const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {

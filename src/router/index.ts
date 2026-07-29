@@ -69,41 +69,18 @@ export const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  // [debug] 临时埋点：把每一次路由跳转的目标写到 console，
-  // 用户粘贴出来就能看清拦截发生在哪一步。
-  // eslint-disable-next-line no-console
-  console.log('[router] beforeEach →', to.fullPath, 'meta=', JSON.stringify(to.meta))
-
-  if (to.meta?.public) {
-    // eslint-disable-next-line no-console
-    console.log('[router]   public, allow')
-    return true
-  }
+  if (to.meta?.public) return true
   const { data: { session } } = await supabase.auth.getSession()
-  if (!session) {
-    // eslint-disable-next-line no-console
-    console.log('[router]   no session → /login')
-    return { path: '/login', query: { redirect: to.fullPath } }
-  }
+  if (!session) return { path: '/login', query: { redirect: to.fullPath } }
 
   // 角色守卫
   const requiredRoles = (to.meta?.roles as string[] | undefined) ?? []
-  if (requiredRoles.length === 0) {
-    // eslint-disable-next-line no-console
-    console.log('[router]   no requiredRoles, allow')
-    return true
-  }
+  if (requiredRoles.length === 0) return true
   const { data: profile } = await supabase
     .from('users').select('role').eq('id', session.user.id).single()
   const role = (profile as any)?.role
-  // eslint-disable-next-line no-console
-  console.log('[router]   requiredRoles=', requiredRoles.join(','), 'actualRole=', role)
   if (!role || !requiredRoles.includes(role)) {
-    // eslint-disable-next-line no-console
-    console.log('[router]   role mismatch → /')
     return { path: '/' }
   }
-  // eslint-disable-next-line no-console
-  console.log('[router]   ✓ allow')
   return true
 })
