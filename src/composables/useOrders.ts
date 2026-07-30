@@ -5,12 +5,20 @@
  *  - 客户：拉自己的订单 + 提交新订单（生成 order_no）
  *  - 审核/财务/仓库：按状态筛选订单
  *  - 状态机更新（pending → audited → accounted → shipped）
+ *
+ * 状态提升到模块单例：同一页面多次进入 / 页面间共享时，数据只从 Supabase 拉取一次。
  */
 import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 
 export type OrderStatus = 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'
+
+// Module-level singleton state
+const items = ref<OrderRow[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+const fetched = ref(false)
 
 export interface OrderRow {
   id: string
@@ -52,10 +60,6 @@ export interface CartItemForSubmit {
 }
 
 export function useOrders() {
-  const items = ref<OrderRow[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-
   const totalAmount = computed(() =>
     items.value.reduce((s, o) => s + (o.total_amount ?? 0), 0),
   )
@@ -70,6 +74,7 @@ export function useOrders() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []).map(decorateOrder)
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -85,6 +90,7 @@ export function useOrders() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []).map(decorateOrder)
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -179,7 +185,7 @@ export function useOrders() {
   }
 
   return {
-    items, loading, error, totalAmount,
+    items, loading, error, totalAmount, fetched,
     fetchMine, fetchByStatus,
     submit, transition, updateItemPrice, updateItemBoxes,
   }

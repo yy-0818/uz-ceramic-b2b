@@ -34,59 +34,15 @@ const cart = useCart()
 const { isAdmin } = useAuth()
 
 const allProducts = ref<ProductWithColors[]>([])
-const loading = ref(false)
+
+/** true after first successful load; skeleton only shows on first visit */
+const pageFetched = ref(false)
 
 const refresh = async () => {
-  loading.value = true
   // admin 视角：直接拉全部商品
   if (isAdmin.value) {
-    try {
-      allProducts.value = await productsApi.fetchAllWithColors()
-      ap.items.value = allProducts.value.map((p) => ({
-        account_id: '',
-        product_id: p.product_id,
-        is_visible: true,
-        stock_level_1: p.total_boxes_level1,
-        stock_level_2: p.total_boxes_level2,
-        updated_at: '',
-        product: {
-          id: p.product_id,
-          model: p.model,
-          category: p.category,
-          conversion_rate: p.conversion_rate,
-          remark: p.remark,
-        },
-      }))
-    } finally {
-      loading.value = false
-    }
-    return
-  }
-  // 客户/审核员视角：按 stock_group 白名单
-  try {
-    // 1. 拿到当前父账号绑定的所有库存组
-    const { data: groups } = await supabase
-      .from('customer_group_mappings')
-      .select('customer_group')
-      .eq('is_active', true)
-    const myGroups = (groups ?? []).map((r: any) => r.customer_group)
-    if (myGroups.length === 0) {
-      ap.items.value = []
-      allProducts.value = []
-      loading.value = false
-      return
-    }
-    // 2. 拉这些组的所有 product
-    const { data: prods } = await supabase
-      .from('products')
-      .select('*')
-      .in('stock_group', myGroups)
-    // 3. 拉全量带色号（view）
     allProducts.value = await productsApi.fetchAllWithColors()
-    // 4. 把可白名单的产品按 AccountProductRow 装（合成）
-    const allowedIds = new Set((prods ?? []).map((p: any) => p.id))
-    const allowedFull = allProducts.value.filter((p) => allowedIds.has(p.product_id))
-    ap.items.value = allowedFull.map((p) => ({
+    ap.items.value = allProducts.value.map((p) => ({
       account_id: '',
       product_id: p.product_id,
       is_visible: true,
@@ -101,12 +57,51 @@ const refresh = async () => {
         remark: p.remark,
       },
     }))
-  } finally {
-    loading.value = false
+    return
   }
+  // 客户/审核员视角：按 stock_group 白名单
+  // 1. 拿到当前父账号绑定的所有库存组
+  const { data: groups } = await supabase
+    .from('customer_group_mappings')
+    .select('customer_group')
+    .eq('is_active', true)
+  const myGroups = (groups ?? []).map((r: any) => r.customer_group)
+  if (myGroups.length === 0) {
+    ap.items.value = []
+    allProducts.value = []
+    return
+  }
+  // 2. 拉这些组的所有 product
+  const { data: prods } = await supabase
+    .from('products')
+    .select('*')
+    .in('stock_group', myGroups)
+  // 3. 拉全量带色号（view）
+  allProducts.value = await productsApi.fetchAllWithColors()
+  // 4. 把可白名单的产品按 AccountProductRow 装（合成）
+  const allowedIds = new Set((prods ?? []).map((p: any) => p.id))
+  const allowedFull = allProducts.value.filter((p) => allowedIds.has(p.product_id))
+  ap.items.value = allowedFull.map((p) => ({
+    account_id: '',
+    product_id: p.product_id,
+    is_visible: true,
+    stock_level_1: p.total_boxes_level1,
+    stock_level_2: p.total_boxes_level2,
+    updated_at: '',
+    product: {
+      id: p.product_id,
+      model: p.model,
+      category: p.category,
+      conversion_rate: p.conversion_rate,
+      remark: p.remark,
+    },
+  }))
 }
 
-onMounted(refresh)
+onMounted(async () => {
+  await refresh()
+  pageFetched.value = true
+})
 
 // 三级状态
 const view = ref<'categories' | 'models' | 'colors'>('categories')
@@ -407,13 +402,10 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
       <Input v-model="search" :placeholder="t('customer.catalog.search')" class="pl-9 h-10" />
     </div>
 
-    <!-- 加载中：按当前 view 显示不同骨架 -->
-    <div v-if="loading" class="space-y-4">
-      <div v-if="view === 'categories' || ap.loading.value" class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+    <!-- 首次加载骨架屏；后续进入（缓存已有）直接显示数据，不再闪烁 -->
+    <div v-if="!pageFetched" class="space-y-4">
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <CategoryCardSkeleton v-for="i in 6" :key="i" />
-      </div>
-      <div v-else class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 md:grid-cols-4">
-        <ModelCardSkeleton v-for="i in 8" :key="i" />
       </div>
     </div>
 

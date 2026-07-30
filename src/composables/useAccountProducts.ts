@@ -7,8 +7,7 @@
  *   - bulkAssign(assignments)      批量 upsert 白名单
  *   - setVisible(accountId, productId, visible)  切换可见性
  *
- * assignments 元素：
- *   { account_id, product_id, is_visible, stock_level_1, stock_level_2 }
+ * 状态提升到模块单例：同一页面多次进入 / 页面间共享时，数据只从 Supabase 拉取一次。
  */
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
@@ -35,10 +34,13 @@ export interface AccountProductRow {
   }
 }
 
+// Module-level singleton state — shared across all useAccountProducts() calls
+const items = ref<AccountProductRow[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+const fetched = ref(false)
+
 export function useAccountProducts() {
-  const items = ref<AccountProductRow[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
 
   /** 客户视角：拉自己（+ parent）可见的白名单 */
   const fetchForCurrentAccount = async () => {
@@ -51,6 +53,7 @@ export function useAccountProducts() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []) as AccountProductRow[]
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -64,6 +67,7 @@ export function useAccountProducts() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []) as AccountProductRow[]
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -77,6 +81,7 @@ export function useAccountProducts() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []) as AccountProductRow[]
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -112,7 +117,7 @@ export function useAccountProducts() {
   }
 
   return {
-    items, loading, error,
+    items, loading, error, fetched,
     fetchForCurrentAccount, fetchForAccount, fetchForProduct,
     bulkAssign, setVisible,
   }

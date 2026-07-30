@@ -5,6 +5,8 @@
  *  - 财务对 audited 状态的订单，登记 debit（客户欠款）
  *  - 收款后登记 credit（实际到账）
  *  - 所有流水写入 finance_ledger
+ *
+ * 状态提升到模块单例：entries 只从后端拉取一次。
  */
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
@@ -22,10 +24,13 @@ export interface LedgerEntry {
   order?: { order_no: string; status: string }
 }
 
+// Module-level singleton state
+const entries = ref<LedgerEntry[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+const fetched = ref(false)
+
 export function useFinance() {
-  const entries = ref<LedgerEntry[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
 
   /** 拉某订单的流水 */
   const fetchByOrder = async (orderId: string) => {
@@ -38,6 +43,7 @@ export function useFinance() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     entries.value = (data ?? []) as LedgerEntry[]
     loading.value = false
+    fetched.value = true
     return entries.value
   }
 
@@ -52,6 +58,7 @@ export function useFinance() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     entries.value = (data ?? []) as LedgerEntry[]
     loading.value = false
+    fetched.value = true
     return entries.value
   }
 
@@ -80,5 +87,5 @@ export function useFinance() {
       .filter((x) => x.order_id === orderId)
       .reduce((s, x) => s + (x.direction === 'credit' ? x.amount : -x.amount), 0)
 
-  return { entries, loading, error, fetchByOrder, fetchByAccount, record, netAmount }
+  return { entries, loading, error, fetched, fetchByOrder, fetchByAccount, record, netAmount }
 }

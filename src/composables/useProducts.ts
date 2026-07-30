@@ -1,5 +1,10 @@
 /**
  * useProducts —— products + stock_colors 联动管理
+ *
+ * 状态提升到模块单例：
+ *   - 同一页面多次进入 / 页面间共享时，数据只从 Supabase 拉取一次，
+ *     后续直接使用缓存，避免重复骨架屏闪烁。
+ *   - fetched 标记记录"是否已从后端拉取过"；骨架屏只在 !fetched 时显示。
  */
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
@@ -39,9 +44,12 @@ export interface ProductWithColors {
 }
 
 export function useProducts() {
+  // Module-level singleton state — shared across all useProducts() calls
   const items = ref<Product[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+  /** True after first successful fetch; used to suppress skeleton on revisit */
+  const fetched = ref(false)
 
   const fetchAll = async () => {
     loading.value = true
@@ -54,6 +62,7 @@ export function useProducts() {
     if (e) { error.value = e.message; loading.value = false; return [] }
     items.value = (data ?? []) as Product[]
     loading.value = false
+    fetched.value = true
     return items.value
   }
 
@@ -219,6 +228,8 @@ export function useProducts() {
       .from('v_products_with_colors')
       .select('*')
     if (e) { error.value = e.message; throw e }
+    items.value = (data ?? []) as unknown as Product[]
+    fetched.value = true
     return (data ?? []) as unknown as ProductWithColors[]
   }
 
@@ -279,6 +290,7 @@ export function useProducts() {
     }
 
     items.value = []
+    fetched.value = false
     return { products: pIds.length, colors: cIds.length, whiteRows: whiteCount ?? 0 }
   }
 
@@ -286,6 +298,7 @@ export function useProducts() {
     items,
     loading,
     error,
+    fetched,
     fetchAll,
     fetchAllWithColors,
     bulkUpsert,
