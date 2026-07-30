@@ -16,7 +16,7 @@ import {
   Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
   Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
   MoreHorizontal, Folder, Check, Mail, KeyRound, Copy,
-  Database, CheckCircle2, Eye, EyeOff,
+  Database, CheckCircle2, Eye, EyeOff, ArrowLeft,
 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
@@ -473,70 +473,125 @@ const submitReset = async () => {
 }
 
 const goImport = () => router.push('/admin/accounts/import')
+
+const goBack = () => {
+  if (window.history.state && (window.history.state as any).back) router.back()
+  else router.push('/admin')
+}
 </script>
 
 <template>
   <div class="space-y-4">
-    <!-- ============ 顶部标题 + 操作 ============ -->
-    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-      <div>
-        <h1 class="text-xl font-semibold flex items-center gap-2">
-          <Users class="h-5 w-5" />
-          {{ t("admin.accounts.title") }}
-        </h1>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
-        <Button size="sm" variant="outline" @click="load" :disabled="loading">
-          <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
-          <span class="hidden sm:inline">{{ t('admin.accounts.refresh') }}</span>
-        </Button>
-        <Button size="sm" variant="outline" @click="goImport">
-          <Upload class="h-4 w-4 sm:mr-1" />
-          <span class="hidden sm:inline">{{ t('admin.accounts.uploadArchive') }}</span>
-        </Button>
-        <Button size="sm" @click="openParentCreate">
-          <Plus class="h-4 w-4 sm:mr-1" />
-          <span class="hidden sm:inline">{{ t('admin.accounts.newParent') }}</span>
-        </Button>
-      </div>
-    </div>
+    <!-- ===================== 顶部 hero ===================== -->
+    <header class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 sm:px-6 py-4 sm:py-5">
+      <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+      <div class="pointer-events-none absolute -right-4 top-1/2 h-24 w-24 rounded-full bg-primary/5" />
 
-    <!-- ============ KPI 卡片 ============ -->
+      <div class="relative flex items-start gap-2 flex-wrap">
+        <Button size="icon" variant="ghost" class="h-8 w-8 shrink-0 -ml-1" @click="goBack">
+          <ArrowLeft class="h-4 w-4" />
+        </Button>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-baseline gap-2 flex-wrap">
+            <h1 class="text-base sm:text-lg font-bold leading-tight">
+              {{ t("admin.accounts.title") }}
+            </h1>
+            <span class="text-[10px] font-semibold tracking-wider text-primary uppercase">
+              Parent · Subs · StockGroups
+            </span>
+          </div>
+          <p class="text-xs text-muted-foreground mt-0.5 leading-snug max-w-xl">
+            客户主账号 + 子账户 + 库存分类分配；支持新增 / 编辑 / 启停 / 邀请 / 重置密码。
+          </p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" @click="load" :disabled="loading">
+            <RefreshCw class="h-4 w-4" :class="{ 'animate-spin': loading }" />
+            <span class="hidden sm:inline ml-1">{{ t('admin.accounts.refresh') }}</span>
+          </Button>
+          <Button size="sm" variant="outline" @click="goImport">
+            <Upload class="h-4 w-4" />
+            <span class="hidden sm:inline ml-1">{{ t('admin.accounts.uploadArchive') }}</span>
+          </Button>
+          <Button size="sm" @click="openParentCreate" class="shadow-md shadow-primary/20">
+            <Plus class="h-4 w-4" />
+            <span class="hidden sm:inline ml-1">{{ t('admin.accounts.newParent') }}</span>
+          </Button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===================== KPI（与新视觉一致：mini summary 卡） ===================== -->
     <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <Card>
-        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
-          <div>
-            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiParents') }}</p>
-            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalParents }}</p>
+      <Card class="overflow-hidden">
+        <CardContent class="p-0">
+          <div class="px-4 py-3 border-b bg-muted/20 flex items-center gap-3">
+            <div class="h-7 w-7 rounded-lg bg-blue-100 flex items-center justify-center shrink-0">
+              <Folder class="h-3.5 w-3.5 text-blue-600" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase tracking-wider text-muted-foreground leading-tight">
+                {{ t('admin.accounts.kpiParents') }}
+              </p>
+              <p class="text-lg font-bold tabular-nums leading-tight mt-0.5">
+                {{ summary.totalParents }}
+              </p>
+            </div>
           </div>
-          <Folder class="h-8 w-8 text-blue-400 shrink-0" />
         </CardContent>
       </Card>
-      <Card>
-        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
-          <div>
-            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiActiveParents') }}</p>
-            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.activeParents }}</p>
+
+      <Card class="overflow-hidden">
+        <CardContent class="p-0">
+          <div class="px-4 py-3 border-b bg-muted/20 flex items-center gap-3">
+            <div class="h-7 w-7 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+              <CheckCircle2 class="h-3.5 w-3.5 text-emerald-600" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase tracking-wider text-muted-foreground leading-tight">
+                {{ t('admin.accounts.kpiActiveParents') }}
+              </p>
+              <p class="text-lg font-bold tabular-nums leading-tight mt-0.5">
+                {{ summary.activeParents }}
+              </p>
+            </div>
           </div>
-          <CheckCircle2 class="h-8 w-8 text-emerald-500 shrink-0" />
         </CardContent>
       </Card>
-      <Card>
-        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
-          <div>
-            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiSubs') }}</p>
-            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.totalSubs }}</p>
+
+      <Card class="overflow-hidden">
+        <CardContent class="p-0">
+          <div class="px-4 py-3 border-b bg-muted/20 flex items-center gap-3">
+            <div class="h-7 w-7 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
+              <Users class="h-3.5 w-3.5 text-violet-600" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase tracking-wider text-muted-foreground leading-tight">
+                {{ t('admin.accounts.kpiSubs') }}
+              </p>
+              <p class="text-lg font-bold tabular-nums leading-tight mt-0.5">
+                {{ summary.totalSubs }}
+              </p>
+            </div>
           </div>
-          <Users class="h-8 w-8 text-violet-500 shrink-0" />
         </CardContent>
       </Card>
-      <Card>
-        <CardContent class="py-3 px-4 flex items-center justify-between gap-2">
-          <div>
-            <p class="text-xs text-muted-foreground mb-0.5">{{ t('admin.accounts.kpiInactiveSubs') }}</p>
-            <p class="text-2xl font-bold tabular-nums leading-none">{{ summary.inactiveSubs }}</p>
+
+      <Card class="overflow-hidden">
+        <CardContent class="p-0">
+          <div class="px-4 py-3 border-b bg-muted/20 flex items-center gap-3">
+            <div class="h-7 w-7 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+              <EyeOff class="h-3.5 w-3.5 text-gray-500" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase tracking-wider text-muted-foreground leading-tight">
+                {{ t('admin.accounts.kpiInactiveSubs') }}
+              </p>
+              <p class="text-lg font-bold tabular-nums leading-tight mt-0.5">
+                {{ summary.inactiveSubs }}
+              </p>
+            </div>
           </div>
-          <EyeOff class="h-8 w-8 text-gray-400 shrink-0" />
         </CardContent>
       </Card>
     </div>
