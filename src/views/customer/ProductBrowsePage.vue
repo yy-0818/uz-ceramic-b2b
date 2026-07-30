@@ -278,7 +278,7 @@ const onLineQty = (item: CartRow, delta: number) => {
 
 // 详情面板里调整数量时需找到该商品对应色号的库存上限。
 // （按 (product, color, level) 精确定位）
-const stockForColor = (productId: string, colorCode: string, stockLevel: 1 | 2) => {
+const stockForColor = (productId: string, colorCode: string, stockLevel: number) => {
   const full = allProducts.value.find((p) => p.product_id === productId)
   if (!full) return 0
   const c = (full.colors ?? []).find((x) => x.color_code === colorCode && x.stock_level === stockLevel)
@@ -294,20 +294,20 @@ const stockFor = (productId: string) => {
 /** 用 (product, color, level) 生成的草稿 key */
 type ColorKey = string
 const lineDrafts = reactive(new Map<ColorKey, string>())
-const draftKey = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
+const draftKey = (productId: string, colorCode: string, stockLevel: number) =>
   `${productId}::${colorCode}::${stockLevel}`
 
-const draftOf = (productId: string, colorCode: string, stockLevel: 1 | 2, fallback: number) =>
+const draftOf = (productId: string, colorCode: string, stockLevel: number, fallback: number) =>
   lineDrafts.get(draftKey(productId, colorCode, stockLevel)) ?? String(fallback)
 
-const setDraft = (productId: string, colorCode: string, stockLevel: 1 | 2, value: string) => {
+const setDraft = (productId: string, colorCode: string, stockLevel: number, value: string) => {
   const k = draftKey(productId, colorCode, stockLevel)
   if (value === '' || /^\d+$/.test(value)) lineDrafts.set(k, value)
   else lineDrafts.set(k, lineDrafts.get(k) ?? '0')
 }
 
 const clearDraft = (k: ColorKey) => lineDrafts.delete(k)
-const clearDraftForColor = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
+const clearDraftForColor = (productId: string, colorCode: string, stockLevel: number) =>
   lineDrafts.delete(draftKey(productId, colorCode, stockLevel))
 
 /** 详情面板里某行（cart item）的草稿提交 */
@@ -339,7 +339,7 @@ const commitModelDraft = (
   model: string,
   conversionRate: number,
   colorCode: string,
-  stockLevel: 1 | 2,
+  stockLevel: number,
   maxBoxes: number,
 ) => {
   const k = draftKey(productId, colorCode, stockLevel)
@@ -361,7 +361,7 @@ const onModelQty = (
   model: string,
   conversionRate: number,
   colorCode: string,
-  stockLevel: 1 | 2,
+  stockLevel: number,
   delta: number,
 ) => {
   const k = draftKey(productId, colorCode, stockLevel)

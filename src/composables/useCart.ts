@@ -72,48 +72,58 @@ export function useCart() {
   const qtyOf = (productId: string) =>
     items.value.filter((i) => i.product_id === productId).reduce((s, i) => s + i.boxes, 0)
 
-  /** 精确：返回该 (product, color, level) 单条的数量 */
-  const qtyOfColor = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
-    items.value.find((i) =>
-      i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel,
-    )?.boxes ?? 0
+/**
+ * 把任意 stock_level 数值规范化为 1 | 2。
+ * supabase 读出的是 number，调用方传 number 更顺手；这里做一次白名单归一。
+ */
+function normLevel(level: number): 1 | 2 {
+  return level === 2 ? 2 : 1
+}
 
-  /** 兼容老签名：按 product_id + color_code + stock_level 覆盖 */
-  const setQty = (
-    productId: string,
-    model: string,
-    conversionRate: number,
-    boxes: number,
-    colorCode: string = '',
-    stockLevel: 1 | 2 = 1,
-  ) => {
-    const idx = items.value.findIndex(
-      (i) => i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel,
+/** 精确：返回该 (product, color, level) 单条的数量 */
+const qtyOfColor = (productId: string, colorCode: string, stockLevel: number) =>
+  items.value.find((i) =>
+    i.product_id === productId && i.color_code === colorCode && i.stock_level === normLevel(stockLevel),
+  )?.boxes ?? 0
+
+/** 兼容老签名：按 product_id + color_code + stock_level 覆盖 */
+const setQty = (
+  productId: string,
+  model: string,
+  conversionRate: number,
+  boxes: number,
+  colorCode: string = '',
+  stockLevel: number = 1,
+) => {
+  const lvl = normLevel(stockLevel)
+  const idx = items.value.findIndex(
+    (i) => i.product_id === productId && i.color_code === colorCode && i.stock_level === lvl,
+  )
+  if (idx >= 0) {
+    items.value[idx] = { ...items.value[idx], boxes }
+  } else {
+    items.value.push({
+      product_id: productId,
+      color_code: colorCode,
+      stock_level: lvl,
+      model,
+      conversion_rate: conversionRate,
+      boxes,
+    })
+  }
+}
+
+const remove = (productId: string, colorCode?: string, stockLevel?: number) => {
+  if (colorCode === undefined || stockLevel === undefined) {
+    // 移除该 product 所有色号（兼容老调用）
+    items.value = items.value.filter((i) => i.product_id !== productId)
+  } else {
+    const lvl = normLevel(stockLevel)
+    items.value = items.value.filter((i) =>
+      !(i.product_id === productId && i.color_code === colorCode && i.stock_level === lvl),
     )
-    if (idx >= 0) {
-      items.value[idx] = { ...items.value[idx], boxes }
-    } else {
-      items.value.push({
-        product_id: productId,
-        color_code: colorCode,
-        stock_level: stockLevel,
-        model,
-        conversion_rate: conversionRate,
-        boxes,
-      })
-    }
   }
-
-  const remove = (productId: string, colorCode?: string, stockLevel?: 1 | 2) => {
-    if (colorCode === undefined || stockLevel === undefined) {
-      // 移除该 product 所有色号（兼容老调用）
-      items.value = items.value.filter((i) => i.product_id !== productId)
-    } else {
-      items.value = items.value.filter((i) =>
-        !(i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel),
-      )
-    }
-  }
+}
 
   const clear = () => { items.value = [] }
 
