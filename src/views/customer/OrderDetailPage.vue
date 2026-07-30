@@ -37,8 +37,6 @@ const finance = useFinance()
 
 const orderId = computed(() => route.params.id as string)
 const ledger = ref<{ direction: 'debit' | 'credit'; amount: number; memo: string | null; recorded_at: string }[]>([])
-/** true after first load; suppress brief not-found flash on revisit when singleton state is cached */
-const pageFetched = ref(false)
 
 const order = computed(() => ordersApi.items.value.find((o) => o.id === orderId.value))
 
@@ -52,10 +50,7 @@ const refresh = async () => {
   ledger.value = finance.entries.value
 }
 
-onMounted(async () => {
-  await refresh()
-  pageFetched.value = true
-})
+onMounted(refresh)
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' UZS'
@@ -112,7 +107,7 @@ const totalM2 = computed(() =>
       <Badge v-if="order" class="ml-2">{{ t(`orders.status.${order.status}`) }}</Badge>
     </header>
 
-    <Card v-if="!pageFetched && !order">
+    <Card v-if="!ordersApi.fetched.value && !order">
       <CardContent class="py-10 text-center text-sm text-muted-foreground">
         {{ t('orders.detail.notFound') }}
       </CardContent>

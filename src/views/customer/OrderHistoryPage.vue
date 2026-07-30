@@ -29,18 +29,13 @@ const { t } = useI18n()
 const router = useRouter()
 const ordersApi = useOrders()
 const statusFilter = ref<'all' | 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'>('all')
-/** true after first load; suppress skeleton on revisit when singleton state is cached */
-const pageFetched = ref(false)
 
 const refresh = async () => {
   if (statusFilter.value === 'all') await ordersApi.fetchMine()
   else await ordersApi.fetchByStatus(statusFilter.value)
 }
 
-onMounted(async () => {
-  await refresh()
-  pageFetched.value = true
-})
+onMounted(refresh)
 
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
 
@@ -115,7 +110,7 @@ const statusVariant = (s: string) => {
                 </Button>
               </TableCell>
             </TableRow>
-            <TableEmpty v-if="!pageFetched && ordersApi.items.value.length === 0">
+            <TableEmpty v-if="!ordersApi.fetched.value && ordersApi.items.value.length === 0">
               <div class="space-y-2 py-2">
                 <div v-for="i in 5" :key="i" class="flex items-center gap-3">
                   <Skeleton class="h-4 w-24" />

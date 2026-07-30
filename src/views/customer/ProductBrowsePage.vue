@@ -35,9 +35,6 @@ const { isAdmin } = useAuth()
 
 const allProducts = ref<ProductWithColors[]>([])
 
-/** true after first successful load; skeleton only shows on first visit */
-const pageFetched = ref(false)
-
 const refresh = async () => {
   // admin 视角：直接拉全部商品
   if (isAdmin.value) {
@@ -98,10 +95,7 @@ const refresh = async () => {
   }))
 }
 
-onMounted(async () => {
-  await refresh()
-  pageFetched.value = true
-})
+onMounted(refresh)
 
 // 三级状态
 const view = ref<'categories' | 'models' | 'colors'>('categories')
@@ -402,8 +396,8 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
       <Input v-model="search" :placeholder="t('customer.catalog.search')" class="pl-9 h-10" />
     </div>
 
-    <!-- 首次加载骨架屏；后续进入（缓存已有）直接显示数据，不再闪烁 -->
-    <div v-if="!pageFetched" class="space-y-4">
+    <!-- 骨架屏：只在单例 composable 从未拉取过数据时显示（已拉取过则直接渲染缓存） -->
+    <div v-if="!productsApi.fetched.value" class="space-y-4">
       <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         <CategoryCardSkeleton v-for="i in 6" :key="i" />
       </div>

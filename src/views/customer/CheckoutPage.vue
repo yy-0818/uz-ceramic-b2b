@@ -74,8 +74,8 @@ const errMsg = ref<string | null>(null)
 const subs = ref<Account[]>([])
 const subId = ref<string>('')
 const loadingSubs = ref(false)
-/** true after first successful load; suppresses spinner on revisit when singleton cache is hot */
-const pageFetched = ref(false)
+/** true after first load completes; prevents spinner flash on revisit with hot cache */
+const subsLoaded = ref(false)
 
 const parentAccountId = computed(() => account.value?.parent_id ?? account.value?.id ?? null)
 
@@ -87,7 +87,7 @@ const loadSubs = async (parentId: string) => {
     subId.value = main?.id ?? subs.value[0]?.id ?? ''
   } finally {
     loadingSubs.value = false
-    pageFetched.value = true
+    subsLoaded.value = true
   }
 }
 
@@ -399,8 +399,8 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
                 {{ t('customer.checkout.subAccountHint') }}
               </p>
 
-              <!-- 加载态 -->
-              <div v-if="loadingSubs" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
+              <!-- 加载态（!subsLoaded 时短暂显示；缓存命中则同步完成，spinner 几乎不可见） -->
+              <div v-if="!subsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
                 <Loader2 class="h-3.5 w-3.5 animate-spin" />
                 {{ t('customer.checkout.loadingSubs') }}
               </div>
