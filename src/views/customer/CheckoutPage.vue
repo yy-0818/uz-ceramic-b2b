@@ -63,13 +63,29 @@ const { t } = useI18n()
 const router = useRouter()
 const cart = useCart()
 const orders = useOrders()
-const { account } = useAuth()
+const { account, role } = useAuth()
 const accs = useAccounts()
 const attachments = useOrderAttachments()
+
+/**
+ * 是否为「代客下单」模式——即非 customer 角色（admin / checker / 等）
+ * 通过 CheckoutPage 给任意客户下单。这种模式下，前置「客户选择器」必选父账号。
+ *
+ * - customer：parentAccountId = account.parent_id ?? account.id，走自己那条线
+ * - 其余角色：parentAccountId 必为空，必须先选 parent，下面的 picker 才出现
+ */
+const isOnBehalf = computed(() => role.value !== null && role.value !== 'customer')
 
 const remark = ref('')
 const submitting = ref(false)
 const errMsg = ref<string | null>(null)
+
+/** 代客下单：可选的父账号列表 */
+const parents = ref<Account[]>([])
+const loadingParents = ref(false)
+/** 代客下单：选中的父账号 id。customer 模式下固定为自身 parent。 */
+const pickedParentId = ref<string>('')
+const parentsLoaded = ref(false)
 
 const subs = ref<Account[]>([])
 const subId = ref<string>('')
@@ -77,7 +93,17 @@ const loadingSubs = ref(false)
 /** true after first load completes; prevents spinner flash on revisit with hot cache */
 const subsLoaded = ref(false)
 
-const parentAccountId = computed(() => account.value?.parent_id ?? account.value?.id ?? null)
+/**
+ * 当前下单要用的父账号 id：
+ *  - customer 模式：从 account 直接出
+ *  - 代客模式：从 picker 出，未选则 null（强制走 picker 路径）
+ */
+const parentAccountId = computed<string | null>(() => {
+  if (!isOnBehalf.value) {
+    return account.value?.parent_id ?? account.value?.id ?? null
+  }
+  return pickedParentId.value || null
+})
 
 const loadSubs = async (parentId: string) => {
   loadingSubs.value = true
@@ -91,13 +117,38 @@ const loadSubs = async (parentId: string) => {
   }
 }
 
+const loadParents = async () => {
+  loadingParents.value = true
+  try {
+    parents.value = await accs.listParents()
+  } finally {
+    loadingParents.value = false
+    parentsLoaded.value = true
+  }
+}
+
+/**
+ * 代客模式下，切换父账号时同时清空 sub 选中状态，等新 sub 加载完后再选默认。
+ * customer 模式不挂这个 watcher（parent 是固定的）。
+ */
 watch(
   () => parentAccountId.value,
-  (id) => { if (id) loadSubs(id) },
-  { immediate: true },
+  (id) => {
+    if (!id) return
+    subId.value = ''
+    subs.value = []
+    subsLoaded.value = false
+    loadSubs(id)
+  },
 )
 
 onMounted(() => {
+  if (isOnBehalf.value) {
+    // 代客模式：只拉 parents，由上面 watcher 拉 subs
+    loadParents()
+    return
+  }
+  // 客户模式：直接走自己父账号
   if (parentAccountId.value) loadSubs(parentAccountId.value)
 })
 
@@ -192,7 +243,16 @@ const fmtSize = (n: number) => {
 }
 
 const onSubmit = async () => {
-  if (!parentAccountId.value || !subId.value) return
+  if (!parentAccountId.value) {
+    errMsg.value = isOnBehalf.value
+      ? '请先选择要代下单的客户账号。'
+      : '当前账号尚未关联客户，请联系管理员。'
+    return
+  }
+  if (!subId.value) {
+    errMsg.value = '请选择收货子账号。'
+    return
+  }
   submitting.value = true
   errMsg.value = null
   let createdOrderId: string | null = null
@@ -241,6 +301,8 @@ const onSubmit = async () => {
 
 // 当前选中的子账号（用于 sticky 摘要显示）
 const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
+// 当前选中的父账号（代客模式下用于 sticky 摘要显示）
+const selectedParent = computed(() => parents.value.find((p) => p.id === pickedParentId.value))
 </script>
 
 <template>
@@ -382,8 +444,74 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
           </CardContent>
         </Card>
 
+        <!-- 父客户选择（仅代客模式：admin / checker / 等不是 customer 的角色） -->
+        <Card v-if="isOnBehalf">
+          <CardContent class="p-0">
+            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
+              <Users class="h-3.5 w-3.5 text-primary" />
+              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
+                客户账号（代客下单）
+              </h2>
+              <span class="text-[9px] font-medium text-destructive uppercase tracking-wider ml-1">
+                必选
+              </span>
+            </div>
+
+            <div class="p-3 sm:p-4 space-y-2.5">
+              <p class="text-[11px] text-muted-foreground leading-relaxed">
+                选择要代下单的父客户账号；选定后下方会出现其子账号列表。
+              </p>
+
+              <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                加载客户中…
+              </div>
+
+              <div
+                v-else-if="parents.length === 0"
+                class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
+              >
+                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <p class="leading-relaxed">暂无父客户账号，请先在「客户管理」中创建。</p>
+              </div>
+
+              <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto">
+                <button
+                  v-for="p in parents"
+                  :key="p.id"
+                  type="button"
+                  class="w-full text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :class="pickedParentId === p.id
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-border hover:border-primary/40 hover:bg-muted/30'"
+                  @click="pickedParentId = p.id"
+                >
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                      :class="pickedParentId === p.id
+                        ? 'border-primary bg-primary'
+                        : 'border-muted-foreground/40'"
+                    >
+                      <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
+                    </div>
+                    <div class="min-w-0">
+                      <p class="font-mono text-sm font-semibold truncate">
+                        {{ p.account_name }}
+                      </p>
+                      <p class="text-[10px] text-muted-foreground truncate">
+                        {{ p.company_name }} · {{ p.account_type }}
+                      </p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
         <!-- 子账号选择（卡片化） -->
-        <Card>
+        <Card v-if="!isOnBehalf || pickedParentId">
           <CardContent class="p-0">
             <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
               <Users class="h-3.5 w-3.5 text-primary" />
@@ -763,6 +891,19 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               </div>
             </div>
 
+            <!-- 代客模式下，显示选中的父客户以便核对 -->
+            <div
+              v-if="isOnBehalf && selectedParent"
+              class="mx-4 mb-2 rounded-md border bg-amber-50 border-amber-200 p-2"
+            >
+              <p class="text-[9px] uppercase tracking-wider text-amber-700 mb-0.5">
+                代客下单 · 父客户
+              </p>
+              <p class="font-mono text-xs font-semibold text-amber-900 truncate">
+                {{ selectedParent.account_name }}
+              </p>
+            </div>
+
             <!-- 选中的子账号 -->
             <div
               v-if="selectedSub"
@@ -813,6 +954,12 @@ const selectedSub = computed(() => subs.value.find((s) => s.id === subId.value))
               </p>
               <p class="font-bold text-xs tabular-nums truncate">
                 {{ totalBoxes }} ящ. · {{ fmtM2(totalM2) }}
+              </p>
+              <p
+                v-if="isOnBehalf && selectedParent"
+                class="text-[10px] text-amber-700 truncate font-mono"
+              >
+                代客 → {{ selectedParent.account_name }}
               </p>
               <p
                 v-if="selectedSub"

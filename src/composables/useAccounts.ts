@@ -304,6 +304,22 @@ export function useAccounts() {
   }
 
   /**
+   * 列出所有父账号（customer / export 类型），按名升序。
+   * 给"代客下单"场景用：admin / checker 在 CheckoutPage 选一个父，再走子账号选择。
+   * 只返回 status='active' 的（不拉已禁用的，避免替别人给停账户下订单）。
+   */
+  const listParents = async (): Promise<Account[]> => {
+    const { data, error: e } = await supabase
+      .from('accounts')
+      .select('*')
+      .is('parent_id', null)
+      .eq('status', 'active')
+      .order('account_name')
+    if (e) { error.value = e.message; return [] }
+    return (data ?? []) as Account[]
+  }
+
+  /**
    * 从 Excel 行批量导入：upsert 父 + upsert 子 + upsert 客户组映射
    * 策略：
    *   - 父：按 category 名 upsert（同名父已存在则跳过；不会重复 create）
@@ -479,6 +495,7 @@ export function useAccounts() {
     fetchTree,
     createParent, updateParent, toggleParentStatus,
     createSub, updateSub, setMain, fetchSubAccounts,
+    listParents,
     importFromExcel,
     fetchProductCategories,
     $reset: resetAccounts,
