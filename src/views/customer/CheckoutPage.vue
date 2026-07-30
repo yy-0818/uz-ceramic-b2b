@@ -307,523 +307,553 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
 
 <template>
   <!--
-    pb-32 给移动端底部 sticky 摘要留出空间（64 + 16 = 80 ≈ 5rem），
-    pb-4 是桌面端，无 sticky 摘要。lg+ 也不需要 sticky 但有视觉留白
+    整体布局：
+      1. 顶部 hero：一个"取货表单"的统一标题层（返回 + 大标题 + 步骤条）
+      2. 主区：左右两栏
+         - 左侧：一个大的「订单表单」卡片，内含 4 个 section（统一编号 + icon）
+         - 右侧：「结算面板」卡片（与左侧共享视觉语言），桌面 sticky / 移动 sticky 底栏
+
+    视觉语言：
+      - 所有 section 使用统一的 header（编号 + icon + 标题 + 可选 badge）
+      - 主表单卡片 vs 结算卡片共享：圆角、内边距、icon 风格、border 风格
+      - section 之间用 section-spacing（不是独立的 Card），靠 hairline + section title 分层
   -->
-  <div class="space-y-3 pb-4 lg:pb-12">
-    <!-- 顶部 hero 区 -->
-    <header class="space-y-2.5">
-      <div class="flex items-center gap-2">
-        <Button size="icon" variant="ghost" class="h-8 w-8" @click="router.back()">
-          <ArrowLeft class="h-4 w-4" />
+
+  <!-- ===================== 顶部 hero ===================== -->
+  <header class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 sm:px-6 py-4 sm:py-5 mb-4">
+    <!-- 装饰右上角的浅色 brand 圆形 (不喧宾夺主) -->
+    <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+    <div class="pointer-events-none absolute -right-4 top-1/2 h-24 w-24 rounded-full bg-primary/5" />
+
+    <div class="relative flex items-start gap-2">
+      <Button size="icon" variant="ghost" class="h-8 w-8 shrink-0 -ml-1" @click="router.back()">
+        <ArrowLeft class="h-4 w-4" />
+      </Button>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <h1 class="text-base sm:text-lg font-bold leading-tight">
+            {{ t('customer.checkout.stepTitle') }}
+          </h1>
+          <span class="text-[10px] font-semibold tracking-wider text-primary uppercase">
+            {{ t('customer.checkout.stepLabel') }}
+          </span>
+        </div>
+        <p class="text-xs text-muted-foreground mt-0.5 leading-snug max-w-xl">
+          {{ t('customer.checkout.stepHint') }}
+        </p>
+      </div>
+    </div>
+
+    <!-- 步骤条：购物车(✓) → 确认(当前) → 报价 -->
+    <ol class="relative mt-4 grid grid-cols-[auto_1fr_auto_1fr_auto] items-center gap-2 text-[11px]">
+      <!-- 步骤 1 -->
+      <li class="flex items-center gap-1.5 text-muted-foreground">
+        <span class="h-5 w-5 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+          <CheckCircle2 class="h-3 w-3" />
+        </span>
+        <span class="font-medium hidden sm:inline">{{ t('customer.checkout.stepCart') }}</span>
+      </li>
+      <li><span class="block h-px bg-border" /></li>
+      <!-- 步骤 2（当前） -->
+      <li class="flex items-center gap-1.5 text-foreground">
+        <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold shadow-sm shadow-primary/30">
+          2
+        </span>
+        <span class="font-semibold hidden sm:inline">{{ t('customer.checkout.stepConfirm') }}</span>
+      </li>
+      <li><span class="block h-px bg-border" /></li>
+      <!-- 步骤 3 -->
+      <li class="flex items-center gap-1.5 text-muted-foreground">
+        <span class="h-5 w-5 rounded-full border bg-background flex items-center justify-center">
+          <Circle class="h-2 w-2 text-muted-foreground/60" />
+        </span>
+        <span class="hidden sm:inline">{{ t('customer.checkout.stepPay') }}</span>
+      </li>
+    </ol>
+  </header>
+
+  <!-- ===================== 空购物车 ===================== -->
+  <Card v-if="itemsCount === 0" class="overflow-hidden">
+    <CardContent class="py-10 px-6 text-center space-y-4">
+      <div class="mx-auto h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center">
+        <ShoppingCart class="h-10 w-10 text-muted-foreground/40" />
+      </div>
+      <div class="space-y-1">
+        <p class="font-semibold text-sm">{{ t('customer.checkout.emptyCartTitle') }}</p>
+        <p class="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
+          {{ t('customer.checkout.emptyCartHint') }}
+        </p>
+      </div>
+      <div class="flex items-center justify-center gap-2 pt-0.5">
+        <Button size="sm" variant="outline" @click="router.push('/orders')">
+          {{ t('orders.title') }}
         </Button>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h1 class="text-lg sm:text-xl font-bold leading-tight">
-              {{ t('customer.checkout.stepTitle') }}
-            </h1>
-            <span class="text-[10px] font-medium tracking-wider text-primary uppercase">
-              {{ t('customer.checkout.stepLabel') }}
-            </span>
+        <Button size="sm" @click="router.push('/catalog')">
+          {{ t('customer.checkout.emptyCartBack') }}
+          <ChevronRight class="ml-1 h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </CardContent>
+  </Card>
+
+  <!-- ===================== 主区：左侧「订单表单」+ 右侧「结算面板」 ===================== -->
+  <div v-else class="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-5 lg:gap-6 pb-24 lg:pb-12">
+    <!-- ============ 左侧：订单表单（单一容器，4 个 section） ============ -->
+    <Card class="overflow-hidden">
+      <CardContent class="p-0">
+        <!-- 顶部：表单标题 + 摘要信息（数量 / 体积） -->
+        <div class="px-5 sm:px-6 py-4 border-b bg-muted/20 flex items-center gap-3">
+          <div class="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <Receipt class="h-4 w-4 text-primary" />
           </div>
-          <p class="text-xs text-muted-foreground mt-0.5 leading-snug">
-            {{ t('customer.checkout.stepHint') }}
-          </p>
-        </div>
-      </div>
-
-      <!-- 步骤条：购物车(✓) → 确认(当前) → 报价 -->
-      <div class="flex items-center gap-2 text-[11px] px-1">
-        <div class="flex items-center gap-1.5 text-muted-foreground">
-          <CheckCircle2 class="h-3.5 w-3.5 text-emerald-600" />
-          <span>{{ t('customer.checkout.stepCart') }}</span>
-        </div>
-        <div class="flex-1 h-px bg-border" />
-        <div class="flex items-center gap-1.5 text-foreground font-medium">
-          <span class="h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold">2</span>
-          <span>{{ t('customer.checkout.stepConfirm') }}</span>
-        </div>
-        <div class="flex-1 h-px bg-border" />
-        <div class="flex items-center gap-1.5 text-muted-foreground">
-          <Circle class="h-3.5 w-3.5" />
-          <span>{{ t('customer.checkout.stepPay') }}</span>
-        </div>
-      </div>
-    </header>
-
-    <!-- 空购物车 -->
-    <Card v-if="itemsCount === 0" class="overflow-hidden">
-      <CardContent class="py-8 px-6 text-center space-y-4">
-        <div class="mx-auto h-20 w-20 rounded-full bg-muted/50 flex items-center justify-center">
-          <ShoppingCart class="h-10 w-10 text-muted-foreground/40" />
-        </div>
-        <div class="space-y-1">
-          <p class="font-semibold text-sm">{{ t('customer.checkout.emptyCartTitle') }}</p>
-          <p class="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-            {{ t('customer.checkout.emptyCartHint') }}
-          </p>
-        </div>
-        <div class="flex items-center justify-center gap-2 pt-0.5">
-          <Button size="sm" variant="outline" @click="router.push('/orders')">
-            {{ t('orders.title') }}
-          </Button>
-          <Button size="sm" @click="router.push('/catalog')">
-            {{ t('customer.checkout.emptyCartBack') }}
-            <ChevronRight class="ml-1 h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-
-    <!-- 主区：左右两栏 (lg+) / 单列堆叠 (mobile) -->
-    <div v-else class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
-      <!-- 左侧：明细 + 子账号 + 备注 -->
-      <div class="space-y-3 min-w-0">
-        <!-- 商品明细 -->
-        <Card>
-          <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
-              <Package class="h-3.5 w-3.5 text-primary" />
-              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
-                {{ t('customer.checkout.items') }}
-              </h2>
-              <Badge variant="secondary" class="ml-auto text-[10px]">
-                {{ itemsCount }} {{ t('customer.checkout.itemsCount') }}
-              </Badge>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold leading-tight">订单信息</p>
+            <p class="text-[11px] text-muted-foreground leading-snug">
+              请确认商品、选择收货账号，可附上图片或备注后提交。
+            </p>
+          </div>
+          <div class="hidden sm:flex items-center gap-3 text-right shrink-0">
+            <div>
+              <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                件数
+              </p>
+              <p class="text-sm font-bold tabular-nums leading-tight mt-0.5">
+                {{ itemsCount }}
+              </p>
             </div>
-
-            <!-- 表头 (md+) -->
-            <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 px-5 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground border-b">
-              <span>Модель</span>
-              <span class="text-right">Кол-во ящ.</span>
-              <span class="text-right">м² / ящ.</span>
-              <span class="text-right">Итого м²</span>
+            <div class="h-7 w-px bg-border" />
+            <div>
+              <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                总量
+              </p>
+              <p class="text-sm font-bold tabular-nums leading-tight mt-0.5">
+                {{ fmtM2(totalM2) }}
+              </p>
             </div>
+          </div>
+        </div>
 
-            <ul class="divide-y divide-border/60">
-              <li
-                v-for="(i, idx) in cart.items.value"
-                :key="i.product_id"
-                class="px-4 sm:px-5 py-2.5 hover:bg-muted/20 transition"
-              >
-                <!-- 桌面：表格行 -->
-                <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 items-center">
-                  <div class="flex items-center gap-2 min-w-0">
-                    <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
-                      {{ idx + 1 }}
-                    </span>
-                    <p class="font-mono text-sm font-medium truncate">{{ i.model }}</p>
-                  </div>
-                  <p class="text-right text-sm tabular-nums">
-                    {{ i.boxes }} <span class="text-[10px] text-muted-foreground">ящ.</span>
-                  </p>
-                  <p class="text-right text-xs tabular-nums text-muted-foreground">
-                    {{ i.conversion_rate.toFixed(2) }}
-                  </p>
-                  <p class="text-right text-sm font-semibold tabular-nums">
+        <!-- Section 1：商品明细 -->
+        <section class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+              1
+            </span>
+            <Package class="h-3.5 w-3.5 text-primary" />
+            <h2 class="text-sm font-semibold text-foreground">
+              {{ t('customer.checkout.items') }}
+            </h2>
+            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
+              {{ itemsCount }} {{ t('customer.checkout.itemsCount') }}
+            </Badge>
+          </div>
+
+          <!-- 表头 (md+) -->
+          <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground rounded-md bg-muted/40">
+            <span>Модель</span>
+            <span class="text-right">Кол-во ящ.</span>
+            <span class="text-right">м² / ящ.</span>
+            <span class="text-right">Итого м²</span>
+          </div>
+
+          <ul class="divide-y divide-border/40 -mx-1">
+            <li
+              v-for="(i, idx) in cart.items.value"
+              :key="i.product_id"
+              class="px-3 py-2.5 hover:bg-muted/30 transition rounded-md"
+            >
+              <!-- 桌面：表格行 -->
+              <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 items-center">
+                <div class="flex items-center gap-2 min-w-0">
+                  <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
+                    {{ idx + 1 }}
+                  </span>
+                  <p class="font-mono text-sm font-medium truncate">{{ i.model }}</p>
+                </div>
+                <p class="text-right text-sm tabular-nums">
+                  {{ i.boxes }} <span class="text-[10px] text-muted-foreground">ящ.</span>
+                </p>
+                <p class="text-right text-xs tabular-nums text-muted-foreground">
+                  {{ i.conversion_rate.toFixed(2) }}
+                </p>
+                <p class="text-right text-sm font-semibold tabular-nums">
+                  {{ fmtM2(i.boxes * i.conversion_rate) }}
+                </p>
+              </div>
+              <!-- 移动：堆叠卡片行 -->
+              <div class="md:hidden space-y-1">
+                <div class="flex items-center gap-2">
+                  <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
+                    {{ idx + 1 }}
+                  </span>
+                  <p class="font-mono text-sm font-medium truncate flex-1">{{ i.model }}</p>
+                  <p class="text-sm font-semibold tabular-nums shrink-0">
                     {{ fmtM2(i.boxes * i.conversion_rate) }}
                   </p>
                 </div>
-                <!-- 移动：堆叠卡片行 -->
-                <div class="md:hidden space-y-1">
-                  <div class="flex items-center gap-2">
-                    <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
-                      {{ idx + 1 }}
-                    </span>
-                    <p class="font-mono text-sm font-medium truncate flex-1">{{ i.model }}</p>
-                    <p class="text-sm font-semibold tabular-nums shrink-0">
-                      {{ fmtM2(i.boxes * i.conversion_rate) }}
-                    </p>
-                  </div>
-                  <p class="text-[11px] text-muted-foreground pl-7">
-                    {{ i.boxes }} ящ. × {{ i.conversion_rate.toFixed(2) }} м²
+                <p class="text-[11px] text-muted-foreground pl-7">
+                  {{ i.boxes }} ящ. × {{ i.conversion_rate.toFixed(2) }} м²
+                </p>
+              </div>
+            </li>
+          </ul>
+        </section>
+
+        <!-- Section 2：父客户选择（仅代客模式） -->
+        <section v-if="isOnBehalf" class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+              2
+            </span>
+            <Users class="h-3.5 w-3.5 text-primary" />
+            <h2 class="text-sm font-semibold text-foreground">客户账号（代客下单）</h2>
+            <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wider ml-0.5">
+              必选
+            </span>
+            <span v-if="selectedParent" class="ml-auto text-[10px] text-muted-foreground truncate max-w-[160px]">
+              {{ selectedParent.account_name }}
+            </span>
+          </div>
+
+          <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-2">
+            <Loader2 class="h-3.5 w-3.5 animate-spin" />
+            加载客户中…
+          </div>
+
+          <div
+            v-else-if="parents.length === 0"
+            class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
+          >
+            <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+            <p class="leading-relaxed">暂无父客户账号，请先在「客户管理」中创建。</p>
+          </div>
+
+          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              v-for="p in parents"
+              :key="p.id"
+              type="button"
+              class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              :class="pickedParentId === p.id
+                ? 'border-primary bg-primary/5 shadow-sm'
+                : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+              @click="pickedParentId = p.id"
+            >
+              <div class="flex items-center gap-2">
+                <div
+                  class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                  :class="pickedParentId === p.id
+                    ? 'border-primary bg-primary'
+                    : 'border-muted-foreground/40'"
+                >
+                  <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
+                </div>
+                <div class="min-w-0">
+                  <p class="font-mono text-sm font-semibold truncate">
+                    {{ p.account_name }}
+                  </p>
+                  <p class="text-[10px] text-muted-foreground truncate">
+                    {{ p.company_name }} · {{ p.account_type }}
                   </p>
                 </div>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
-
-        <!-- 父客户选择（仅代客模式：admin / checker / 等不是 customer 的角色） -->
-        <Card v-if="isOnBehalf">
-          <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
-              <Users class="h-3.5 w-3.5 text-primary" />
-              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
-                客户账号（代客下单）
-              </h2>
-              <span class="text-[9px] font-medium text-destructive uppercase tracking-wider ml-1">
-                必选
-              </span>
-            </div>
-
-            <div class="p-3 sm:p-4 space-y-2.5">
-              <p class="text-[11px] text-muted-foreground leading-relaxed">
-                选择要代下单的父客户账号；选定后下方会出现其子账号列表。
-              </p>
-
-              <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
-                <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                加载客户中…
               </div>
+            </button>
+          </div>
+        </section>
 
-              <div
-                v-else-if="parents.length === 0"
-                class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
-              >
-                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                <p class="leading-relaxed">暂无父客户账号，请先在「客户管理」中创建。</p>
-              </div>
+        <!-- Section 3：收货子账号 -->
+        <section v-if="!isOnBehalf || pickedParentId" class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+              {{ isOnBehalf ? 3 : 2 }}
+            </span>
+            <Users class="h-3.5 w-3.5 text-primary" />
+            <h2 class="text-sm font-semibold text-foreground">
+              {{ t('customer.checkout.subAccountLabel') }}
+            </h2>
+            <span class="text-[10px] font-semibold text-destructive uppercase tracking-wider ml-0.5">
+              {{ t('customer.checkout.subAccountRequired') }}
+            </span>
+            <span v-if="selectedSub" class="ml-auto text-[10px] text-muted-foreground truncate max-w-[160px]">
+              {{ selectedSub.account_name }}
+            </span>
+          </div>
 
-              <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-56 overflow-y-auto">
-                <button
-                  v-for="p in parents"
-                  :key="p.id"
-                  type="button"
-                  class="w-full text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  :class="pickedParentId === p.id
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-border hover:border-primary/40 hover:bg-muted/30'"
-                  @click="pickedParentId = p.id"
-                >
-                  <div class="flex items-center gap-2">
-                    <div
-                      class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
-                      :class="pickedParentId === p.id
-                        ? 'border-primary bg-primary'
-                        : 'border-muted-foreground/40'"
-                    >
-                      <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
-                    </div>
-                    <div class="min-w-0">
-                      <p class="font-mono text-sm font-semibold truncate">
-                        {{ p.account_name }}
-                      </p>
-                      <p class="text-[10px] text-muted-foreground truncate">
-                        {{ p.company_name }} · {{ p.account_type }}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <p class="text-[11px] text-muted-foreground leading-relaxed mb-2.5">
+            {{ t('customer.checkout.subAccountHint') }}
+          </p>
 
-        <!-- 子账号选择（卡片化） -->
-        <Card v-if="!isOnBehalf || pickedParentId">
-          <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
-              <Users class="h-3.5 w-3.5 text-primary" />
-              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
-                {{ t('customer.checkout.subAccountLabel') }}
-              </h2>
-              <span class="text-[9px] font-medium text-destructive uppercase tracking-wider ml-1">
-                {{ t('customer.checkout.subAccountRequired') }}
-              </span>
-            </div>
+          <!-- 加载态 -->
+          <div v-if="!subsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
+            <Loader2 class="h-3.5 w-3.5 animate-spin" />
+            {{ t('customer.checkout.loadingSubs') }}
+          </div>
 
-            <div class="p-3 sm:p-4 space-y-2.5">
-              <p class="text-[11px] text-muted-foreground leading-relaxed">
-                {{ t('customer.checkout.subAccountHint') }}
-              </p>
+          <!-- 空状态 -->
+          <div
+            v-else-if="subs.length === 0"
+            class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
+          >
+            <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+            <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
+          </div>
 
-              <!-- 加载态（!subsLoaded 时短暂显示；缓存命中则同步完成，spinner 几乎不可见） -->
-              <div v-if="!subsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
-                <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                {{ t('customer.checkout.loadingSubs') }}
-              </div>
-
-              <!-- 空状态（无子账号） -->
-              <div
-                v-else-if="subs.length === 0"
-                class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
-              >
-                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-                <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
-              </div>
-
-              <!-- 子账号卡片网格 -->
-              <div v-else class="space-y-1.5">
-                <button
-                  v-for="s in subs"
-                  :key="s.id"
-                  type="button"
-                  class="w-full text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          <!-- 子账号卡片列表（紧凑式） -->
+          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              v-for="s in subs"
+              :key="s.id"
+              type="button"
+              class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              :class="subId === s.id
+                ? 'border-primary bg-primary/5 shadow-sm'
+                : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+              @click="subId = s.id"
+            >
+              <div class="flex items-start gap-2.5">
+                <div
+                  class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
                   :class="subId === s.id
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-border hover:border-primary/40 hover:bg-muted/30'"
-                  @click="subId = s.id"
+                    ? 'border-primary bg-primary'
+                    : 'border-muted-foreground/40'"
                 >
-                  <div class="flex items-start gap-2.5">
-                    <!-- 单选圆 -->
-                    <div
-                      class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
-                      :class="subId === s.id
-                        ? 'border-primary bg-primary'
-                        : 'border-muted-foreground/40'"
-                    >
-                      <Check
-                        v-if="subId === s.id"
-                        class="h-3 w-3 text-primary-foreground"
-                      />
-                    </div>
+                  <Check v-if="subId === s.id" class="h-3 w-3 text-primary-foreground" />
+                </div>
 
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <span class="font-mono text-sm font-semibold truncate">
-                          {{ s.account_name }}
-                        </span>
-                        <Badge
-                          v-if="s.is_main"
-                          class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
-                        >
-                          <Star class="h-3 w-3 mr-0.5 fill-current" />
-                          {{ t('customer.checkout.mainBadge') }}
-                        </Badge>
-                        <Badge
-                          v-if="s.status === 'inactive'"
-                          variant="secondary"
-                          class="text-[10px]"
-                        >
-                          {{ t('customer.checkout.inactive') }}
-                        </Badge>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="font-mono text-sm font-semibold truncate">
+                      {{ s.account_name }}
+                    </span>
+                    <Badge
+                      v-if="s.is_main"
+                      class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
+                    >
+                      <Star class="h-3 w-3 mr-0.5 fill-current" />
+                      {{ t('customer.checkout.mainBadge') }}
+                    </Badge>
+                    <Badge
+                      v-if="s.status === 'inactive'"
+                      variant="secondary"
+                      class="text-[10px]"
+                    >
+                      {{ t('customer.checkout.inactive') }}
+                    </Badge>
+                  </div>
+                  <p
+                    v-if="s.inn && s.inn !== '-'"
+                    class="text-[10px] text-muted-foreground mt-0.5 font-mono"
+                  >
+                    INN {{ s.inn }}
+                  </p>
+                </div>
+              </div>
+            </button>
+          </div>
+          <p v-if="subs.length > 0" class="text-[10px] text-muted-foreground/70 mt-2">
+            {{ t('customer.checkout.subAccountPick') }}
+          </p>
+        </section>
+
+        <!-- Section 4：附件 + 备注（合并为一组，让"补充信息"集中） -->
+        <section class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[10px] font-bold">
+              {{ isOnBehalf ? 4 : 3 }}
+            </span>
+            <Paperclip class="h-3.5 w-3.5 text-primary" />
+            <h2 class="text-sm font-semibold text-foreground">附件与备注</h2>
+            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
+              {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
+            </Badge>
+          </div>
+
+          <!-- 上传区 -->
+          <button
+            type="button"
+            class="w-full rounded-lg border-2 border-dashed transition p-4 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            :class="attachments.items.value.length >= MAX_ATTACHMENTS
+              ? 'border-muted bg-muted/20 cursor-not-allowed opacity-60'
+              : 'border-border/60 hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
+            :disabled="attachments.items.value.length >= MAX_ATTACHMENTS"
+            @click="onPickClick"
+            @drop="onDrop"
+            @dragover="onDragOver"
+          >
+            <div class="flex flex-col items-center gap-1.5 text-muted-foreground">
+              <div class="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <ImagePlus class="h-4 w-4 text-primary" />
+              </div>
+              <p class="text-[11px] font-medium text-foreground">
+                {{ t('customer.checkout.attachmentsEmpty') }}
+              </p>
+              <p class="text-[10px]">
+                jpg / png / webp / heic · ≤ 5 MB · {{ MAX_ATTACHMENTS }} {{ t('customer.checkout.itemsCount') }}
+              </p>
+            </div>
+          </button>
+          <input
+            ref="fileInput"
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/heic"
+            multiple
+            class="hidden"
+            @change="onFiles(($event.target as HTMLInputElement).files)"
+          />
+
+          <!-- 错误提示 -->
+          <div
+            v-if="attachmentError"
+            class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2 text-[11px] mt-2"
+          >
+            <AlertCircle class="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5" />
+            <p>{{ attachmentError }}</p>
+          </div>
+
+          <!-- 已上传图片 carousel -->
+          <div
+            v-if="attachments.items.value.length > 0"
+            class="space-y-2 mt-2"
+            @keydown="onCarouselKey"
+            tabindex="0"
+            role="region"
+            :aria-label="t('customer.checkout.attachmentsTitle')"
+          >
+            <!-- 大图区 -->
+            <div class="relative rounded-lg border bg-card overflow-hidden shadow-sm">
+              <div class="relative aspect-[4/3] sm:aspect-[16/10] bg-muted">
+                <TransitionGroup name="att-fade" tag="div" class="absolute inset-0">
+                  <div
+                    v-for="(it, idx) in attachments.items.value"
+                    v-show="idx === activeIdx"
+                    :key="idx"
+                    class="absolute inset-0"
+                  >
+                    <img
+                      :src="it.local_url"
+                      :alt="it.caption ?? `attachment ${idx + 1}`"
+                      class="h-full w-full object-contain"
+                      loading="lazy"
+                    />
+                    <div
+                      v-if="(it.progress ?? 0) < 100 && !it.error"
+                      class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                    >
+                      <div class="text-white text-xs font-medium flex items-center gap-1.5">
+                        <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                        {{ it.progress ?? 0 }}%
                       </div>
-                      <p
-                        v-if="s.inn && s.inn !== '-'"
-                        class="text-[10px] text-muted-foreground mt-0.5 font-mono"
-                      >
-                        INN {{ s.inn }}
+                    </div>
+                    <div
+                      v-if="it.error"
+                      class="absolute inset-0 bg-destructive/85 flex items-center justify-center p-3"
+                    >
+                      <p class="text-white text-[11px] text-center leading-tight">
+                        {{ it.error }}
                       </p>
                     </div>
                   </div>
+                </TransitionGroup>
+                <button
+                  type="button"
+                  class="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-black/70 hover:bg-destructive text-white flex items-center justify-center transition shadow-md"
+                  :title="t('customer.checkout.attachmentsRemove')"
+                  @click="attachments.remove(activeIdx)"
+                >
+                  <X class="h-3.5 w-3.5" />
                 </button>
-                <p class="text-[10px] text-muted-foreground/70">
-                  {{ t('customer.checkout.subAccountPick') }}
+                <template v-if="attachments.items.value.length > 1">
+                  <button
+                    type="button"
+                    class="absolute top-1/2 left-1.5 -translate-y-1/2 h-7 w-7 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center transition shadow-md backdrop-blur"
+                    :aria-label="t('customer.checkout.attachmentsPrev')"
+                    @click="goPrev"
+                  >
+                    <ChevronLeft class="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    class="absolute top-1/2 right-1.5 -translate-y-1/2 h-7 w-7 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center transition shadow-md backdrop-blur"
+                    :aria-label="t('customer.checkout.attachmentsNext')"
+                    @click="goNext"
+                  >
+                    <ChevronRight class="h-4 w-4" />
+                  </button>
+                  <span class="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/70 text-white text-[10px] font-medium tabular-nums backdrop-blur">
+                    {{ activeIdx + 1 }} / {{ attachments.items.value.length }}
+                  </span>
+                </template>
+              </div>
+              <div class="px-2.5 py-1.5 border-t bg-muted/30 flex items-center justify-between gap-2">
+                <p class="text-[10px] text-muted-foreground truncate font-mono tabular-nums">
+                  {{
+                    (attachments.items.value[activeIdx]?.mime ?? '')
+                      .replace('image/', '')
+                      .toUpperCase()
+                  }}
+                  ·
+                  {{ fmtSize(attachments.items.value[activeIdx]?.size_bytes ?? 0) }}
+                </p>
+                <p
+                  v-if="attachments.items.value[activeIdx]?.error"
+                  class="text-[10px] text-destructive truncate"
+                >
+                  {{ attachments.items.value[activeIdx]?.error }}
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
 
-        <!-- 附件（图片）：放最前，文本备注紧随其后 -->
-        <Card>
-          <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
-              <Paperclip class="h-3.5 w-3.5 text-primary" />
-              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
-                {{ t('customer.checkout.attachmentsTitle') }}
-              </h2>
-              <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
-                {{ attachments.items.value.length }} / {{ MAX_ATTACHMENTS }}
-              </Badge>
-            </div>
-
-            <div class="p-3 sm:p-4 space-y-2.5">
-              <p class="text-[11px] text-muted-foreground leading-relaxed">
-                {{ t('customer.checkout.attachmentsHint') }}
-              </p>
-
-              <!-- 上传区 -->
-              <button
-                type="button"
-                class="w-full rounded-lg border-2 border-dashed transition p-4 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                :class="attachments.items.value.length >= MAX_ATTACHMENTS
-                  ? 'border-muted bg-muted/20 cursor-not-allowed opacity-60'
-                  : 'border-border hover:border-primary/50 hover:bg-primary/5 cursor-pointer'"
-                :disabled="attachments.items.value.length >= MAX_ATTACHMENTS"
-                @click="onPickClick"
-                @drop="onDrop"
-                @dragover="onDragOver"
+            <!-- Thumbnail 横排 -->
+            <ul class="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
+              <li
+                v-for="(it, idx) in attachments.items.value"
+                :key="idx"
+                class="shrink-0 snap-start"
               >
-                <div class="flex flex-col items-center gap-1.5 text-muted-foreground">
-                  <div class="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <ImagePlus class="h-4 w-4 text-primary" />
-                  </div>
-                  <p class="text-[11px] font-medium text-foreground">
-                    {{ t('customer.checkout.attachmentsEmpty') }}
-                  </p>
-                  <p class="text-[10px]">
-                    jpg / png / webp / heic · ≤ 5 MB · {{ MAX_ATTACHMENTS }} {{ t('customer.checkout.itemsCount') }}
-                  </p>
-                </div>
-              </button>
-              <input
-                ref="fileInput"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic"
-                multiple
-                class="hidden"
-                @change="onFiles(($event.target as HTMLInputElement).files)"
-              />
-
-              <!-- 错误提示 -->
-              <div
-                v-if="attachmentError"
-                class="flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-md p-2 text-[11px]"
-              >
-                <AlertCircle class="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5" />
-                <p>{{ attachmentError }}</p>
-              </div>
-
-              <!-- 已上传图片 carousel：单大图 + 下方 thumbnail 横排 -->
-              <div
-                v-if="attachments.items.value.length > 0"
-                class="space-y-2"
-                @keydown="onCarouselKey"
-                tabindex="0"
-                role="region"
-                :aria-label="t('customer.checkout.attachmentsTitle')"
-              >
-                <!-- 大图区 -->
-                <div class="relative rounded-lg border bg-card overflow-hidden shadow-sm">
-                  <!-- 单张大图 -->
-                  <div class="relative aspect-[4/3] sm:aspect-[16/10] bg-muted">
-                    <TransitionGroup name="att-fade" tag="div" class="absolute inset-0">
-                      <div
-                        v-for="(it, idx) in attachments.items.value"
-                        v-show="idx === activeIdx"
-                        :key="idx"
-                        class="absolute inset-0"
-                      >
-                        <img
-                          :src="it.local_url"
-                          :alt="it.caption ?? `attachment ${idx + 1}`"
-                          class="h-full w-full object-contain"
-                          loading="lazy"
-                        />
-                        <!-- 上传进度遮罩 -->
-                        <div
-                          v-if="(it.progress ?? 0) < 100 && !it.error"
-                          class="absolute inset-0 bg-black/40 flex items-center justify-center"
-                        >
-                          <div class="text-white text-xs font-medium flex items-center gap-1.5">
-                            <Loader2 class="h-3.5 w-3.5 animate-spin" />
-                            {{ it.progress ?? 0 }}%
-                          </div>
-                        </div>
-                        <!-- 错误遮罩 -->
-                        <div
-                          v-if="it.error"
-                          class="absolute inset-0 bg-destructive/85 flex items-center justify-center p-3"
-                        >
-                          <p class="text-white text-[11px] text-center leading-tight">
-                            {{ it.error }}
-                          </p>
-                        </div>
-                      </div>
-                    </TransitionGroup>
-                    <!-- 移除按钮（作用于当前选中图） -->
-                    <button
-                      type="button"
-                      class="absolute top-1.5 right-1.5 h-7 w-7 rounded-full bg-black/70 hover:bg-destructive text-white flex items-center justify-center transition shadow-md"
-                      :title="t('customer.checkout.attachmentsRemove')"
-                      @click="attachments.remove(activeIdx)"
-                    >
-                      <X class="h-3.5 w-3.5" />
-                    </button>
-                    <!-- 左右按钮：单图时隐藏 -->
-                    <template v-if="attachments.items.value.length > 1">
-                      <button
-                        type="button"
-                        class="absolute top-1/2 left-1.5 -translate-y-1/2 h-7 w-7 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center transition shadow-md backdrop-blur"
-                        :aria-label="t('customer.checkout.attachmentsPrev')"
-                        @click="goPrev"
-                      >
-                        <ChevronLeft class="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        class="absolute top-1/2 right-1.5 -translate-y-1/2 h-7 w-7 rounded-full bg-black/60 hover:bg-black/85 text-white flex items-center justify-center transition shadow-md backdrop-blur"
-                        :aria-label="t('customer.checkout.attachmentsNext')"
-                        @click="goNext"
-                      >
-                        <ChevronRight class="h-4 w-4" />
-                      </button>
-                      <!-- 计数 chip -->
-                      <span class="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-black/70 text-white text-[10px] font-medium tabular-nums backdrop-blur">
-                        {{ activeIdx + 1 }} / {{ attachments.items.value.length }}
-                      </span>
-                    </template>
-                  </div>
-                  <!-- 文件信息条 -->
-                  <div class="px-2.5 py-1.5 border-t bg-muted/30 flex items-center justify-between gap-2">
-                    <p class="text-[10px] text-muted-foreground truncate font-mono tabular-nums">
-                      {{
-                        (attachments.items.value[activeIdx]?.mime ?? '')
-                          .replace('image/', '')
-                          .toUpperCase()
-                      }}
-                      ·
-                      {{ fmtSize(attachments.items.value[activeIdx]?.size_bytes ?? 0) }}
-                    </p>
-                    <p
-                      v-if="attachments.items.value[activeIdx]?.error"
-                      class="text-[10px] text-destructive truncate"
-                    >
-                      {{ attachments.items.value[activeIdx]?.error }}
-                    </p>
-                  </div>
-                </div>
-
-                <!-- Thumbnail 横排：叠放效果, 点击切换 -->
-                <ul class="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 snap-x">
-                  <li
-                    v-for="(it, idx) in attachments.items.value"
-                    :key="idx"
-                    class="shrink-0 snap-start"
+                <button
+                  type="button"
+                  class="relative h-16 w-16 sm:h-20 sm:w-20 rounded-md overflow-hidden border-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :class="idx === activeIdx
+                    ? 'border-primary shadow-md shadow-primary/20 ring-2 ring-primary/30'
+                    : 'border-border/60 hover:border-primary/50 opacity-70 hover:opacity-100'"
+                  :title="`#${idx + 1}`"
+                  @click="selectAtt(idx)"
+                >
+                  <img
+                    :src="it.local_url"
+                    :alt="`thumbnail ${idx + 1}`"
+                    class="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <span
+                    v-if="it.error"
+                    class="absolute inset-0 bg-destructive/70 flex items-center justify-center"
                   >
-                    <button
-                      type="button"
-                      class="relative h-16 w-16 sm:h-20 sm:w-20 rounded-md overflow-hidden border-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                      :class="idx === activeIdx
-                        ? 'border-primary shadow-md shadow-primary/20 ring-2 ring-primary/30'
-                        : 'border-border/60 hover:border-primary/50 opacity-70 hover:opacity-100'"
-                      :title="`#${idx + 1}`"
-                      @click="selectAtt(idx)"
-                    >
-                      <img
-                        :src="it.local_url"
-                        :alt="`thumbnail ${idx + 1}`"
-                        class="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                      <!-- 错误标记 -->
-                      <span
-                        v-if="it.error"
-                        class="absolute inset-0 bg-destructive/70 flex items-center justify-center"
-                      >
-                        <AlertCircle class="h-3.5 w-3.5 text-white" />
-                      </span>
-                      <!-- 上传中标记 -->
-                      <span
-                        v-else-if="(it.progress ?? 0) < 100"
-                        class="absolute inset-0 bg-black/40 flex items-center justify-center"
-                      >
-                        <Loader2 class="h-3.5 w-3.5 text-white animate-spin" />
-                      </span>
-                      <!-- 索引标签 -->
-                      <span
-                        class="absolute top-0.5 left-0.5 h-4 min-w-4 px-1 rounded-full bg-black/70 text-white text-[9px] font-bold tabular-nums flex items-center justify-center"
-                      >
-                        {{ idx + 1 }}
-                      </span>
-                    </button>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+                    <AlertCircle class="h-3.5 w-3.5 text-white" />
+                  </span>
+                  <span
+                    v-else-if="(it.progress ?? 0) < 100"
+                    class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                  >
+                    <Loader2 class="h-3.5 w-3.5 text-white animate-spin" />
+                  </span>
+                  <span
+                    class="absolute top-0.5 left-0.5 h-4 min-w-4 px-1 rounded-full bg-black/70 text-white text-[9px] font-bold tabular-nums flex items-center justify-center"
+                  >
+                    {{ idx + 1 }}
+                  </span>
+                </button>
+              </li>
+            </ul>
+          </div>
 
-        <!-- 文本备注：放在附件下方，作为补充说明 -->
-        <Card>
-          <CardContent class="p-0">
-            <div class="px-4 sm:px-5 py-2.5 flex items-center gap-2 border-b bg-muted/30">
-              <MessageSquare class="h-3.5 w-3.5 text-primary" />
-              <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
+          <!-- 文本备注：作为附件下方的"补充说明"内嵌在同一 section -->
+          <div class="mt-4 pt-4 border-t border-dashed">
+            <div class="flex items-center gap-2 mb-2">
+              <MessageSquare class="h-3.5 w-3.5 text-muted-foreground" />
+              <Label for="remark" class="text-xs font-medium text-muted-foreground">
                 {{ t('customer.checkout.remark') }}
-              </h2>
+              </Label>
               <span
                 v-if="remark.length > 0"
                 class="ml-auto text-[10px] text-muted-foreground tabular-nums"
@@ -831,72 +861,75 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                 {{ remark.length }}
               </span>
             </div>
-            <div class="p-3 sm:p-4">
-              <Label for="remark" class="sr-only">
-                {{ t('customer.checkout.remark') }}
-              </Label>
-              <Textarea
-                id="remark"
-                v-model="remark"
-                :placeholder="t('customer.checkout.remarkPh')"
-                class="min-h-20 resize-none text-sm"
-              />
-            </div>
-          </CardContent>
-        </Card>
+            <Textarea
+              id="remark"
+              v-model="remark"
+              :placeholder="t('customer.checkout.remarkPh')"
+              class="min-h-20 resize-none text-sm bg-background"
+            />
+          </div>
+        </section>
 
-        <!-- 错误条 -->
+        <!-- 错误条（贴近 section 下方） -->
         <div
           v-if="errMsg"
-          class="flex gap-2.5 border border-destructive/30 bg-destructive/5 text-destructive rounded-lg p-2.5 text-xs"
+          class="mx-5 sm:mx-6 my-5 flex gap-2.5 border border-destructive/30 bg-destructive/5 text-destructive rounded-lg p-2.5 text-xs"
         >
           <AlertCircle class="h-4 w-4 shrink-0 mt-0.5" />
           <p class="leading-relaxed">{{ errMsg }}</p>
         </div>
-      </div>
+      </CardContent>
+    </Card>
 
-      <!-- 右侧：订单汇总（桌面 sticky，移动端底部固定） -->
-      <aside class="lg:sticky lg:top-3 lg:self-start">
-        <!-- 桌面摘要卡 -->
-        <Card class="hidden lg:block">
-          <CardContent class="p-0">
-            <div class="px-4 py-3 border-b bg-gradient-to-br from-primary/5 to-transparent">
-              <div class="flex items-center gap-2 mb-0.5">
+    <!-- ============ 右侧：结算面板（桌面） ============ -->
+    <aside class="lg:sticky lg:top-4 lg:self-start space-y-3">
+      <Card class="overflow-hidden">
+        <CardContent class="p-0">
+          <!-- header：与小卡片保持同语言 -->
+          <div class="px-5 py-3.5 border-b bg-gradient-to-br from-primary/[0.06] via-primary/[0.02] to-transparent">
+            <div class="flex items-center gap-2">
+              <div class="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
                 <Receipt class="h-3.5 w-3.5 text-primary" />
-                <h2 class="font-semibold text-xs uppercase tracking-wider text-foreground">
+              </div>
+              <div class="min-w-0">
+                <p class="text-sm font-semibold leading-tight">
                   {{ t('customer.checkout.summaryTitle') }}
-                </h2>
-              </div>
-              <p class="text-[10px] text-muted-foreground leading-relaxed">
-                {{ t('customer.checkout.summarySubtitle') }}
-              </p>
-            </div>
-
-            <div class="p-4 space-y-2 text-xs">
-              <div class="flex justify-between">
-                <span class="text-muted-foreground">{{ t('customer.checkout.totalBoxes') }}</span>
-                <span class="font-semibold tabular-nums">{{ totalBoxes }} ящ.</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-muted-foreground">{{ t('customer.checkout.totalM2') }}</span>
-                <span class="font-semibold tabular-nums">{{ fmtM2(totalM2) }}</span>
-              </div>
-              <div class="border-t pt-2 flex justify-between items-baseline">
-                <span class="text-muted-foreground text-[10px]">
-                  {{ t('customer.checkout.totalAmount') }}
-                </span>
-                <Badge variant="secondary" class="text-[9px]">
-                  {{ t('customer.checkout.pendingAmount') }}
-                </Badge>
+                </p>
+                <p class="text-[10px] text-muted-foreground leading-snug">
+                  {{ t('customer.checkout.summarySubtitle') }}
+                </p>
               </div>
             </div>
+          </div>
 
-            <!-- 代客模式下，显示选中的父客户以便核对 -->
+          <!-- 数据汇总 -->
+          <div class="px-5 py-4 space-y-2 text-xs">
+            <div class="flex justify-between items-baseline">
+              <span class="text-muted-foreground">{{ t('customer.checkout.totalBoxes') }}</span>
+              <span class="font-semibold tabular-nums text-sm">{{ totalBoxes }} ящ.</span>
+            </div>
+            <div class="flex justify-between items-baseline">
+              <span class="text-muted-foreground">{{ t('customer.checkout.totalM2') }}</span>
+              <span class="font-semibold tabular-nums text-sm">{{ fmtM2(totalM2) }}</span>
+            </div>
+            <div class="border-t pt-2.5 mt-2 flex justify-between items-baseline">
+              <span class="text-muted-foreground text-[10px]">
+                {{ t('customer.checkout.totalAmount') }}
+              </span>
+              <Badge variant="secondary" class="text-[9px]">
+                {{ t('customer.checkout.pendingAmount') }}
+              </Badge>
+            </div>
+          </div>
+
+          <!-- 选中状态：代客父客户 + 收货子账号（共享同一块视觉区域） -->
+          <div v-if="isOnBehalf || selectedSub" class="px-5 pb-4 space-y-2">
+            <!-- 代客父客户 -->
             <div
               v-if="isOnBehalf && selectedParent"
-              class="mx-4 mb-2 rounded-md border bg-amber-50 border-amber-200 p-2"
+              class="rounded-md border bg-amber-50 border-amber-200/80 p-2.5"
             >
-              <p class="text-[9px] uppercase tracking-wider text-amber-700 mb-0.5">
+              <p class="text-[9px] uppercase tracking-wider text-amber-700 mb-1 font-semibold">
                 代客下单 · 父客户
               </p>
               <p class="font-mono text-xs font-semibold text-amber-900 truncate">
@@ -904,12 +937,12 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
               </p>
             </div>
 
-            <!-- 选中的子账号 -->
+            <!-- 收货子账号 -->
             <div
               v-if="selectedSub"
-              class="mx-4 mb-3 rounded-md border bg-muted/30 p-2"
+              class="rounded-md border bg-muted/40 p-2.5"
             >
-              <p class="text-[9px] uppercase tracking-wider text-muted-foreground mb-0.5">
+              <p class="text-[9px] uppercase tracking-wider text-muted-foreground mb-1 font-semibold">
                 {{ t('customer.checkout.subAccountLabel') }}
               </p>
               <div class="flex items-center gap-1.5">
@@ -923,72 +956,86 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
               </div>
             </div>
 
-            <div class="p-4 pt-0 space-y-1.5">
-              <Button
-                class="w-full h-10 text-sm font-semibold shadow-md shadow-primary/20"
-                size="lg"
-                :disabled="!canSubmit || submitting"
-                @click="onSubmit"
-              >
-                <Loader2 v-if="submitting" class="mr-1.5 h-4 w-4 animate-spin" />
-                <CheckCircle2 v-else class="mr-1.5 h-4 w-4" />
-                {{
-                  submitting
-                    ? t('customer.checkout.submitting')
-                    : t('customer.checkout.submit')
-                }}
-              </Button>
-              <p class="text-[10px] text-muted-foreground text-center leading-relaxed">
-                {{ t('customer.checkout.submitHint') }}
-              </p>
+            <!-- 提示：父客户 / 子账号未选 -->
+            <div
+              v-if="isOnBehalf && !selectedParent"
+              class="rounded-md border border-dashed bg-muted/30 p-2.5 text-[11px] text-muted-foreground"
+            >
+              请先在上方选择父客户
             </div>
-          </CardContent>
-        </Card>
+            <div
+              v-else-if="!selectedSub"
+              class="rounded-md border border-dashed bg-muted/30 p-2.5 text-[11px] text-muted-foreground"
+            >
+              请在上方选择收货子账号
+            </div>
+          </div>
 
-        <!-- 移动端底部固定摘要条 -->
-        <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t shadow-lg">
-          <div class="px-3 py-2.5 flex items-center gap-2.5">
-            <div class="flex-1 min-w-0">
-              <p class="text-[9px] uppercase tracking-wider text-muted-foreground">
-                {{ t('customer.checkout.totalBoxes') }} · {{ t('customer.checkout.totalM2') }}
-              </p>
-              <p class="font-bold text-xs tabular-nums truncate">
-                {{ totalBoxes }} ящ. · {{ fmtM2(totalM2) }}
-              </p>
-              <p
-                v-if="isOnBehalf && selectedParent"
-                class="text-[10px] text-amber-700 truncate font-mono"
-              >
-                代客 → {{ selectedParent.account_name }}
-              </p>
-              <p
-                v-if="selectedSub"
-                class="text-[10px] text-muted-foreground truncate font-mono"
-              >
-                → {{ selectedSub.account_name }}
-              </p>
-            </div>
+          <!-- 提交按钮 -->
+          <div class="px-5 pb-5">
             <Button
-              class="h-10 px-4 shadow-md shadow-primary/20"
+              class="w-full h-11 text-sm font-semibold shadow-md shadow-primary/20"
               size="lg"
               :disabled="!canSubmit || submitting"
               @click="onSubmit"
             >
-              <Loader2 v-if="submitting" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              <CheckCircle2 v-else class="mr-1.5 h-3.5 w-3.5" />
+              <Loader2 v-if="submitting" class="mr-1.5 h-4 w-4 animate-spin" />
+              <CheckCircle2 v-else class="mr-1.5 h-4 w-4" />
               {{
                 submitting
                   ? t('customer.checkout.submitting')
                   : t('customer.checkout.submit')
               }}
             </Button>
+            <p class="text-[10px] text-muted-foreground text-center leading-relaxed mt-1.5">
+              {{ t('customer.checkout.submitHint') }}
+            </p>
           </div>
+        </CardContent>
+      </Card>
+    </aside>
+
+    <!-- ============ 移动端底部固定摘要条 ============ -->
+    <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div class="px-3 py-2.5 flex items-center gap-2.5">
+        <div class="flex-1 min-w-0">
+          <p class="text-[9px] uppercase tracking-wider text-muted-foreground">
+            {{ t('customer.checkout.totalBoxes') }} · {{ t('customer.checkout.totalM2') }}
+          </p>
+          <p class="font-bold text-xs tabular-nums truncate">
+            {{ totalBoxes }} ящ. · {{ fmtM2(totalM2) }}
+          </p>
+          <p
+            v-if="isOnBehalf && selectedParent"
+            class="text-[10px] text-amber-700 truncate font-mono"
+          >
+            代客 → {{ selectedParent.account_name }}
+          </p>
+          <p
+            v-if="selectedSub"
+            class="text-[10px] text-muted-foreground truncate font-mono"
+          >
+            → {{ selectedSub.account_name }}
+          </p>
         </div>
-      </aside>
+        <Button
+          class="h-10 px-4 shadow-md shadow-primary/20"
+          size="lg"
+          :disabled="!canSubmit || submitting"
+          @click="onSubmit"
+        >
+          <Loader2 v-if="submitting" class="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          <CheckCircle2 v-else class="mr-1.5 h-3.5 w-3.5" />
+          {{
+            submitting
+              ? t('customer.checkout.submitting')
+              : t('customer.checkout.submit')
+          }}
+        </Button>
+      </div>
     </div>
   </div>
 </template>
-
 <style scoped>
 /* 附件 carousel 切换动画 */
 .att-fade-enter-active,
