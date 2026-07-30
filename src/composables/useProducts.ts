@@ -5,6 +5,8 @@
  *   - 同一页面多次进入 / 页面间共享时，数据只从 Supabase 拉取一次，
  *     后续直接使用缓存，避免重复骨架屏闪烁。
  *   - fetched 标记记录"是否已从后端拉取过"；骨架屏只在 !fetched 时显示。
+ *
+ * allProductsWithColors 也在模块级：避免组件重新 mount 时数据丢失。
  */
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
@@ -44,12 +46,14 @@ export interface ProductWithColors {
 }
 
 export function useProducts() {
-  // Module-level singleton state — shared across all useProducts() calls
-  const items = ref<Product[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
-  /** True after first successful fetch; used to suppress skeleton on revisit */
-  const fetched = ref(false)
+// Module-level singleton state — shared across all useProducts() calls
+const items = ref<Product[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+/** True after first successful fetch; used to suppress skeleton on revisit */
+const fetched = ref(false)
+/** ProductWithColors view cache — survives component re-mount */
+const allProductsWithColors = ref<ProductWithColors[]>([])
 
   const fetchAll = async () => {
     loading.value = true
@@ -224,13 +228,16 @@ export function useProducts() {
 
   /** 商品页用：拉取所有商品 + 色号（一次性 view 查询） */
   const fetchAllWithColors = async (): Promise<ProductWithColors[]> => {
+    if (fetched.value && allProductsWithColors.value.length > 0) {
+      return allProductsWithColors.value
+    }
     const { data, error: e } = await supabase
       .from('v_products_with_colors')
       .select('*')
     if (e) { error.value = e.message; throw e }
-    items.value = (data ?? []) as unknown as Product[]
+    allProductsWithColors.value = (data ?? []) as unknown as ProductWithColors[]
     fetched.value = true
-    return (data ?? []) as unknown as ProductWithColors[]
+    return allProductsWithColors.value
   }
 
   /**
@@ -299,6 +306,7 @@ export function useProducts() {
     loading,
     error,
     fetched,
+    allProductsWithColors,
     fetchAll,
     fetchAllWithColors,
     bulkUpsert,

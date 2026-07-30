@@ -37,7 +37,7 @@ void router
       :name="transitionName"
       :duration="{ enter: 240, leave: 0 }"
     >
-      <component :is="Component" :key="router.resolve(r).fullPath" />
+      <component :is="Component" :key="r.name ?? r.path" />
     </Transition>
   </RouterView>
 </template>

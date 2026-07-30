@@ -33,13 +33,11 @@ const productsApi = useProducts()
 const cart = useCart()
 const { isAdmin } = useAuth()
 
-const allProducts = ref<ProductWithColors[]>([])
-
 const refresh = async () => {
   // admin 视角：直接拉全部商品
   if (isAdmin.value) {
-    allProducts.value = await productsApi.fetchAllWithColors()
-    ap.items.value = allProducts.value.map((p) => ({
+    const data = await productsApi.fetchAllWithColors()
+    ap.items.value = data.map((p) => ({
       account_id: '',
       product_id: p.product_id,
       is_visible: true,
@@ -65,7 +63,6 @@ const refresh = async () => {
   const myGroups = (groups ?? []).map((r: any) => r.customer_group)
   if (myGroups.length === 0) {
     ap.items.value = []
-    allProducts.value = []
     return
   }
   // 2. 拉这些组的所有 product
@@ -73,11 +70,11 @@ const refresh = async () => {
     .from('products')
     .select('*')
     .in('stock_group', myGroups)
-  // 3. 拉全量带色号（view）
-  allProducts.value = await productsApi.fetchAllWithColors()
+  // 3. 拉全量带色号（view，模块级缓存）
+  const data = await productsApi.fetchAllWithColors()
   // 4. 把可白名单的产品按 AccountProductRow 装（合成）
   const allowedIds = new Set((prods ?? []).map((p: any) => p.id))
-  const allowedFull = allProducts.value.filter((p) => allowedIds.has(p.product_id))
+  const allowedFull = data.filter((p) => allowedIds.has(p.product_id))
   ap.items.value = allowedFull.map((p) => ({
     account_id: '',
     product_id: p.product_id,
@@ -95,7 +92,10 @@ const refresh = async () => {
   }))
 }
 
-onMounted(refresh)
+onMounted(async () => {
+  if (productsApi.fetched.value && ap.items.value.length > 0) return
+  await refresh()
+})
 
 // 三级状态
 const view = ref<'categories' | 'models' | 'colors'>('categories')
@@ -109,7 +109,7 @@ const categoriesWithCount = computed(() => {
   type Agg = { models: number; boxes: number; colors: number }
   const map = new Map<string, Agg>()
   const fullMap = new Map<string, ProductWithColors>()
-  for (const p of allProducts.value) fullMap.set(p.product_id, p)
+  for (const p of productsApi.allProductsWithColors.value) fullMap.set(p.product_id, p)
   for (const row of ap.items.value) {
     if (!row.product) continue
     const cat = row.product.category
@@ -155,7 +155,7 @@ const modelsInCategory = computed(() => {
     apMap.set(row.product.id, row.stock_level_1 + row.stock_level_2)
   }
   const q = search.value.trim().toLowerCase()
-  return allProducts.value
+  return productsApi.allProductsWithColors.value
     .filter((p) => p.category === selectedCategory.value && apMap.has(p.product_id))
     .filter((p) => {
       if (!q) return true
@@ -234,7 +234,7 @@ const totalBoxes = computed(() =>
 )
 const totalColors = computed(() => {
   const fullMap = new Map<string, ProductWithColors>()
-  for (const p of allProducts.value) fullMap.set(p.product_id, p)
+  for (const p of productsApi.allProductsWithColors.value) fullMap.set(p.product_id, p)
   const set = new Set<string>()
   for (const row of ap.items.value) {
     if (!row.product) continue
@@ -281,7 +281,7 @@ const onLineQty = (item: { product_id: string; model: string; conversion_rate: n
 // 详情面板里调整数量时需找到该商品对应色号的库存上限。
 // （product_id 在购物车里只有 1 个聚合条目，按 totalBoxes 限制）
 const stockFor = (productId: string) => {
-  const full = allProducts.value.find((p) => p.product_id === productId)
+  const full = productsApi.allProductsWithColors.value.find((p) => p.product_id === productId)
   return full ? full.total_boxes_level1 + full.total_boxes_level2 : 0
 }
 
@@ -408,15 +408,15 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
       <!-- 智能空状态：区分"全库空" vs "白名单空" vs "分类未映射" -->
       <div v-if="categoriesWithCount.length === 0" class="space-y-3 py-10">
         <!-- admin：库里压根没商品 -->
-        <div v-if="isAdmin && allProducts.length === 0"
+        <div v-if="isAdmin && productsApi.allProductsWithColors.value.length === 0"
           class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
           <p class="font-medium text-foreground">{{ t('customer.catalog.emptyNoProducts') }}</p>
           <p class="mt-1"><span v-html="t('customer.catalog.emptyNoProductsHint', { path: '/admin/import' })"></span></p>
         </div>
         <!-- admin：有商品 → admin 视角下理论上能看到全部 -->
-        <div v-else-if="isAdmin && allProducts.length > 0"
+        <div v-else-if="isAdmin && productsApi.allProductsWithColors.value.length > 0"
           class="text-center text-sm text-amber-800 border border-amber-200 bg-amber-50 rounded-lg p-6">
-          <p class="font-medium">⚠ {{ t('customer.catalog.emptyAdminVisible', { n: allProducts.length }) }}</p>
+          <p class="font-medium">⚠ {{ t('customer.catalog.emptyAdminVisible', { n: productsApi.allProductsWithColors.value.length }) }}</p>
           <p class="mt-1 text-xs"><span v-html="t('customer.catalog.emptyAdminHint')"></span></p>
         </div>
         <!-- 客户：白名单为空 -->

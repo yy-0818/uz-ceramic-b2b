@@ -80,6 +80,13 @@ const subsLoaded = ref(false)
 const parentAccountId = computed(() => account.value?.parent_id ?? account.value?.id ?? null)
 
 const loadSubs = async (parentId: string) => {
+  if (accs.items.value.some((s) => s.parent_id === parentId)) {
+    subs.value = accs.items.value.filter((s) => s.parent_id === parentId)
+    const main = subs.value.find((s) => s.is_main)
+    subId.value = main?.id ?? subs.value[0]?.id ?? ''
+    subsLoaded.value = true
+    return
+  }
   loadingSubs.value = true
   try {
     subs.value = await accs.fetchSubAccounts(parentId)

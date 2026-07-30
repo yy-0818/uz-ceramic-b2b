@@ -50,7 +50,10 @@ const refresh = async () => {
   ledger.value = finance.entries.value
 }
 
-onMounted(refresh)
+onMounted(async () => {
+  if (ordersApi.fetched.value && ordersApi.items.value.length > 0) return
+  await refresh()
+})
 
 const fmt = (n: number) =>
   new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' UZS'
