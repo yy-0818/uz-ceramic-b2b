@@ -13,7 +13,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
 import {
-  Loader2, Plus, RefreshCw, Search, ChevronRight, ChevronDown,
+  Loader2, Plus, RefreshCw, Search, ChevronLeft, ChevronRight, ChevronDown,
   Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
   MoreHorizontal, Folder, Check, Mail, KeyRound, Copy,
   Database, CheckCircle2, Eye, EyeOff, ArrowLeft,
@@ -201,7 +201,19 @@ const pagedParents = computed(() => {
   return filteredParents.value.slice(start, start + PAGE_SIZE)
 })
 
+// 折叠模式中间页码：始终显示 page ± 1 + 边界
+const pageRangeCollapsed = computed(() => {
+  const p = page.value
+  const total = totalPages.value
+  const start = Math.max(2, p - 1)
+  const end = Math.min(total - 1, p + 1)
+  const out: number[] = []
+  for (let i = start; i <= end; i++) out.push(i)
+  return out
+})
+
 watch([search, typeFilter, statusFilter], () => { page.value = 1 })
+watch(filteredParents, () => { page.value = 1 })
 
 const summary = computed(() => {
   const totalSubs = Object.values(subsByParent.value).reduce((s, arr) => s + arr.length, 0)
@@ -824,6 +836,104 @@ const goBack = () => {
           </div>
         </div>
       </Card>
+    </div>
+
+    <!-- ============ 分页 ============ -->
+    <div
+      v-if="filteredParents.length > PAGE_SIZE"
+      class="flex flex-col sm:flex-row items-center justify-between gap-3 px-1"
+    >
+      <p class="text-xs text-muted-foreground tabular-nums">
+        第 <span class="font-medium text-foreground">{{ page }}</span> /
+        <span class="font-medium text-foreground">{{ totalPages }}</span> 页
+        · 共 <span class="font-medium text-foreground">{{ filteredParents.length }}</span> 个父账号
+        · 每页 {{ PAGE_SIZE }}
+      </p>
+      <div class="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="page === 1"
+          class="h-8 px-2"
+          @click="page = 1"
+        >
+          «
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="page === 1"
+          class="h-8 px-2"
+          @click="page = Math.max(1, page - 1)"
+          :title="t('common.prevPage') || '上一页'"
+        >
+          <ChevronLeft class="h-3.5 w-3.5" />
+        </Button>
+
+        <!-- 页码 chips：总页数 ≤ 7 全部展示，否则折叠 -->
+        <template v-if="totalPages <= 7">
+          <Button
+            v-for="n in totalPages"
+            :key="n"
+            size="sm"
+            :variant="page === n ? 'default' : 'outline'"
+            class="h-8 min-w-8 px-2 tabular-nums"
+            @click="page = n"
+          >
+            {{ n }}
+          </Button>
+        </template>
+        <template v-else>
+          <Button
+            size="sm"
+            :variant="page === 1 ? 'default' : 'outline'"
+            class="h-8 min-w-8 px-2 tabular-nums"
+            @click="page = 1"
+          >
+            1
+          </Button>
+          <span v-if="page > 3" class="px-1 text-xs text-muted-foreground">…</span>
+          <Button
+            v-for="n in pageRangeCollapsed"
+            :key="`mid-${n}`"
+            size="sm"
+            :variant="page === n ? 'default' : 'outline'"
+            class="h-8 min-w-8 px-2 tabular-nums"
+            @click="page = n"
+          >
+            {{ n }}
+          </Button>
+          <span v-if="page < totalPages - 2" class="px-1 text-xs text-muted-foreground">…</span>
+          <Button
+            size="sm"
+            :variant="page === totalPages ? 'default' : 'outline'"
+            class="h-8 min-w-8 px-2 tabular-nums"
+            @click="page = totalPages"
+          >
+            {{ totalPages }}
+          </Button>
+        </template>
+
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="page === totalPages"
+          class="h-8 px-2"
+          @click="page = Math.min(totalPages, page + 1)"
+          :title="t('common.nextPage') || '下一页'"
+        >
+          <ChevronRight class="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          :disabled="page === totalPages"
+          class="h-8 px-2"
+          @click="page = totalPages"
+        >
+          »
+        </Button>
+      </div>
     </div>
 
     <!-- ============ 拆出的对话框 ============ -->
