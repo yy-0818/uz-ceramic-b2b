@@ -179,6 +179,7 @@ export interface Database {
           unit_price: number | null
           line_total: number
           stock_level: 1 | 2
+          color_code: string | null
           remark: string | null
           created_at: string
           updated_at: string
@@ -189,6 +190,7 @@ export interface Database {
           boxes: number
           m2_per_box: number
           stock_level?: 1 | 2
+          color_code?: string | null
           unit_price?: number | null
           remark?: string | null
         }

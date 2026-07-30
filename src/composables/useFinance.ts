@@ -30,6 +30,14 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const fetched = ref(false)
 
+/** 清除所有缓存（切换账号时调用） */
+export function resetFinance() {
+  entries.value = []
+  loading.value = false
+  error.value = null
+  fetched.value = false
+}
+
 export function useFinance() {
 
   /** 拉某订单的流水 */
@@ -87,5 +95,5 @@ export function useFinance() {
       .filter((x) => x.order_id === orderId)
       .reduce((s, x) => s + (x.direction === 'credit' ? x.amount : -x.amount), 0)
 
-  return { entries, loading, error, fetched, fetchByOrder, fetchByAccount, record, netAmount }
+  return { entries, loading, error, fetched, fetchByOrder, fetchByAccount, record, netAmount, $reset: resetFinance }
 }

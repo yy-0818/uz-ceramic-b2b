@@ -6,6 +6,25 @@ import { ref, computed, onMounted, onUnmounted, type Ref, type ComputedRef } fro
 import type { Session, User as AuthUser, Subscription } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import type { AccountType, UserRole } from '@/types/database'
+import { resetOrders } from './useOrders'
+import { resetProducts } from './useProducts'
+import { resetAccountProducts } from './useAccountProducts'
+import { resetAccounts } from './useAccounts'
+import { resetFinance } from './useFinance'
+import { resetCart } from './useCart'
+
+/**
+ * 切换账号时，清空所有 composable 模块级单例缓存。
+ * 在 signOut() 中调用（reload 后模块状态本来就是干净的，无需在 onAuthStateChange 里重复清理）。
+ */
+function clearAllCaches() {
+  resetOrders()
+  resetProducts()
+  resetAccountProducts()
+  resetAccounts()
+  resetFinance()
+  resetCart()
+}
 
 export interface Account {
   id: string
@@ -158,6 +177,7 @@ export function useAuth() {
   }
 
   const signOut = async () => {
+    clearAllCaches()
     await supabase.auth.signOut()
     appUser.value = null
     account.value = null

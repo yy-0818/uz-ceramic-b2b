@@ -22,7 +22,7 @@ import ModelCardSkeleton from '@/components/ui/ModelCardSkeleton.vue'
 
 import { useAccountProducts } from '@/composables/useAccountProducts'
 import { useProducts, type ProductWithColors } from '@/composables/useProducts'
-import { useCart } from '@/composables/useCart'
+import { useCart, type CartItem } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { supabase } from '@/lib/supabase'
 
@@ -32,12 +32,15 @@ const ap = useAccountProducts()
 const productsApi = useProducts()
 const cart = useCart()
 const { isAdmin } = useAuth()
+type CartRow = CartItem
+
+const allProducts = ref<ProductWithColors[]>([])
 
 const refresh = async () => {
   // admin 视角：直接拉全部商品
   if (isAdmin.value) {
-    const data = await productsApi.fetchAllWithColors()
-    ap.items.value = data.map((p) => ({
+    allProducts.value = await productsApi.fetchAllWithColors()
+    ap.items.value = allProducts.value.map((p) => ({
       account_id: '',
       product_id: p.product_id,
       is_visible: true,
@@ -63,6 +66,7 @@ const refresh = async () => {
   const myGroups = (groups ?? []).map((r: any) => r.customer_group)
   if (myGroups.length === 0) {
     ap.items.value = []
+    allProducts.value = []
     return
   }
   // 2. 拉这些组的所有 product
@@ -70,11 +74,11 @@ const refresh = async () => {
     .from('products')
     .select('*')
     .in('stock_group', myGroups)
-  // 3. 拉全量带色号（view，模块级缓存）
-  const data = await productsApi.fetchAllWithColors()
+  // 3. 拉全量带色号（view）
+  allProducts.value = await productsApi.fetchAllWithColors()
   // 4. 把可白名单的产品按 AccountProductRow 装（合成）
   const allowedIds = new Set((prods ?? []).map((p: any) => p.id))
-  const allowedFull = data.filter((p) => allowedIds.has(p.product_id))
+  const allowedFull = allProducts.value.filter((p) => allowedIds.has(p.product_id))
   ap.items.value = allowedFull.map((p) => ({
     account_id: '',
     product_id: p.product_id,
@@ -92,10 +96,7 @@ const refresh = async () => {
   }))
 }
 
-onMounted(async () => {
-  if (productsApi.fetched.value && ap.items.value.length > 0) return
-  await refresh()
-})
+onMounted(refresh)
 
 // 三级状态
 const view = ref<'categories' | 'models' | 'colors'>('categories')
@@ -109,7 +110,7 @@ const categoriesWithCount = computed(() => {
   type Agg = { models: number; boxes: number; colors: number }
   const map = new Map<string, Agg>()
   const fullMap = new Map<string, ProductWithColors>()
-  for (const p of productsApi.allProductsWithColors.value) fullMap.set(p.product_id, p)
+  for (const p of allProducts.value) fullMap.set(p.product_id, p)
   for (const row of ap.items.value) {
     if (!row.product) continue
     const cat = row.product.category
@@ -155,7 +156,7 @@ const modelsInCategory = computed(() => {
     apMap.set(row.product.id, row.stock_level_1 + row.stock_level_2)
   }
   const q = search.value.trim().toLowerCase()
-  return productsApi.allProductsWithColors.value
+  return allProducts.value
     .filter((p) => p.category === selectedCategory.value && apMap.has(p.product_id))
     .filter((p) => {
       if (!q) return true
@@ -214,13 +215,6 @@ const goCheckout = async () => {
   router.push('/checkout')
 }
 
-const onQty = (productId: string, model: string, conversionRate: number, delta: number) => {
-  const cur = cart.qtyOf(productId)
-  const next = Math.max(0, cur + delta)
-  if (next === 0) cart.remove(productId)
-  else cart.setQty(productId, model, conversionRate, next)
-}
-
 const fmtM2 = (n: number) => `${n.toFixed(2)} м²`
 const cartTotalBoxes = computed(() => cart.totalBoxes())
 const cartTotalM2 = computed(() => cart.totalM2())
@@ -234,7 +228,7 @@ const totalBoxes = computed(() =>
 )
 const totalColors = computed(() => {
   const fullMap = new Map<string, ProductWithColors>()
-  for (const p of productsApi.allProductsWithColors.value) fullMap.set(p.product_id, p)
+  for (const p of allProducts.value) fullMap.set(p.product_id, p)
   const set = new Set<string>()
   for (const row of ap.items.value) {
     if (!row.product) continue
@@ -256,7 +250,8 @@ watch(cartItemsCount, (n) => {
 watch(cartDetailOpen, (open) => {
   if (open) return
   for (const item of cart.items.value) {
-    if (lineDrafts.has(item.product_id)) commitDraft(item)
+    const k = cart.keyOf(item)
+    if (lineDrafts.has(k)) commitLineDraft(item)
   }
 })
 
@@ -266,79 +261,117 @@ watch(cartDetailOpen, (open) => {
 watch(
   () => selectedModel.value?.product_id,
   (id, prev) => {
-    if (prev && lineDrafts.has(prev)) clearDraft(prev)
-    if (id && lineDrafts.has(id)) clearDraft(id)
+    if (!id && !prev) return
+    const toCheck = new Set<string>()
+    if (prev) for (const k of lineDrafts.keys()) if (k.startsWith(prev + '::')) toCheck.add(k)
+    if (id)   for (const k of lineDrafts.keys()) if (k.startsWith(id + '::'))   toCheck.add(k)
+    for (const k of toCheck) clearDraft(k)
   },
 )
 
 // 在详情面板里调整单条数量：超过该色号可用箱数则限制。
-const onLineQty = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
+const onLineQty = (item: CartRow, delta: number) => {
   const next = Math.max(0, item.boxes + delta)
-  if (next === 0) cart.remove(item.product_id)
-  else cart.setQty(item.product_id, item.model, item.conversion_rate, next)
+  if (next === 0) cart.remove(item.product_id, item.color_code, item.stock_level)
+  else cart.setQty(item.product_id, item.model, item.conversion_rate, next, item.color_code, item.stock_level)
 }
 
 // 详情面板里调整数量时需找到该商品对应色号的库存上限。
-// （product_id 在购物车里只有 1 个聚合条目，按 totalBoxes 限制）
+// （按 (product, color, level) 精确定位）
+const stockForColor = (productId: string, colorCode: string, stockLevel: 1 | 2) => {
+  const full = allProducts.value.find((p) => p.product_id === productId)
+  if (!full) return 0
+  const c = (full.colors ?? []).find((x) => x.color_code === colorCode && x.stock_level === stockLevel)
+  return c?.boxes ?? 0
+}
+
+// 聚合读：整商品的总库存（用于详情面板的 max 兜底 / 上限提示）
 const stockFor = (productId: string) => {
-  const full = productsApi.allProductsWithColors.value.find((p) => p.product_id === productId)
+  const full = allProducts.value.find((p) => p.product_id === productId)
   return full ? full.total_boxes_level1 + full.total_boxes_level2 : 0
 }
 
-// 数量输入框的本地草稿：键入时立即更新显示（不触发 setQty 抖动），
-// 只在 -/+ / Enter / blur 时一次性提交到 cart。
-// Map<product_id, string> — 没草稿的条目按真实 c.boxes 显示。
-const lineDrafts = reactive(new Map<string, string>())
-const draftOf = (id: string, fallback: number) => lineDrafts.get(id) ?? String(fallback)
-const setDraft = (id: string, value: string) => {
-  // 只接受数字字符；允许中间空串（用户正在清空重输）。
-  if (value === '' || /^\d+$/.test(value)) lineDrafts.set(id, value)
-  else lineDrafts.set(id, lineDrafts.get(id) ?? '0')
-}
-const clearDraft = (id: string) => lineDrafts.delete(id)
+/** 用 (product, color, level) 生成的草稿 key */
+type ColorKey = string
+const lineDrafts = reactive(new Map<ColorKey, string>())
+const draftKey = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
+  `${productId}::${colorCode}::${stockLevel}`
 
-// 把草稿值收敛到 [0, stock] 区间后写入 cart（0 → 移除）。
-const commitDraft = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }) => {
-  const raw = lineDrafts.get(item.product_id)
-  clearDraft(item.product_id)
+const draftOf = (productId: string, colorCode: string, stockLevel: 1 | 2, fallback: number) =>
+  lineDrafts.get(draftKey(productId, colorCode, stockLevel)) ?? String(fallback)
+
+const setDraft = (productId: string, colorCode: string, stockLevel: 1 | 2, value: string) => {
+  const k = draftKey(productId, colorCode, stockLevel)
+  if (value === '' || /^\d+$/.test(value)) lineDrafts.set(k, value)
+  else lineDrafts.set(k, lineDrafts.get(k) ?? '0')
+}
+
+const clearDraft = (k: ColorKey) => lineDrafts.delete(k)
+const clearDraftForColor = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
+  lineDrafts.delete(draftKey(productId, colorCode, stockLevel))
+
+/** 详情面板里某行（cart item）的草稿提交 */
+const commitLineDraft = (item: CartRow) => {
+  const k = draftKey(item.product_id, item.color_code, item.stock_level)
+  const raw = lineDrafts.get(k)
+  clearDraft(k)
   if (raw === undefined) return
   let n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) n = 0
-  const max = stockFor(item.product_id)
+  const max = stockForColor(item.product_id, item.color_code, item.stock_level)
   if (n > max) n = max
   if (n === item.boxes) return
-  if (n === 0) cart.remove(item.product_id)
-  else cart.setQty(item.product_id, item.model, item.conversion_rate, n)
+  if (n === 0) cart.remove(item.product_id, item.color_code, item.stock_level)
+  else cart.setQty(item.product_id, item.model, item.conversion_rate, n, item.color_code, item.stock_level)
 }
 
 // - / + 点击：先把任何未提交的草稿收敛，再调整（避免点击时草稿被无视）。
-const onLineBtn = (item: { product_id: string; model: string; conversion_rate: number; boxes: number }, delta: number) => {
-  if (lineDrafts.has(item.product_id)) commitDraft(item)
+const onLineBtn = (item: CartRow, delta: number) => {
+  const k = draftKey(item.product_id, item.color_code, item.stock_level)
+  if (lineDrafts.has(k)) commitLineDraft(item)
   onLineQty(item, delta)
 }
 
 // 模型/色号视图的草稿提交：输入上限是该色号的可用箱数（参数传入），
-// 且当前购物车值用 cart.qtyOf 读，不依赖 items 对象。
-const commitModelDraft = (productId: string, model: string, conversionRate: number, maxBoxes: number) => {
-  const raw = lineDrafts.get(productId)
-  clearDraft(productId)
+// 且当前购物车值用 cart.qtyOfColor 读，不依赖 items 对象。
+const commitModelDraft = (
+  productId: string,
+  model: string,
+  conversionRate: number,
+  colorCode: string,
+  stockLevel: 1 | 2,
+  maxBoxes: number,
+) => {
+  const k = draftKey(productId, colorCode, stockLevel)
+  const raw = lineDrafts.get(k)
+  clearDraft(k)
   if (raw === undefined) return
   let n = parseInt(raw, 10)
   if (!Number.isFinite(n) || n < 0) n = 0
   if (n > maxBoxes) n = maxBoxes
-  const cur = cart.qtyOf(productId)
+  const cur = cart.qtyOfColor(productId, colorCode, stockLevel)
   if (n === cur) return
-  if (n === 0) cart.remove(productId)
-  else cart.setQty(productId, model, conversionRate, n)
+  if (n === 0) cart.remove(productId, colorCode, stockLevel)
+  else cart.setQty(productId, model, conversionRate, n, colorCode, stockLevel)
 }
 
 // 模型视图的 -/+：先 flush 草稿，再 ±1。
-const onModelQty = (productId: string, model: string, conversionRate: number, delta: number) => {
-  if (lineDrafts.has(productId)) {
-    // 上限用 stockFor 兜底（理论上色号 stepper 上限比这更严）
-    commitModelDraft(productId, model, conversionRate, stockFor(productId))
+const onModelQty = (
+  productId: string,
+  model: string,
+  conversionRate: number,
+  colorCode: string,
+  stockLevel: 1 | 2,
+  delta: number,
+) => {
+  const k = draftKey(productId, colorCode, stockLevel)
+  if (lineDrafts.has(k)) {
+    commitModelDraft(productId, model, conversionRate, colorCode, stockLevel, stockForColor(productId, colorCode, stockLevel))
   }
-  onQty(productId, model, conversionRate, delta)
+  const cur = cart.qtyOfColor(productId, colorCode, stockLevel)
+  const next = Math.max(0, cur + delta)
+  if (next === 0) cart.remove(productId, colorCode, stockLevel)
+  else cart.setQty(productId, model, conversionRate, next, colorCode, stockLevel)
 }
 </script>
 
@@ -408,15 +441,15 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
       <!-- 智能空状态：区分"全库空" vs "白名单空" vs "分类未映射" -->
       <div v-if="categoriesWithCount.length === 0" class="space-y-3 py-10">
         <!-- admin：库里压根没商品 -->
-        <div v-if="isAdmin && productsApi.allProductsWithColors.value.length === 0"
+        <div v-if="isAdmin && allProducts.length === 0"
           class="text-center text-sm text-muted-foreground border border-dashed rounded-lg p-6">
           <p class="font-medium text-foreground">{{ t('customer.catalog.emptyNoProducts') }}</p>
           <p class="mt-1"><span v-html="t('customer.catalog.emptyNoProductsHint', { path: '/admin/import' })"></span></p>
         </div>
         <!-- admin：有商品 → admin 视角下理论上能看到全部 -->
-        <div v-else-if="isAdmin && productsApi.allProductsWithColors.value.length > 0"
+        <div v-else-if="isAdmin && allProducts.length > 0"
           class="text-center text-sm text-amber-800 border border-amber-200 bg-amber-50 rounded-lg p-6">
-          <p class="font-medium">⚠ {{ t('customer.catalog.emptyAdminVisible', { n: productsApi.allProductsWithColors.value.length }) }}</p>
+          <p class="font-medium">⚠ {{ t('customer.catalog.emptyAdminVisible', { n: allProducts.length }) }}</p>
           <p class="mt-1 text-xs"><span v-html="t('customer.catalog.emptyAdminHint')"></span></p>
         </div>
         <!-- 客户：白名单为空 -->
@@ -610,7 +643,7 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
           v-for="c in colorsInModel"
           :key="c.color_code + c.stock_level"
           class="overflow-hidden transition-all hover:border-primary/40 hover:shadow-sm"
-          :class="cart.qtyOf(selectedModel.product_id) > 0 ? 'border-primary/40 bg-primary/5' : ''"
+          :class="cart.qtyOfColor(selectedModel.product_id, c.color_code, c.stock_level) > 0 ? 'border-primary/40 bg-primary/5' : ''"
         >
           <CardContent class="p-2.5">
             <div class="flex items-start justify-between gap-1">
@@ -634,8 +667,8 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
                 size="icon"
                 variant="outline"
                 class="h-7 w-7"
-                :disabled="Number(draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))) === 0"
-                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, -1)"
+                :disabled="Number(draftOf(selectedModel.product_id, c.color_code, c.stock_level, cart.qtyOfColor(selectedModel.product_id, c.color_code, c.stock_level))) === 0"
+                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.color_code, c.stock_level, -1)"
               >
                 <Minus class="h-3.5 w-3.5" />
               </Button>
@@ -644,18 +677,18 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
                 inputmode="numeric"
                 min="0"
                 :max="c.boxes"
-                :value="draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))"
+                :value="draftOf(selectedModel.product_id, c.color_code, c.stock_level, cart.qtyOfColor(selectedModel.product_id, c.color_code, c.stock_level))"
                 :aria-label="t('customer.cart.qty')"
                 class="h-7 w-full rounded-md border bg-background text-center font-mono text-sm font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40"
-                @input="setDraft(selectedModel.product_id, ($event.target as HTMLInputElement).value)"
-                @blur="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.boxes)"
-                @keydown.enter.prevent="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.boxes); ($event.target as HTMLInputElement).blur()"
+                @input="setDraft(selectedModel.product_id, c.color_code, c.stock_level, ($event.target as HTMLInputElement).value)"
+                @blur="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.color_code, c.stock_level, c.boxes)"
+                @keydown.enter.prevent="commitModelDraft(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.color_code, c.stock_level, c.boxes); ($event.target as HTMLInputElement).blur()"
               />
               <Button
                 size="icon"
                 class="h-7 w-7"
-                :disabled="Number(draftOf(selectedModel.product_id, cart.qtyOf(selectedModel.product_id))) >= c.boxes"
-                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, 1)"
+                :disabled="Number(draftOf(selectedModel.product_id, c.color_code, c.stock_level, cart.qtyOfColor(selectedModel.product_id, c.color_code, c.stock_level))) >= c.boxes"
+                @click="onModelQty(selectedModel.product_id, selectedModel.model, selectedModel.conversion_rate, c.color_code, c.stock_level, 1)"
               >
                 <Plus class="h-3.5 w-3.5" />
               </Button>
@@ -746,14 +779,14 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
               <ul class="space-y-1.5">
                 <li
                   v-for="c in cart.items.value"
-                  :key="c.product_id"
+                  :key="cart.keyOf(c)"
                   class="flex items-center gap-3 rounded-lg border bg-card px-3 py-2.5"
                 >
                   <!-- 信息 -->
                   <div class="min-w-0 flex-1">
                     <p class="font-mono text-sm font-semibold truncate" :title="c.model">{{ c.model }}</p>
                     <p class="text-[11px] text-muted-foreground mt-0.5">
-                      {{ c.conversion_rate }} м²/ящ · ≈ {{ fmtM2(c.boxes * c.conversion_rate) }}
+                      <span class="font-mono">{{ c.color_code }}</span> · L{{ c.stock_level }} · {{ c.conversion_rate }} м²/ящ · ≈ {{ fmtM2(c.boxes * c.conversion_rate) }}
                     </p>
                   </div>
                   <!-- 步进器：[-] [input] [+]，中间是可直接键入的数量框 -->
@@ -761,7 +794,7 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
                     <button
                       type="button"
                       class="grid h-7 w-7 place-items-center rounded-md border bg-background hover:bg-muted transition active:scale-95 disabled:opacity-40 disabled:hover:bg-background"
-                      :disabled="draftOf(c.product_id, c.boxes) === '0'"
+                      :disabled="draftOf(c.product_id, c.color_code, c.stock_level, c.boxes) === '0'"
                       :aria-label="t('common.decrease')"
                       @click="onLineBtn(c, -1)"
                     >
@@ -771,18 +804,18 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
                       type="number"
                       inputmode="numeric"
                       min="0"
-                      :max="stockFor(c.product_id)"
-                      :value="draftOf(c.product_id, c.boxes)"
+                      :max="stockForColor(c.product_id, c.color_code, c.stock_level)"
+                      :value="draftOf(c.product_id, c.color_code, c.stock_level, c.boxes)"
                       :aria-label="t('customer.cart.qty')"
                       class="h-7 w-12 rounded-md border bg-background text-center font-mono text-sm font-semibold tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none focus:outline-none focus:ring-2 focus:ring-primary/40"
-                      @input="setDraft(c.product_id, ($event.target as HTMLInputElement).value)"
-                      @blur="commitDraft(c)"
-                      @keydown.enter.prevent="commitDraft(c); ($event.target as HTMLInputElement).blur()"
+                      @input="setDraft(c.product_id, c.color_code, c.stock_level, ($event.target as HTMLInputElement).value)"
+                      @blur="commitLineDraft(c)"
+                      @keydown.enter.prevent="commitLineDraft(c); ($event.target as HTMLInputElement).blur()"
                     />
                     <button
                       type="button"
                       class="grid h-7 w-7 place-items-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition active:scale-95 disabled:opacity-40"
-                      :disabled="Number(draftOf(c.product_id, c.boxes)) >= stockFor(c.product_id)"
+                      :disabled="Number(draftOf(c.product_id, c.color_code, c.stock_level, c.boxes)) >= stockForColor(c.product_id, c.color_code, c.stock_level)"
                       :aria-label="t('common.increase')"
                       @click="onLineBtn(c, 1)"
                     >
@@ -794,7 +827,7 @@ const onModelQty = (productId: string, model: string, conversionRate: number, de
                     type="button"
                     class="grid h-7 w-7 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition active:scale-95 shrink-0"
                     :aria-label="t('customer.cart.remove')"
-                    @click="cart.remove(c.product_id)"
+                    @click="cart.remove(c.product_id, c.color_code, c.stock_level)"
                   >
                     <Trash2 class="h-3.5 w-3.5" />
                   </button>

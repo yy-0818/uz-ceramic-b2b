@@ -2,20 +2,29 @@
  * useCart —— 客户下单购物车（Pinia 之外的轻量 composable）
  *
  * 设计：
- * - 内部 Map<product_id, CartItem>，避免重复
+ * - 内部按 (product_id, color_code, stock_level) 唯一标识一条购物车项
  * - 提供 reactive items 列表
- * - qtyOf(productId) 用于步进器读数
+ * - qtyOf(productId) 返回该商品所有色号箱数之和（聚合读法，向后兼容）
+ * - qtyOfColor(productId, color, level) 返回单个色号的箱数
  * - totalBoxes() / totalM2() 用于购物车汇总
  * - 持久化：localStorage key = 'cart:current'
- * 注：实际订单 submit 会在 Phase 3 实现
  */
 import { ref, computed, watch } from 'vue'
 
 export interface CartItem {
   product_id: string
+  /** 色号（如 D1 / A12） */
+  color_code: string
+  /** 1 = stock_level_1, 2 = stock_level_2 */
+  stock_level: 1 | 2
   model: string
   boxes: number
   conversion_rate: number
+}
+
+/** 复合 key */
+function keyOf(item: Pick<CartItem, 'product_id' | 'color_code' | 'stock_level'>): string {
+  return `${item.product_id}::${item.color_code}::${item.stock_level}`
 }
 
 const STORAGE_KEY = 'cart:current'
@@ -27,11 +36,30 @@ function load() {
   initialized = true
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) items.value = JSON.parse(raw)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      // 兼容旧数据：旧版本只有 product_id，无 color_code/stock_level，
+      // 升级时补上占位字段，避免提交订单时缺关键信息。
+      items.value = (parsed as any[]).map((it) => ({
+        product_id: it.product_id,
+        color_code: it.color_code ?? '',
+        stock_level: (it.stock_level ?? 1) as 1 | 2,
+        model: it.model,
+        boxes: it.boxes,
+        conversion_rate: it.conversion_rate,
+      }))
+    }
   } catch { /* ignore */ }
   watch(items, (v) => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)) } catch { /* ignore */ }
   }, { deep: true })
+}
+
+/** 重置并清空 localStorage（切换账号时调用） */
+export function resetCart() {
+  items.value = []
+  initialized = false
+  try { localStorage.removeItem(STORAGE_KEY) } catch { /* ignore */ }
 }
 
 export function useCart() {
@@ -40,25 +68,62 @@ export function useCart() {
   const totalBoxes = () => items.value.reduce((s, i) => s + i.boxes, 0)
   const totalM2 = () => items.value.reduce((s, i) => s + i.boxes * i.conversion_rate, 0)
 
+  /** 聚合：返回该商品所有色号箱数之和（兼容老 API） */
   const qtyOf = (productId: string) =>
-    items.value.find((i) => i.product_id === productId)?.boxes ?? 0
+    items.value.filter((i) => i.product_id === productId).reduce((s, i) => s + i.boxes, 0)
 
-  const setQty = (productId: string, model: string, conversionRate: number, boxes: number) => {
-    const idx = items.value.findIndex((i) => i.product_id === productId)
+  /** 精确：返回该 (product, color, level) 单条的数量 */
+  const qtyOfColor = (productId: string, colorCode: string, stockLevel: 1 | 2) =>
+    items.value.find((i) =>
+      i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel,
+    )?.boxes ?? 0
+
+  /** 兼容老签名：按 product_id + color_code + stock_level 覆盖 */
+  const setQty = (
+    productId: string,
+    model: string,
+    conversionRate: number,
+    boxes: number,
+    colorCode: string = '',
+    stockLevel: 1 | 2 = 1,
+  ) => {
+    const idx = items.value.findIndex(
+      (i) => i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel,
+    )
     if (idx >= 0) {
       items.value[idx] = { ...items.value[idx], boxes }
     } else {
-      items.value.push({ product_id: productId, model, conversion_rate: conversionRate, boxes })
+      items.value.push({
+        product_id: productId,
+        color_code: colorCode,
+        stock_level: stockLevel,
+        model,
+        conversion_rate: conversionRate,
+        boxes,
+      })
     }
   }
 
-  const remove = (productId: string) => {
-    items.value = items.value.filter((i) => i.product_id !== productId)
+  const remove = (productId: string, colorCode?: string, stockLevel?: 1 | 2) => {
+    if (colorCode === undefined || stockLevel === undefined) {
+      // 移除该 product 所有色号（兼容老调用）
+      items.value = items.value.filter((i) => i.product_id !== productId)
+    } else {
+      items.value = items.value.filter((i) =>
+        !(i.product_id === productId && i.color_code === colorCode && i.stock_level === stockLevel),
+      )
+    }
   }
 
   const clear = () => { items.value = [] }
 
   const count = computed(() => items.value.length)
 
-  return { items, totalBoxes, totalM2, qtyOf, setQty, remove, clear, count }
+  return {
+    items, totalBoxes, totalM2,
+    qtyOf, qtyOfColor,
+    setQty, remove, clear, count,
+    keyOf,
+    $reset: resetCart,
+  }
 }

@@ -136,6 +136,14 @@ const error = ref<string | null>(null)
 /** Cache for sub-accounts keyed by parentId */
 const subCache = new Map<string, Account[]>()
 
+/** 清除所有缓存（切换账号时调用） */
+export function resetAccounts() {
+  items.value = []
+  loading.value = false
+  error.value = null
+  subCache.clear()
+}
+
 export function useAccounts() {
 
   /** 拉所有父 + 子，按 parent 聚合 */
@@ -473,5 +481,6 @@ export function useAccounts() {
     createSub, updateSub, setMain, fetchSubAccounts,
     importFromExcel,
     fetchProductCategories,
+    $reset: resetAccounts,
   }
 }

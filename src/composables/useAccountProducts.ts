@@ -40,6 +40,14 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const fetched = ref(false)
 
+/** 清除所有缓存（切换账号时调用） */
+export function resetAccountProducts() {
+  items.value = []
+  loading.value = false
+  error.value = null
+  fetched.value = false
+}
+
 export function useAccountProducts() {
 
   /** 客户视角：拉自己（+ parent）可见的白名单 */
@@ -120,5 +128,6 @@ export function useAccountProducts() {
     items, loading, error, fetched,
     fetchForCurrentAccount, fetchForAccount, fetchForProduct,
     bulkAssign, setVisible,
+    $reset: resetAccountProducts,
   }
 }

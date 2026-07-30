@@ -68,9 +68,25 @@ export const router = createRouter({
   routes,
 })
 
+/** 记录上一个 auth user ID，用于检测账号切换 */
+let prevAuthUserId: string | null = null
+
 router.beforeEach(async (to) => {
   if (to.meta?.public) return true
+
   const { data: { session } } = await supabase.auth.getSession()
+  const currentUid = session?.user?.id ?? null
+
+  // 检测账号切换（排除登出：登出时 session=null 且 prevAuthUserId 已知，不需要 reload）
+  if (session && prevAuthUserId !== null && prevAuthUserId !== currentUid) {
+    // 用 location.reload() 从浏览器层面强制全量刷新，
+    // 所有模块级单例、组件状态、路由状态全部重置为初始态，
+    // 等同于重新打开页面，从根本上解决缓存残留和状态不一致问题。
+    window.location.reload()
+    return false
+  }
+  prevAuthUserId = currentUid
+
   if (!session) return { path: '/login', query: { redirect: to.fullPath } }
 
   // 角色守卫

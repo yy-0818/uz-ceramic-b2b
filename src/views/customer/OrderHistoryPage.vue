@@ -35,10 +35,7 @@ const refresh = async () => {
   else await ordersApi.fetchByStatus(statusFilter.value)
 }
 
-onMounted(async () => {
-  if (ordersApi.fetched.value && ordersApi.items.value.length > 0) return
-  await refresh()
-})
+onMounted(refresh)
 
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
 

@@ -20,6 +20,14 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const fetched = ref(false)
 
+/** 清除所有缓存（切换账号时调用） */
+export function resetOrders() {
+  items.value = []
+  loading.value = false
+  error.value = null
+  fetched.value = false
+}
+
 export interface OrderRow {
   id: string
   order_no: string
@@ -57,6 +65,8 @@ export interface CartItemForSubmit {
   conversion_rate: number
   /** 1 表示从 stock_level_1 扣，2 表示从 stock_level_2 扣；默认 1 */
   stock_level?: 1 | 2
+  /** 色号（可选；前端按 (product, color, level) 行存储时必传） */
+  color_code?: string
 }
 
 export function useOrders() {
@@ -143,6 +153,7 @@ export function useOrders() {
       boxes: c.boxes,
       m2_per_box: c.conversion_rate,
       stock_level: c.stock_level ?? 1,
+      color_code: c.color_code ?? null,
       unit_price: null,
       remark: null,
     }))
@@ -188,5 +199,6 @@ export function useOrders() {
     items, loading, error, totalAmount, fetched,
     fetchMine, fetchByStatus,
     submit, transition, updateItemPrice, updateItemBoxes,
+    $reset: resetOrders,
   }
 }
