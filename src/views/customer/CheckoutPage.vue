@@ -74,6 +74,8 @@ const errMsg = ref<string | null>(null)
 const subs = ref<Account[]>([])
 const subId = ref<string>('')
 const loadingSubs = ref(false)
+/** true after first successful load; suppresses spinner on revisit when singleton cache is hot */
+const pageFetched = ref(false)
 
 const parentAccountId = computed(() => account.value?.parent_id ?? account.value?.id ?? null)
 
@@ -85,6 +87,7 @@ const loadSubs = async (parentId: string) => {
     subId.value = main?.id ?? subs.value[0]?.id ?? ''
   } finally {
     loadingSubs.value = false
+    pageFetched.value = true
   }
 }
 

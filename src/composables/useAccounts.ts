@@ -8,6 +8,8 @@
  *   - 白名单（account_products / customer_group_mappings）按父账号走，
  *     所有子账号共享父的白名单
  *
+ * 状态提升到模块单例：同一页面多次进入 / 页面间共享时，数据只从 Supabase 拉取一次。
+ *
  * API：
  *   - fetchTree()                          拉全部父子（按父聚合）
  *   - createParent({ category, type })     新建父
@@ -16,7 +18,7 @@
  *   - createSub({ parent_id, ... })        新建子
  *   - updateSub(id, patch)                 改子
  *   - setMain(parent_id, sub_id)           标记主联系子账号
- *   - fetchSubAccounts(parent_id)          拉某父的子
+ *   - fetchSubAccounts(parent_id)          拉某父的子（按 parentId 缓存）
  *   - importFromExcel(rows)                批量 upsert 父子 + 客户组映射
  *   - assignCategories(parent_id, [...])   父账号绑定到哪些产品分类（12J/12P/12F/12K...）
  *   - fetchAssignedCategories(parent_id)   查父绑定的分类
@@ -127,10 +129,14 @@ export function buildImportPreview(rows: ExcelRow[]): ImportPreview {
   return { parents, subs, groupMappings }
 }
 
+// Module-level singleton state — shared across all useAccounts() calls
+const items = ref<Account[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+/** Cache for sub-accounts keyed by parentId */
+const subCache = new Map<string, Account[]>()
+
 export function useAccounts() {
-  const items = ref<Account[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
 
   /** 拉所有父 + 子，按 parent 聚合 */
   const fetchTree = async (): Promise<{ parents: Account[]; subs: Account[] }> => {
@@ -231,6 +237,7 @@ export function useAccounts() {
         .select('*')
         .single()
       if (e) throw e
+      subCache.delete(params.parent_id)
       return data as Account
     } finally {
       loading.value = false
@@ -245,6 +252,10 @@ export function useAccounts() {
         .update(patch)
         .eq('id', id)
       if (e) throw e
+      // 改完后清缓存，下次 fetchSubAccounts 会重新拉
+      for (const [parentId, subs] of subCache) {
+        if (subs.some((s) => s.id === id)) subCache.delete(parentId)
+      }
     } finally {
       loading.value = false
     }
@@ -263,13 +274,15 @@ export function useAccounts() {
         .update({ is_main: true })
         .eq('id', subId)
       if (e) throw e
+      subCache.delete(parentId)
     } finally {
       loading.value = false
     }
   }
 
-  /** 拉某父的子（按主联系置顶，其余按名升序） */
+  /** 拉某父的子（按主联系置顶，其余按名升序；按 parentId 缓存） */
   const fetchSubAccounts = async (parentId: string): Promise<Account[]> => {
+    if (subCache.has(parentId)) return subCache.get(parentId)!
     const { data, error: e } = await supabase
       .from('accounts')
       .select('*')
@@ -277,7 +290,9 @@ export function useAccounts() {
       .order('is_main', { ascending: false })
       .order('account_name')
     if (e) { error.value = e.message; return [] }
-    return (data ?? []) as Account[]
+    const result = (data ?? []) as Account[]
+    subCache.set(parentId, result)
+    return result
   }
 
   /**
