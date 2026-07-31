@@ -32,6 +32,7 @@ import {
   Paperclip,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   AlertCircle,
   Check,
   Circle,
@@ -506,20 +507,30 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
               2
             </span>
             <Users class="h-3.5 w-3.5 text-primary" />
-            <h2 class="text-sm font-semibold text-foreground">客户账号（代客下单）</h2>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('customer.checkout.parentAccountLabel') }}</h2>
             <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wider ml-0.5">
-              必选
+              {{ t('customer.checkout.parentAccountRequired') }}
             </span>
-            <span v-if="selectedParent" class="ml-auto text-[10px] text-muted-foreground truncate max-w-[160px]">
+            <span
+              v-if="selectedParent"
+              class="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-mono font-semibold truncate max-w-[160px]"
+            >
+              <Check class="h-3 w-3 shrink-0" />
               {{ selectedParent.account_name }}
             </span>
           </div>
 
+          <p class="text-[11px] text-muted-foreground leading-relaxed mb-2.5">
+            {{ t('customer.checkout.parentAccountHint') }}
+          </p>
+
+          <!-- 加载态 -->
           <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-2">
             <Loader2 class="h-3.5 w-3.5 animate-spin" />
             加载客户中…
           </div>
 
+          <!-- 空状态 -->
           <div
             v-else-if="parents.length === 0"
             class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
@@ -528,36 +539,83 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
             <p class="leading-relaxed">暂无父客户账号，请先在「客户管理」中创建。</p>
           </div>
 
-          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              v-for="p in parents"
-              :key="p.id"
-              type="button"
-              class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              :class="pickedParentId === p.id
-                ? 'border-primary bg-primary/5 shadow-sm'
-                : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
-              @click="pickedParentId = p.id"
+          <!--
+           客户列表：固定高度 + 内部滚动
+
+           后台订单员动辄要服务几十上百个父客户，把整个列表渲染到
+           document 高度上会让"摘要区 + 备注 + 提交按钮"这些真正重要
+           的下半屏被推到屏幕外，必须滚好几屏才能看到底部的提交按钮。
+
+           这里把列表装进一个有 max-height 的容器，让滚动发生在列表内，
+           头部 sticky 保持"已选"和总数常驻，底部加渐隐遮罩 + 剩余条数
+           提示，让用户知道"下面还有可滚的卡片"。
+          -->
+          <div
+            v-else
+            class="relative rounded-lg border border-border/60 bg-muted/20"
+          >
+            <!-- 列表头（粘性）：客户总数 + 搜索（可选） -->
+            <div
+              class="sticky top-0 z-10 flex items-center justify-between gap-2 px-2.5 py-1.5 bg-background/95 backdrop-blur border-b border-border/60 text-[11px] text-muted-foreground rounded-t-lg"
             >
-              <div class="flex items-center gap-2">
-                <div
-                  class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+              <span class="font-mono font-semibold text-foreground/80">
+                {{ t('customer.checkout.parentAccountCount', { n: parents.length }) }}
+              </span>
+              <span class="inline-flex items-center gap-1">
+                <ChevronDown class="h-3 w-3" />
+                {{ t('customer.checkout.parentAccountCountMore', { n: Math.max(parents.length - 6, 0) }) }}
+              </span>
+            </div>
+
+            <!--
+             滚动容器
+             - max-h-[60vh]：长屏 1080p 显示 ~20 行卡片；短屏 720p 仍能看 ~12 行
+             - overflow-y-auto：列表内滚动
+             - overscroll-contain：滚到底不会把整页也"接着滚"
+             - p-2 + space-y-1.5：卡片之间留点呼吸空间，不挤
+            -->
+            <div
+              class="max-h-[60vh] overflow-y-auto overscroll-contain p-2"
+              data-testid="parent-account-list-scroll"
+            >
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  v-for="p in parents"
+                  :key="p.id"
+                  type="button"
+                  class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   :class="pickedParentId === p.id
-                    ? 'border-primary bg-primary'
-                    : 'border-muted-foreground/40'"
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+                  @click="pickedParentId = p.id"
                 >
-                  <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
-                </div>
-                <div class="min-w-0">
-                  <p class="font-mono text-sm font-semibold truncate">
-                    {{ p.account_name }}
-                  </p>
-                  <p class="text-[10px] text-muted-foreground truncate">
-                    {{ p.company_name }} · {{ p.account_type }}
-                  </p>
-                </div>
+                  <div class="flex items-center gap-2">
+                    <div
+                      class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                      :class="pickedParentId === p.id
+                        ? 'border-primary bg-primary'
+                        : 'border-muted-foreground/40'"
+                    >
+                      <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
+                    </div>
+                    <div class="min-w-0 flex-1">
+                      <p class="font-mono text-sm font-semibold truncate">
+                        {{ p.account_name }}
+                      </p>
+                      <p class="text-[10px] text-muted-foreground truncate">
+                        {{ p.company_name }} · {{ p.account_type }}
+                      </p>
+                    </div>
+                  </div>
+                </button>
               </div>
-            </button>
+            </div>
+
+            <!-- 底部渐隐遮罩：暗示"列表可继续向下滚" -->
+            <div
+              class="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-lg bg-gradient-to-t from-muted/80 to-transparent"
+              aria-hidden="true"
+            />
           </div>
         </section>
 
