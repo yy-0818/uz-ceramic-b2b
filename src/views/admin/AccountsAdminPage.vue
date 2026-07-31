@@ -64,21 +64,69 @@ const selected = ref<Set<string>>(new Set())
 const lastSelectedId = ref<string | null>(null)
 
 // 行菜单
+//
+// 之前用 :ref + setTriggerRef 收集按钮 DOM 再 getBoundingClientRect(),
+// 但 shadcn-vue 的 <Button> 组件 :ref 拿到的是组件实例, el.$el 在某些
+// shadcn-vue 版本(以及 as-child slot 下)是不可靠的 — 容易拿到错位
+// 的坐标, 出现"菜单跟着上一行"这种诡异现象。
+//
+// 现在的做法: 直接在 @click 里传 MouseEvent, 用 event.currentTarget
+// 拿到的就是真实触发的 <button> DOM 节点, 不依赖 ref 透传。
 const openMenuId = ref<string | null>(null)
 const menuPos = ref({ top: 0, left: 0, width: 208 })
-const triggerRefs = ref<Record<string, HTMLElement | null>>({})
-const setTriggerRef = (id: string, el: any) => {
-  triggerRefs.value[id] = el?.$el ?? el
+const menuEl = ref<HTMLElement | null>(null)
+const MENU_WIDTH = 208
+const MENU_GAP = 4
+const VIEWPORT_PAD = 8
+
+const measureMenu = (): number => {
+  const h = menuEl.value?.getBoundingClientRect().height
+  return typeof h === 'number' && h > 0 ? h : 6 * 36 + 8 // 估算回退
 }
-const toggleMenu = (id: string) => {
+
+const computePos = (trigger: HTMLElement, menuHeight: number) => {
+  const r = trigger.getBoundingClientRect()
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const width = MENU_WIDTH
+
+  // 横向: 右对齐按钮右缘, 留 viewport 边距
+  let left = r.right - width
+  if (left < VIEWPORT_PAD) left = VIEWPORT_PAD
+  if (left + width > vw - VIEWPORT_PAD) left = vw - VIEWPORT_PAD - width
+
+  // 纵向: 默认下方展开, 放不下则向上展开
+  const spaceBelow = vh - r.bottom - VIEWPORT_PAD
+  const spaceAbove = r.top - VIEWPORT_PAD
+  let top: number
+  if (menuHeight <= spaceBelow) {
+    top = r.bottom + MENU_GAP
+  } else if (menuHeight <= spaceAbove) {
+    top = r.top - menuHeight - MENU_GAP
+  } else {
+    // 都不够, 选择空间较大一侧贴着边缘
+    if (spaceBelow >= spaceAbove) {
+      top = vh - VIEWPORT_PAD - menuHeight
+    } else {
+      top = VIEWPORT_PAD
+    }
+  }
+
+  return { top, left, width }
+}
+
+const toggleMenu = (e: MouseEvent, id: string) => {
   if (openMenuId.value === id) { openMenuId.value = null; return }
   openMenuId.value = id
-  const btn = triggerRefs.value[id]
-  if (btn) {
-    const r = btn.getBoundingClientRect()
-    menuPos.value = { top: r.bottom + 4, left: r.right - 208, width: 208 }
-  }
+  const trigger = e.currentTarget as HTMLElement
+  if (!trigger) return
+  // DOM 还没 flush, 等下一帧让菜单先渲染出真实高度再算位置
+  requestAnimationFrame(() => {
+    const h = measureMenu()
+    menuPos.value = computePos(trigger, h)
+  })
 }
+
 const closeMenu = () => { openMenuId.value = null }
 const currentMenuParent = computed(() =>
   openMenuId.value ? pagedParents.value.find(p => p.id === openMenuId.value) ?? null : null,
@@ -91,14 +139,16 @@ const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu() }
 const onDocClick = (e: MouseEvent) => {
   if (!openMenuId.value) return
   if ((e.target as HTMLElement).closest('[data-row-menu]')) return
+  if (menuEl.value && menuEl.value.contains(e.target as Node)) return
   closeMenu()
 }
-const reposition = () => {
+// 滚动时重定位: 触发按钮跟着滚走后, 菜单要"贴着"按钮
+const onScrollOrResize = () => {
   if (!openMenuId.value) return
-  const btn = triggerRefs.value[openMenuId.value]
+  // 找当前 openMenuId 对应的 <button> — 重新查询 DOM
+  const btn = document.querySelector<HTMLElement>(`[data-row-menu][data-row-id="${openMenuId.value}"] button`)
   if (!btn) return
-  const r = btn.getBoundingClientRect()
-  menuPos.value = { top: r.bottom + 4, left: r.right - 208, width: 208 }
+  menuPos.value = computePos(btn, measureMenu())
 }
 
 // ============ Dialog 控制器状态 ============
@@ -161,8 +211,8 @@ onMounted(() => {
   } catch {}
   document.addEventListener('keydown', onKeydown)
   document.addEventListener('click', onDocClick)
-  window.addEventListener('scroll', reposition, true)
-  window.addEventListener('resize', reposition)
+  window.addEventListener('scroll', onScrollOrResize, { passive: true, capture: true })
+  window.addEventListener('resize', onScrollOrResize)
   syncMobile()
   mql?.addEventListener('change', syncMobile)
   load()
@@ -170,8 +220,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKeydown)
   document.removeEventListener('click', onDocClick)
-  window.removeEventListener('scroll', reposition, true)
-  window.removeEventListener('resize', reposition)
+  window.removeEventListener('scroll', onScrollOrResize, true)
+  window.removeEventListener('resize', onScrollOrResize)
   mql?.removeEventListener('change', syncMobile)
 })
 
@@ -646,6 +696,7 @@ const goBack = () => {
     <Teleport to="body">
       <div
         v-if="currentMenuParent"
+        ref="menuEl"
         :style="{
           position: 'fixed',
           top: menuPos.top + 'px',
@@ -795,10 +846,9 @@ const goBack = () => {
               <Plus class="h-3.5 w-3.5 sm:mr-1" />
               <span class="hidden md:inline">{{ t('admin.accounts.menuAddSub') }}</span>
             </Button>
-            <div class="relative" data-row-menu>
+            <div class="relative" data-row-menu :data-row-id="p.id">
               <Button size="sm" variant="ghost" class="h-8 w-8 p-0"
-                :ref="el => setTriggerRef(p.id, el)"
-                @click.stop="toggleMenu(p.id)">
+                @click.stop="toggleMenu($event, p.id)">
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
             </div>
