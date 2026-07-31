@@ -377,48 +377,48 @@ const onModelQty = (
 
 <template>
   <div class="space-y-3 pb-24">
-    <!-- 头部：面包屑 + 搜索（仅 categories 视图显示 totals 摘要） -->
-    <header class="sticky top-0 z-10 bg-background/95 backdrop-blur">
-      <div class="flex items-center justify-between gap-2 py-2">
-        <div class="flex items-center gap-2 min-w-0">
-          <Button v-if="view !== 'categories'" size="icon" variant="ghost" class="h-8 w-8 shrink-0" @click="back">
+    <!-- ===================== 顶部 hero（sticky）===================== -->
+    <header class="sticky top-0 z-10">
+      <div class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 py-3 sm:py-4 shadow-sm">
+        <div class="pointer-events-none absolute -right-8 -top-8 h-32 w-32 rounded-full bg-primary/10 blur-xl" />
+        <div class="pointer-events-none absolute -right-4 top-1/2 h-16 w-16 rounded-full bg-primary/5" />
+
+        <!-- Row 1：返回 + 标题 + 副标题 -->
+        <div class="relative flex items-center gap-2">
+          <Button v-if="view !== 'categories'" size="icon" variant="ghost" class="h-8 w-8 shrink-0 -ml-1" @click="back">
             <ChevronLeft class="h-5 w-5" />
           </Button>
-          <div class="min-w-0">
-            <h1 class="text-base font-semibold truncate">
+          <div class="min-w-0 flex-1">
+            <h1 class="text-sm sm:text-base font-bold leading-tight truncate">
               <span v-if="view === 'categories'">{{ t('customer.catalog.title') }}</span>
               <span v-else-if="view === 'models'">{{ selectedCategory }}</span>
               <span v-else class="font-mono">{{ selectedModel?.model }}</span>
             </h1>
-            <p class="text-xs text-muted-foreground truncate">
+            <p class="text-[10px] sm:text-xs text-muted-foreground leading-snug truncate">
               <span v-if="view === 'categories'">{{ t('customer.catalog.subtitle') }}</span>
               <span v-else-if="view === 'models'">{{ modelsInCategory.length }} {{ t('customer.catalog.modelsUnit') }}</span>
               <span v-else>{{ selectedModel?.category }} · {{ selectedModel?.conversion_rate }} м²/ящ</span>
             </p>
           </div>
         </div>
-      </div>
 
-      <!-- 总览统计条（仅 categories 视图显示，让用户对库容一目了然） -->
-      <div
-        v-if="view === 'categories'"
-        class="grid grid-cols-3 gap-2 border-y bg-muted/30 px-1 py-2 text-center"
-      >
-        <div>
-          <p class="font-mono text-base font-bold leading-none">{{ totalModels }}</p>
-          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.modelsUnit') }}</p>
-        </div>
-        <div class="border-x">
-          <p class="font-mono text-base font-bold leading-none text-emerald-600 dark:text-emerald-400">
-            {{ totalBoxes.toLocaleString() }}
-          </p>
-          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.box') }}</p>
-        </div>
-        <div>
-          <p class="font-mono text-base font-bold leading-none text-blue-600 dark:text-blue-400">
-            {{ totalColors }}
-          </p>
-          <p class="mt-0.5 text-[10px] text-muted-foreground">{{ t('customer.catalog.colorsUnit') }}</p>
+        <!-- 统计条（仅 categories 视图） -->
+        <div
+          v-if="view === 'categories'"
+          class="relative grid grid-cols-3 gap-px bg-border/50 rounded-lg overflow-hidden mt-2"
+        >
+          <div class="bg-card px-3 py-2 text-center">
+            <p class="font-mono text-base font-bold leading-none">{{ totalModels }}</p>
+            <p class="text-[10px] text-muted-foreground mt-0.5 leading-tight">{{ t('customer.catalog.modelsUnit') }}</p>
+          </div>
+          <div class="bg-card px-3 py-2 text-center border-x border-border/50">
+            <p class="font-mono text-base font-bold leading-none text-emerald-600 dark:text-emerald-400">{{ totalBoxes.toLocaleString() }}</p>
+            <p class="text-[10px] text-muted-foreground mt-0.5 leading-tight">{{ t('customer.catalog.box') }}</p>
+          </div>
+          <div class="bg-card px-3 py-2 text-center">
+            <p class="font-mono text-base font-bold leading-none text-blue-600 dark:text-blue-400">{{ totalColors }}</p>
+            <p class="text-[10px] text-muted-foreground mt-0.5 leading-tight">{{ t('customer.catalog.colorsUnit') }}</p>
+          </div>
         </div>
       </div>
     </header>

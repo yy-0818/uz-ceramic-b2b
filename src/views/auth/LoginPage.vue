@@ -58,12 +58,17 @@ const switchLang = (lang: 'ru' | 'uz' | 'zh') => setLocale(lang)
            dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-4"
   >
     <div class="w-full max-w-md">
-      <header class="flex flex-col items-center mb-6 select-none">
-        <div class="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3 shadow-sm">
-          <Factory class="h-7 w-7" />
+      <!-- 品牌 header：与 hero 同款装饰 + 居中 -->
+      <header class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.06] via-white to-background px-6 py-6 mb-6 text-center">
+        <div class="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-primary/10 blur-2xl" />
+        <div class="pointer-events-none absolute -left-8 bottom-0 h-20 w-20 rounded-full bg-primary/5" />
+        <div class="relative flex flex-col items-center">
+          <div class="h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-3 shadow-sm">
+            <Factory class="h-7 w-7" />
+          </div>
+          <h1 class="text-xl font-bold tracking-tight">{{ t('auth.brand') }}</h1>
+          <p class="text-sm text-muted-foreground mt-1">{{ t('auth.welcome') }}</p>
         </div>
-        <h1 class="text-xl font-semibold tracking-tight">{{ t('auth.brand') }}</h1>
-        <p class="text-sm text-muted-foreground mt-1">{{ t('auth.welcome') }}</p>
       </header>
 
       <Card class="border-border/60 shadow-xl shadow-slate-200/40 dark:shadow-black/40">

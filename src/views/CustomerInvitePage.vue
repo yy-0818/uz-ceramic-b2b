@@ -9,7 +9,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { Loader2, Mail, Lock, CheckCircle2, AlertCircle } from 'lucide-vue-next'
+import { Loader2, Mail, Lock, CheckCircle2, AlertCircle, UserCheck, ArrowLeft } from 'lucide-vue-next'
 import Button from '@/components/ui/Button.vue'
 import Input from '@/components/ui/Input.vue'
 import Label from '@/components/ui/Label.vue'
@@ -54,14 +54,12 @@ onMounted(async () => {
     accountId.value = info.accountId
     expiresAt.value = info.expiresAt
 
-    // 拉父账号：name + login_email（login_email 优先作为客户登录邮箱）
     const { data: parent } = await supabase
       .from('accounts')
       .select('account_name, login_email')
       .eq('id', info.accountId)
       .single()
     parentName.value = (parent as any)?.account_name ?? t('invite.parentFallback')
-    // 必须有 login_email 才能继续：占位邮箱 Supabase Auth 不接受（example.* / .local / .test）
     loginEmail.value = (parent as any)?.login_email?.trim() ?? ''
     if (!loginEmail.value) {
       error.value = t('invite.errNoLoginEmail')
@@ -92,10 +90,8 @@ const submit = async () => {
   try {
     const token = (route.query.token as string) || ''
     await auth.completeInvite(token, password.value, loginEmail.value)
-    // 自动登录
     await auth.signIn(loginEmail.value, password.value)
     step.value = 'done'
-    // 直接跳到 /catalog（路由 / 重定向到 /catalog，绕一步没意义）
     setTimeout(() => router.push('/catalog'), 1200)
   } catch (e: any) {
     error.value = e.message ?? String(e)
@@ -103,10 +99,30 @@ const submit = async () => {
     submitting.value = false
   }
 }
+
+const goBack = () => {
+  if (window.history.state && (window.history.state as any).back) router.back()
+  else router.push('/')
+}
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-muted/30 p-4">
+  <div class="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4">
+    <!-- 顶部 hero（固定宽度，居中） -->
+    <div class="w-full max-w-md mb-4">
+      <header class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.06] via-white to-background px-6 py-5 text-center">
+        <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+        <div class="pointer-events-none absolute -left-6 bottom-0 h-20 w-20 rounded-full bg-primary/5" />
+        <div class="relative flex flex-col items-center">
+          <div class="h-12 w-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center mb-2">
+            <UserCheck class="h-6 w-6" />
+          </div>
+          <h1 class="text-lg font-bold">客户账号激活</h1>
+          <p class="text-xs text-muted-foreground mt-0.5">设置密码以激活您的客户账号</p>
+        </div>
+      </header>
+    </div>
+
     <Card class="w-full max-w-md">
       <CardContent class="py-8">
         <!-- 验证中 -->
@@ -117,9 +133,15 @@ const submit = async () => {
 
         <!-- 错误 -->
         <div v-else-if="step === 'error'" class="text-center space-y-3">
-          <AlertCircle class="h-10 w-10 mx-auto text-red-500" />
-          <p class="text-base font-medium">{{ t('invite.invalidLink') }}</p>
+          <div class="h-14 w-14 rounded-full bg-destructive/10 text-destructive flex items-center justify-center mx-auto">
+            <AlertCircle class="h-7 w-7" />
+          </div>
+          <p class="text-base font-semibold">{{ t('invite.invalidLink') }}</p>
           <p class="text-sm text-muted-foreground">{{ error }}</p>
+          <Button variant="outline" class="mt-2" @click="goBack">
+            <ArrowLeft class="h-3.5 w-3.5 mr-1" />
+            返回登录
+          </Button>
           <p class="text-xs text-muted-foreground mt-4">
             {{ t('invite.invalidLinkHint') }}
           </p>
@@ -127,41 +149,43 @@ const submit = async () => {
 
         <!-- 设置密码 -->
         <div v-else-if="step === 'setPassword'" class="space-y-4">
-          <div class="text-center space-y-1">
-            <Mail class="h-8 w-8 mx-auto text-primary" />
+          <div class="text-center space-y-1 pb-2">
+            <Mail class="h-7 w-7 mx-auto text-primary" />
             <p class="text-base font-semibold">{{ t('invite.welcome', { name: parentName }) }}</p>
-            <p class="text-xs text-muted-foreground">
+            <p class="text-[11px] text-muted-foreground">
               {{ t('invite.expiresAt', { date: new Date(expiresAt!).toLocaleString('zh-CN') }) }}
             </p>
           </div>
 
-          <!-- 登录邮箱（关键提示）-->
-          <div class="bg-blue-50 border border-blue-200 rounded-md p-3 text-xs">
-            <p class="font-medium text-blue-900 mb-1">{{ t('invite.loginEmail') }}</p>
+          <!-- 登录邮箱 -->
+          <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
+            <p class="font-semibold text-blue-900 mb-0.5">{{ t('invite.loginEmail') }}</p>
             <p class="font-mono text-blue-800 break-all">{{ loginEmail }}</p>
-            <p class="text-blue-700 mt-1">{{ t('invite.loginEmailHint') }}</p>
+            <p class="text-blue-700 mt-1 leading-relaxed">{{ t('invite.loginEmailHint') }}</p>
           </div>
 
-          <div v-if="assignedGroups.length > 0"
-            class="bg-slate-50 border border-slate-200 rounded-md p-3 text-xs">
-            <p class="font-medium text-slate-900 mb-1">{{ t('invite.assignedGroups') }}</p>
+          <!-- 分配的库存组 -->
+          <div v-if="assignedGroups.length > 0" class="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs">
+            <p class="font-semibold text-slate-900 mb-1.5">{{ t('invite.assignedGroups') }}</p>
             <div class="flex flex-wrap gap-1">
               <span v-for="g in assignedGroups" :key="g"
-                class="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded">{{ g }}</span>
+                class="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded font-mono text-[11px]">{{ g }}</span>
             </div>
           </div>
 
           <form @submit.prevent="submit" class="space-y-3">
-            <div>
-              <Label>{{ t('invite.passwordLabel') }}</Label>
-              <Input v-model="password" type="password" placeholder="••••••••" class="h-9" />
+            <div class="space-y-1.5">
+              <Label class="text-xs">{{ t('invite.passwordLabel') }}</Label>
+              <Input v-model="password" type="password" placeholder="最少 8 位" class="h-9" />
             </div>
-            <div>
-              <Label>{{ t('invite.passwordAgain') }}</Label>
-              <Input v-model="passwordAgain" type="password" placeholder="••••••••" class="h-9" />
+            <div class="space-y-1.5">
+              <Label class="text-xs">{{ t('invite.passwordAgain') }}</Label>
+              <Input v-model="passwordAgain" type="password" placeholder="再次输入密码" class="h-9" />
             </div>
-            <div v-if="error" class="text-xs text-red-600">{{ error }}</div>
-            <Button type="submit" class="w-full" :disabled="submitting">
+            <div v-if="error" class="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-md px-3 py-2">
+              {{ error }}
+            </div>
+            <Button type="submit" class="w-full shadow-md shadow-primary/20" :disabled="submitting">
               <Loader2 v-if="submitting" class="mr-2 h-4 w-4 animate-spin" />
               <Lock v-else class="mr-2 h-4 w-4" />
               {{ t('invite.submitBtn') }}
@@ -171,8 +195,10 @@ const submit = async () => {
 
         <!-- 完成 -->
         <div v-else-if="step === 'done'" class="text-center space-y-3">
-          <CheckCircle2 class="h-10 w-10 mx-auto text-emerald-500" />
-          <p class="text-base font-medium">{{ t('invite.activated') }}</p>
+          <div class="h-14 w-14 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+            <CheckCircle2 class="h-7 w-7" />
+          </div>
+          <p class="text-base font-semibold">{{ t('invite.activated') }}</p>
           <p class="text-sm text-muted-foreground">{{ t('invite.redirecting') }}</p>
         </div>
       </CardContent>
