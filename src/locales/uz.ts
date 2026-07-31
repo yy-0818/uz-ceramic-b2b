@@ -23,7 +23,7 @@ export default {
     resetReady: "Vaqtinchalik parol yaratildi. Nusxalab mijozga yuboring.",
   },
   auth: {
-    brand: 'Keramika · B2B',
+    brand: 'Zhongpeng Keramika · B2B',
     welcome: 'Xush kelibsiz',
     loginTitle: 'Tizimga kirish',
     loginDesc: 'Ishchi emailingiz orqali kiring',
@@ -98,7 +98,7 @@ export default {
       copied: 'Havola nusxalandi',
       copyPrompt: 'Bu satrni nusxalang:',
       tplGreeting: 'Assalomu alaykum',
-      tplBrand: 'Keramika · B2B',
+      tplBrand: 'Zhongpeng Keramika · B2B',
     },
     import: {
       step1: '1-qadam · CSV yuklash',
