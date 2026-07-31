@@ -30,14 +30,14 @@ describe('i18n runtime', () => {
       expiresDays: 7,
       url: 'https://x',
       loginEmail: 'a@b.com',
-      brand: 'Керамика · B2B',
+      brand: 'Zhongpeng Керамика · B2B',
     })
     expect(ru).toContain('Здравствуйте')
     expect(ru).toContain('Acme')
     expect(ru).toContain('7')
     expect(ru).toContain('https://x')
     expect(ru).toContain('a@b.com')
-    expect(ru).toContain('Керамика · B2B')
+    expect(ru).toContain('Zhongpeng Керамика · B2B')
   })
 
   it('uses tForLocale to render zh templateBody correctly', () => {
@@ -47,11 +47,11 @@ describe('i18n runtime', () => {
       expiresDays: 7,
       url: 'https://x',
       loginEmail: 'k@h.com',
-      brand: '陶瓷 · B2B',
+      brand: '中鹏陶瓷 · B2B',
     })
     expect(zh).toContain('您好')
     expect(zh).toContain('客户甲')
-    expect(zh).toContain('陶瓷 · B2B')
+    expect(zh).toContain('中鹏陶瓷 · B2B')
   })
 
   it('reportMissingTranslations returns array of locale + missing paths', () => {

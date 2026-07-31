@@ -37,7 +37,7 @@ export default {
     resetReady: '临时密码已生成。请复制后告知客户。',
   },
   auth: {
-    brand: '陶瓷 · B2B',
+    brand: '中鹏陶瓷 · B2B',
     welcome: '欢迎',
     loginTitle: '登录',
     loginDesc: '请使用企业邮箱登录',
@@ -111,7 +111,7 @@ export default {
       copied: '已复制',
       copyPrompt: '复制这一行：',
       tplGreeting: '您好',
-      tplBrand: '陶瓷 · B2B',
+      tplBrand: '中鹏陶瓷 · B2B',
     },
     import: {
       step1: '步骤 1 · 上传 CSV',

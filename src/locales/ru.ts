@@ -24,7 +24,7 @@ export default {
     resetReady: 'Временный пароль создан. Скопируйте и передайте клиенту.',
   },
   auth: {
-    brand: 'Керамика · B2B',
+    brand: 'Zhongpeng Керамика · B2B',
     welcome: 'Добро пожаловать',
     loginTitle: 'Вход в систему',
     loginDesc: 'Используйте рабочий email для входа',
@@ -99,7 +99,7 @@ export default {
       copied: 'Ссылка скопирована',
       copyPrompt: 'Скопировать эту строку:',
       tplGreeting: 'Здравствуйте',
-      tplBrand: 'Керамика · B2B',
+      tplBrand: 'Zhongpeng Керамика · B2B',
     },
     import: {
       step1: 'Шаг 1 · Загрузить CSV',

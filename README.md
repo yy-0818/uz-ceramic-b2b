@@ -1,6 +1,6 @@
-# Uz Ceramic B2B
+# 中鹏陶瓷 · Uz Ceramic B2B
 
-乌兹别克斯坦陶瓷工厂 B2B 下单平台。
+乌兹别克斯坦 · 中鹏陶瓷（Zhongpeng Ceramics）工厂 B2B 下单平台。
 
 ## 技术栈
 - Vue 3 (Composition API + `<script setup>`) + Vite
