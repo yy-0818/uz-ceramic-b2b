@@ -22,15 +22,37 @@ import TableEmpty from '@/components/ui/TableEmpty.vue'
 import Skeleton from '@/components/ui/Skeleton.vue'
 
 import { useOrders } from '@/composables/useOrders'
+import { useAuth } from '@/composables/useAuth'
 
 const { t } = useI18n()
 const router = useRouter()
 const ordersApi = useOrders()
+const { appUser } = useAuth()
 const statusFilter = ref<'all' | 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'>('all')
 
+/**
+ * 兜底超时：fetch 出错 / promise 挂起时，fetched.value 不会变 true，
+ * skeleton 会一直显示。让 refresh 启动一个 8s 定时器，
+ * 超时后强制 fetched=true（只在组件内部维护的视图 flag），
+ * 让 UI 退出 skeleton 显示空状态 / 错误。
+ */
+const forceShowEmpty = ref(false)
 const refresh = async () => {
-  // 列表页全量拉 — 不带 status 参数（RLS 自己决定可见范围）
-  await ordersApi.fetchByStatus(undefined)
+  forceShowEmpty.value = false
+  const timer = setTimeout(() => {
+    // 8s 内 fetch 没完成，强制退出 skeleton
+    if (ordersApi.loading.value) {
+      forceShowEmpty.value = true
+    }
+  }, 8000)
+  try {
+    // 列表页全量拉 — 不带 status 参数（RLS 自己决定可见范围）
+    await ordersApi.fetchByStatus(undefined)
+  } finally {
+    clearTimeout(timer)
+    // fetch 完成后立刻关闭兜底（fetched 已 true）
+    if (!ordersApi.loading.value) forceShowEmpty.value = false
+  }
 }
 
 onMounted(refresh)
@@ -173,7 +195,11 @@ const statusCount = (s: typeof STATUSES[number]) => {
                 </Button>
               </TableCell>
             </TableRow>
-            <TableEmpty v-if="!ordersApi.fetched.value && ordersApi.items.value.length === 0">
+            <!--
+              skeleton 退出条件：fetched=true OR 兜底超时
+              （之前 fetched 只在 fetch 成功路径置 true，fetch 失败会一直卡 skeleton）
+            -->
+            <TableEmpty v-if="!forceShowEmpty && !ordersApi.fetched.value && ordersApi.items.value.length === 0">
               <div class="space-y-2 py-2">
                 <div v-for="i in 5" :key="i" class="flex items-center gap-3">
                   <Skeleton class="h-4 w-24" />
@@ -190,13 +216,21 @@ const statusCount = (s: typeof STATUSES[number]) => {
                 <p class="text-sm">{{ t('orders.empty') }}</p>
                 <!--
                   error 暴露：之前只 set error.value 但 UI 没渲染，
-                  admin 用户看到空列表时不知道为什么 RLS 拒绝
+                  admin 用户看到空列表时不知道为什么 RLS 拒绝。
+                  同时给出 role / account_id 提示，方便排查
                 -->
                 <p
                   v-if="ordersApi.error.value"
                   class="text-[11px] text-destructive max-w-md mx-auto leading-relaxed"
                 >
                   {{ ordersApi.error.value }}
+                </p>
+                <p
+                  v-if="!ordersApi.error.value && forceShowEmpty"
+                  class="text-[11px] text-muted-foreground max-w-md mx-auto leading-relaxed"
+                >
+                  加载超时（>8s）。当前角色：<b>{{ appUser?.role ?? 'unknown' }}</b>。
+                  如应为 admin 但看到空列表，请检查 public.users 里该用户的 role 是否为 'admin'。
                 </p>
               </div>
             </TableEmpty>

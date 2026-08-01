@@ -74,32 +74,31 @@ export function useOrders() {
     items.value.reduce((s, o) => s + (o.total_amount ?? 0), 0),
   )
 
-  /** 客户：拉自己的订单（含子账户信息） */
-  const fetchMine = async () => {
-    loading.value = true
-    const { data, error: e } = await supabase
-      .from('orders')
-      .select('*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))')
-      .order('created_at', { ascending: false })
-    if (e) { error.value = e.message; loading.value = false; return [] }
-    items.value = (data ?? []).map(decorateOrder)
-    loading.value = false
-    fetched.value = true
-    return items.value
-  }
+  /** 客户：拉自己的订单（含子账户信息） — 委托给 fetchByStatus。
+   *  fetchMine 没有 status 过滤（不像 fetchByStatus 接受 status 参数），
+   *  RLS 自己决定可见范围（customer 只见自己的 account_id，admin 走 staff_all 见全部）。
+   *  保留这个名字是为了不破坏现有调用点。 */
+  const fetchMine = async () => fetchByStatus(undefined)
 
   /** 员工：按状态拉所有订单 */
   const fetchByStatus = async (status?: OrderStatus) => {
     loading.value = true
+    error.value = null
     let q = supabase
       .from('orders')
       .select('*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))')
       .order('created_at', { ascending: false })
     if (status) q = q.eq('status', status)
     const { data, error: e } = await q
-    if (e) { error.value = e.message; loading.value = false; return [] }
-    items.value = (data ?? []).map(decorateOrder)
     loading.value = false
+    if (e) {
+      // 错误也要标 fetched=true — 否则 UI 会一直卡在 skeleton
+      // 错误原因在 error.value 里，下游可以渲染
+      error.value = e.message
+      fetched.value = true
+      return []
+    }
+    items.value = (data ?? []).map(decorateOrder)
     fetched.value = true
     return items.value
   }
@@ -122,7 +121,8 @@ export function useOrders() {
       .eq('id', id)
       .maybeSingle()
     loading.value = false
-    if (e) { error.value = e.message; return null }
+    if (e) { error.value = e.message; fetched.value = true; return null }
+    fetched.value = true
     if (!data) return null
     return decorateOrder(data)
   }
