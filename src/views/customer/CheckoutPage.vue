@@ -33,7 +33,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ArrowDown,
   AlertCircle,
   Check,
   Circle,
@@ -567,26 +566,24 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
           </p>
 
           <!--
-            ==================== 代客模式：两个上下堆叠子块 ====================
+            ==================== 代客模式：lg+ 双列 / 移动单列 ====================
 
-            上一个 PR 把 Section 2 整段切成 `grid-cols-2` 双列容器，但结果
-            是每列宽度被砍到 ~150px，账号名被截断到完全不可读（详见 PR
-            截图）。在 1280px 桌面下，左右各 ~480px 时卡片也只能放下
-            "_internal·1_public"，父客户失去识别意义。
+            用户反馈"web 端还是用左右布局，左边选主账号右边选子账号"
+            —— web 端基本都 >= 1024px，所以这里用 `lg:grid-cols-2`：
+              - 移动端 / 中等屏 (< 1024px) → 上下单列堆叠
+              - 桌面 / web (>= 1024px) → 左右双列
 
-            现在的结构：
-              ┌─ 2A 父客户（独立标题 + 搜索 + 角标 + 卡片网格）────┐
-              └──────────────────────────────────────────────────────┘
-                  ↳ 步骤指示（绿色箭头）
-              ┌─ 2B 子账号（独立标题 + 搜索 + 角标 + 卡片网格）────┐
-              └──────────────────────────────────────────────────────┘
-
-            每个子区独立 max-h 滚动、独立搜索 — 父客户列表几十上百个
-            时不会挤压子账号可视区。卡片宽度恢复充裕（桌面单卡 ~580px）。
+            为了避免上次双列"卡片被切到 150px 截断"的问题：
+              - 父列 5/12、子列 7/12（父客户通常 8 字内、子账号可显示
+                账号名 + INN + 主账号徽章）
+              - 卡片内部 min-w-0 + truncate；账号名独占一行，
+                公司名 + 类型同行，< sm 时上下分行
+              - 不再用 flex-1 min-h-0 让父容器挤压列表 → 列表用
+                max-h-[480px] 自主决定高度
           -->
-          <div v-if="isOnBehalf" class="space-y-3">
-            <!-- ========== 2A 父客户 ========== -->
-            <div class="relative rounded-lg border border-border/60 bg-muted/20 flex flex-col">
+          <div v-if="isOnBehalf" class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+            <!-- ========== 左列 5/12：父客户 ========== -->
+            <div class="lg:col-span-5 relative rounded-lg border border-border/60 bg-muted/20 flex flex-col">
               <!-- 头部：步骤标 + 标题 + 角标 -->
               <div class="flex items-center gap-2 px-3 py-2 border-b border-border/60 bg-background/95 backdrop-blur rounded-t-lg">
                 <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold shrink-0">
@@ -647,7 +644,7 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                 <Search class="h-4 w-4 shrink-0 mt-0.5" />
                 <p class="leading-relaxed">{{ t('customer.checkout.noSearchMatch') }}</p>
               </div>
-              <!-- 列表（卡片网格：sm 起双列） -->
+              <!-- 列表 -->
               <div
                 v-else
                 class="relative"
@@ -656,18 +653,18 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                   class="max-h-[480px] overflow-y-auto overscroll-contain p-2"
                   data-testid="parent-account-list-scroll"
                 >
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div class="space-y-1.5">
                     <button
                       v-for="p in filteredParents"
                       :key="p.id"
                       type="button"
-                      class="w-full text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      class="w-full text-left rounded-lg border-2 p-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       :class="pickedParentId === p.id
                         ? 'border-primary bg-primary/5 shadow-sm'
                         : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
                       @click="pickedParentId = p.id"
                     >
-                      <div class="flex items-center gap-2.5">
+                      <div class="flex items-center gap-2">
                         <div
                           class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
                           :class="pickedParentId === p.id
@@ -677,9 +674,9 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                           <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
                         </div>
                         <div class="min-w-0 flex-1">
-                          <p class="font-mono text-sm font-semibold truncate">{{ p.account_name }}</p>
-                          <p class="text-[10px] text-muted-foreground truncate">
-                            {{ p.company_name }} · {{ p.account_type }}
+                          <p class="font-mono text-sm font-semibold truncate leading-snug">{{ p.account_name }}</p>
+                          <p class="text-[10px] text-muted-foreground truncate leading-tight">
+                            {{ p.company_name }}
                           </p>
                         </div>
                       </div>
@@ -694,20 +691,8 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
               </div>
             </div>
 
-            <!-- ========== 步骤连接器 ========== -->
-            <div
-              v-if="pickedParentId"
-              class="flex items-center justify-center gap-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-400"
-            >
-              <ArrowDown class="h-3.5 w-3.5" />
-              <span class="font-mono font-semibold truncate max-w-[280px]">
-                {{ selectedParent?.account_name }}
-              </span>
-              <ArrowDown class="h-3.5 w-3.5" />
-            </div>
-
-            <!-- ========== 2B 子账号 ========== -->
-            <div class="relative rounded-lg border border-border/60 bg-muted/20 flex flex-col">
+            <!-- ========== 右列 7/12：子账号 ========== -->
+            <div class="lg:col-span-7 relative rounded-lg border border-border/60 bg-muted/20 flex flex-col">
               <!-- 头部 -->
               <div class="flex items-center gap-2 px-3 py-2 border-b border-border/60 bg-background/95 backdrop-blur rounded-t-lg">
                 <span class="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary text-primary-foreground text-[10px] font-bold shrink-0">
@@ -789,7 +774,7 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                   class="max-h-[480px] overflow-y-auto overscroll-contain p-2"
                   data-testid="sub-account-list-scroll"
                 >
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div class="grid grid-cols-1 gap-2">
                     <button
                       v-for="s in filteredSubs"
                       :key="s.id"
@@ -800,21 +785,21 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                         : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
                       @click="subId = s.id"
                     >
-                      <div class="flex items-start gap-2.5">
+                      <div class="flex items-center gap-2.5">
                         <div
-                          class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                          class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
                           :class="subId === s.id
                             ? 'border-primary bg-primary'
                             : 'border-muted-foreground/40'"
                         >
                           <Check v-if="subId === s.id" class="h-3 w-3 text-primary-foreground" />
                         </div>
-                        <div class="flex-1 min-w-0">
-                          <div class="flex items-center gap-1.5 flex-wrap">
+                        <div class="min-w-0 flex-1">
+                          <div class="flex items-center gap-1.5 min-w-0">
                             <span class="font-mono text-sm font-semibold truncate">{{ s.account_name }}</span>
                             <Badge
                               v-if="s.is_main"
-                              class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
+                              class="bg-amber-100 text-amber-800 border-amber-200 text-[10px] shrink-0"
                             >
                               <Star class="h-3 w-3 mr-0.5 fill-current" />
                               {{ t('customer.checkout.mainBadge') }}
@@ -822,14 +807,14 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                             <Badge
                               v-if="s.status === 'inactive'"
                               variant="secondary"
-                              class="text-[10px]"
+                              class="text-[10px] shrink-0"
                             >
                               {{ t('customer.checkout.inactive') }}
                             </Badge>
                           </div>
                           <p
                             v-if="s.inn && s.inn !== '-'"
-                            class="text-[10px] text-muted-foreground mt-0.5 font-mono"
+                            class="text-[10px] text-muted-foreground mt-0.5 font-mono truncate"
                           >
                             INN {{ s.inn }}
                           </p>
