@@ -55,6 +55,7 @@ import { useCart } from '@/composables/useCart'
 import { useOrders } from '@/composables/useOrders'
 import { useAuth } from '@/composables/useAuth'
 import { useAccounts, type Account } from '@/composables/useAccounts'
+import { useProducts } from '@/composables/useProducts'
 import {
   useOrderAttachments,
   attachToOrder,
@@ -68,6 +69,7 @@ const orders = useOrders()
 const { account, role } = useAuth()
 const accs = useAccounts()
 const attachments = useOrderAttachments()
+const products = useProducts()
 
 /**
  * 是否为「代客下单」模式——即非 customer 角色（admin / checker / 等）
@@ -179,6 +181,11 @@ watch(
 )
 
 onMounted(() => {
+  // 商品图片缓存是模块级单例，通常 catalog 进来时已经 fetch。
+  // 但 deep-link 进 checkout 时未必拉过，做一次保险。
+  if (!products.fetched.value && !products.loading.value) {
+    products.fetchAll().catch(() => { /* 网络失败展示首字母占位即可 */ })
+  }
   if (isOnBehalf.value) {
     // 代客模式：只拉 parents，由上面 watcher 拉 subs
     loadParents()
@@ -187,6 +194,30 @@ onMounted(() => {
   // 客户模式：直接走自己父账号
   if (parentAccountId.value) loadSubs(parentAccountId.value)
 })
+
+/**
+ * 商品缩略图查表：product_id → image_url
+ * - 从 useProducts() 模块级单例直接拿 items，零额外请求（catalog 已 fetch）
+ * - 没图片或加载失败时由模板的 <ProductThumb> 组件用首字母占位回退
+ */
+const productImageMap = computed(() => {
+  const m = new Map<string, string | null>()
+  for (const p of products.items.value) m.set(p.id, p.image_url ?? null)
+  return m
+})
+
+/**
+ * 商品缩略图组件：
+ * - 有 url 时渲染 <img>，onerror 切回字母占位
+ * - 无 url 或加载失败时显示渐变背景 + 大写首字符（如 "A" for "Apex 6003"）
+ */
+const initialOf = (s: string) => (s.trim()[0] ?? '?').toUpperCase()
+const colorFromModel = (s: string) => {
+  // 用 model 字符串前 3 字符哈希成 HSL 色相，保证首字母占位色稳定
+  let h = 0
+  for (let i = 0; i < Math.min(s.length, 8); i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h % 360
+}
 
 const fmtM2 = (n: number) => `${n.toFixed(2)} м²`
 const totalBoxes = computed(() => cart.totalBoxes())
@@ -471,68 +502,194 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
 
         <!-- Section 1：商品明细 -->
         <section class="px-5 sm:px-6 py-5 border-b">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+          <!--
+            头部：步骤标 + 图标 + 标题 + 右上"件数 / 总量"指标卡
+            - 蓝→青渐变徽章作为视觉锚点，让用户进来第一眼就知道"这里是商品"
+            - 右上两个统计指标（件数 / 总量）填满横向空间，避免空白
+          -->
+          <div class="flex items-center gap-2 mb-3.5">
+            <span class="h-5 w-5 rounded-full bg-gradient-to-br from-primary to-blue-500 text-primary-foreground flex items-center justify-center text-[10px] font-bold shrink-0 shadow-sm">
               1
             </span>
             <Package class="h-3.5 w-3.5 text-primary" />
             <h2 class="text-sm font-semibold text-foreground">
               {{ t('customer.checkout.items') }}
             </h2>
-            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
-              {{ itemsCount }} {{ t('customer.checkout.itemsCount') }}
-            </Badge>
+            <span class="ml-1.5 text-[10px] text-muted-foreground">
+              ({{ t('customer.checkout.itemsImageHint') }})
+            </span>
+            <!-- 右上：件数 + 总量 指标块 -->
+            <div class="ml-auto flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+              <div class="text-right leading-tight">
+                <p class="text-[9px] uppercase tracking-wider text-muted-foreground">
+                  {{ t('customer.checkout.itemsCount') }}
+                </p>
+                <p class="text-sm font-bold tabular-nums text-foreground mt-0.5">
+                  {{ itemsCount }}
+                </p>
+              </div>
+              <div class="h-7 w-px bg-border" />
+              <div class="text-right leading-tight">
+                <p class="text-[9px] uppercase tracking-wider text-muted-foreground">
+                  {{ t('customer.checkout.totalM2') }}
+                </p>
+                <p class="text-sm font-bold tabular-nums text-foreground mt-0.5">
+                  {{ fmtM2(totalM2) }}
+                </p>
+              </div>
+            </div>
           </div>
 
-          <!-- 表头 (md+) -->
-          <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground rounded-md bg-muted/40">
-            <span>Модель</span>
-            <span class="text-right">Кол-во ящ.</span>
-            <span class="text-right">м² / ящ.</span>
-            <span class="text-right">Итого м²</span>
-          </div>
-
-          <ul class="divide-y divide-border/40 -mx-1">
+          <!--
+            卡片列表 — 每张卡 = 缩略图 + 型号/色号 + 数量/总量
+            - 缩略图 56×56（移动 48×48），圆角，object-cover
+            - 缺失/加载失败回退为字母占位（基于 model 哈希出色相）
+            - 卡片之间 8px gap 而不是 1px divider，视觉更现代
+          -->
+          <ul class="space-y-2">
             <li
               v-for="(i, idx) in cart.items.value"
               :key="i.product_id"
-              class="px-3 py-2.5 hover:bg-muted/30 transition rounded-md"
+              class="relative group rounded-xl border border-border/60 bg-card hover:border-primary/40 hover:shadow-sm transition overflow-hidden"
+              :class="idx === 0
+                ? 'ring-1 ring-primary/10'
+                : ''"
             >
-              <!-- 桌面：表格行 -->
-              <div class="hidden md:grid grid-cols-[1fr_90px_100px_110px] gap-3 items-center">
-                <div class="flex items-center gap-2 min-w-0">
-                  <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
-                    {{ idx + 1 }}
-                  </span>
-                  <p class="font-mono text-sm font-medium truncate">{{ i.model }}</p>
+              <!-- 序号条 -->
+              <span class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-primary to-blue-500" aria-hidden="true" />
+
+              <div class="flex items-center gap-3 p-2.5 sm:p-3 pl-3.5">
+                <!-- ============ 缩略图 ============ -->
+                <div
+                  class="relative shrink-0 h-14 w-14 sm:h-16 sm:w-16 rounded-lg overflow-hidden bg-muted/40 ring-1 ring-border/60"
+                >
+                  <img
+                    v-if="productImageMap.get(i.product_id)"
+                    :src="productImageMap.get(i.product_id)!"
+                    :alt="i.model"
+                    class="absolute inset-0 h-full w-full object-cover"
+                    loading="lazy"
+                    @error="($event.target as HTMLImageElement).style.display = 'none'"
+                  />
+                  <!--
+                    首字母占位（始终渲染，被 img 覆盖） — 用 model 哈希出色相
+                    保证每个商品的色稳定可识别
+                  -->
+                  <div
+                    class="absolute inset-0 flex items-center justify-center font-mono font-bold text-lg sm:text-xl text-white"
+                    :style="{
+                      background: `linear-gradient(135deg, hsl(${colorFromModel(i.model)}, 55%, 45%), hsl(${(colorFromModel(i.model) + 40) % 360}, 65%, 35%))`,
+                    }"
+                    aria-hidden="true"
+                  >
+                    {{ initialOf(i.model) }}
+                  </div>
                 </div>
-                <p class="text-right text-sm tabular-nums">
-                  {{ i.boxes }} <span class="text-[10px] text-muted-foreground">ящ.</span>
-                </p>
-                <p class="text-right text-xs tabular-nums text-muted-foreground">
-                  {{ i.conversion_rate.toFixed(2) }}
-                </p>
-                <p class="text-right text-sm font-semibold tabular-nums">
-                  {{ fmtM2(i.boxes * i.conversion_rate) }}
-                </p>
-              </div>
-              <!-- 移动：堆叠卡片行 -->
-              <div class="md:hidden space-y-1">
-                <div class="flex items-center gap-2">
-                  <span class="h-5 w-5 rounded bg-primary/10 text-primary text-[10px] font-mono font-bold flex items-center justify-center shrink-0">
-                    {{ idx + 1 }}
-                  </span>
-                  <p class="font-mono text-sm font-medium truncate flex-1">{{ i.model }}</p>
-                  <p class="text-sm font-semibold tabular-nums shrink-0">
+
+                <!-- ============ 主体（型号 + 色号 + stock） ============ -->
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-baseline gap-1.5 min-w-0">
+                    <span class="text-[10px] font-mono font-bold text-primary/70 tabular-nums shrink-0">
+                      #{{ idx + 1 }}
+                    </span>
+                    <p class="font-mono text-sm font-semibold truncate" :title="i.model">
+                      {{ i.model }}
+                    </p>
+                  </div>
+                  <!--
+                    色号 + stock_level 行 — 紧凑徽章组
+                    色号用 font-mono 强调是 SKU 编号；stock 用轮廓徽章
+                  -->
+                  <div class="flex items-center gap-1 mt-0.5 flex-wrap">
+                    <Badge
+                      variant="outline"
+                      class="font-mono text-[10px] tabular-nums px-1.5 py-0 h-4"
+                    >
+                      {{ t('customer.checkout.colorCode') }}: {{ i.color_code }}
+                    </Badge>
+                    <Badge
+                      :variant="i.stock_level === 2 ? 'default' : 'secondary'"
+                      class="text-[10px] tabular-nums px-1.5 py-0 h-4"
+                    >
+                      {{ t('customer.checkout.stockLevel') }} {{ i.stock_level }}
+                    </Badge>
+                  </div>
+                </div>
+
+                <!-- ============ 右侧数量区（桌面端） ============ -->
+                <div class="hidden md:flex shrink-0 items-stretch divide-x divide-border/60 rounded-lg border border-border/60 overflow-hidden">
+                  <div class="px-2.5 py-1 text-center bg-muted/20">
+                    <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                      {{ t('customer.checkout.colBoxes') }}
+                    </p>
+                    <p class="text-sm font-bold tabular-nums leading-tight mt-0.5">
+                      {{ i.boxes }}
+                    </p>
+                  </div>
+                  <div class="px-2.5 py-1 text-center bg-muted/20">
+                    <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                      {{ t('customer.checkout.colConv') }}
+                    </p>
+                    <p class="text-sm tabular-nums leading-tight mt-0.5">
+                      {{ i.conversion_rate.toFixed(2) }}
+                    </p>
+                  </div>
+                  <div class="px-3 py-1 text-center bg-primary/5">
+                    <p class="text-[9px] uppercase tracking-wider text-primary/70 leading-none font-semibold">
+                      {{ t('customer.checkout.colTotal') }}
+                    </p>
+                    <p class="text-sm font-bold tabular-nums leading-tight mt-0.5 text-primary">
+                      {{ fmtM2(i.boxes * i.conversion_rate) }}
+                    </p>
+                  </div>
+                </div>
+
+                <!-- ============ 移动端：总额独占 ============ -->
+                <div class="md:hidden shrink-0 text-right">
+                  <p class="text-base font-bold tabular-nums text-primary leading-tight">
                     {{ fmtM2(i.boxes * i.conversion_rate) }}
                   </p>
+                  <p class="text-[10px] text-muted-foreground leading-tight mt-0.5 tabular-nums">
+                    {{ i.boxes }} × {{ i.conversion_rate.toFixed(2) }}
+                  </p>
                 </div>
-                <p class="text-[11px] text-muted-foreground pl-7">
-                  {{ i.boxes }} ящ. × {{ i.conversion_rate.toFixed(2) }} м²
-                </p>
               </div>
+
+              <!-- 移动端：补充行（色号 + stock 已经在上面展示，这里避免重复） -->
             </li>
           </ul>
+
+          <!--
+            合计脚注 — 当有 ≥2 件商品时显示
+            - 横向 padding 与卡片对齐
+            - 总箱数 + 总面积用大号字
+          -->
+          <div
+            v-if="cart.items.value.length > 0"
+            class="mt-3 px-3 py-2 rounded-lg bg-gradient-to-r from-primary/5 to-blue-500/5 border border-primary/15 flex items-center justify-between gap-3 flex-wrap"
+          >
+            <span class="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">
+              {{ t('customer.checkout.subtotalLabel') }}
+            </span>
+            <div class="flex items-baseline gap-3 sm:gap-5">
+              <div class="text-right">
+                <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                  {{ t('customer.checkout.colBoxes') }}
+                </p>
+                <p class="text-sm font-bold tabular-nums mt-0.5">
+                  {{ totalBoxes }} <span class="text-[10px] text-muted-foreground font-normal">ящ.</span>
+                </p>
+              </div>
+              <div class="text-right">
+                <p class="text-[9px] uppercase tracking-wider text-muted-foreground leading-none">
+                  {{ t('customer.checkout.colTotal') }}
+                </p>
+                <p class="text-base font-bold tabular-nums mt-0.5 text-primary">
+                  {{ fmtM2(totalM2) }}
+                </p>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- Section 2：客户选择（代客：双列；普通客户：单列） -->
