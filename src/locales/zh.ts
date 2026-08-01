@@ -508,6 +508,7 @@ export default {
       totalM2: '总面积',
       totalAmount: '总计',
       remark: '备注',
+      attachments: '订单附件',
       ledger: '财务流水',
       colDir: '类型',
       colAmount: '金额',

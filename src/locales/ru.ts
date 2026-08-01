@@ -363,6 +363,7 @@ export default {
       totalM2: 'Всего м²',
       totalAmount: 'Итого',
       remark: 'Примечание',
+      attachments: 'Вложения',
       ledger: 'Финансовые записи',
       colDir: 'Тип',
       colAmount: 'Сумма',

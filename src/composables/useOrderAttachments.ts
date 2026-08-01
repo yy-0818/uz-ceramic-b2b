@@ -167,29 +167,45 @@ export interface OrderAttachmentRow {
   created_at: string
 }
 
-/**
- * 拉取指定订单的全部附件元数据。
- * 由 OrderDetailPage 调用，配合 attachmentPublicUrl() 拼图。
- *
- * RLS：
- *   - admin 走 order_attachments_admin_all 全权
- *   - 客户走 order_attachments_read（按 account_id 父账号子树）
- */
-export async function fetchOrderAttachments(orderId: string): Promise<OrderAttachmentRow[]> {
-  const { data, error } = await supabase
-    .from('order_attachments')
-    .select('id, order_id, account_id, storage_path, mime, size_bytes, caption, uploaded_by, created_at')
-    .eq('order_id', orderId)
-    .order('created_at', { ascending: true })
-  if (error) throw error
-  return (data ?? []) as OrderAttachmentRow[]
-}
+  /**
+   * 拉取指定订单的全部附件元数据。
+   * 由 OrderDetailPage 调用，配合 attachmentPublicUrl() 拼图。
+   *
+   * RLS：
+   *   - admin 走 order_attachments_admin_all 全权
+   *   - 客户走 order_attachments_read（按 account_id 父账号子树）
+   */
+  export async function fetchOrderAttachments(orderId: string): Promise<OrderAttachmentRow[]> {
+    const { data, error } = await supabase
+      .from('order_attachments')
+      .select('id, order_id, account_id, storage_path, mime, size_bytes, caption, uploaded_by, created_at')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: true })
+    if (error) throw error
+    return (data ?? []) as OrderAttachmentRow[]
+  }
 
-/** 拼 public URL (bucket 是 PUBLIC, 直接拼) */
-export function attachmentPublicUrl(storage_path: string): string {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(storage_path)
-  return data.publicUrl
-}
+  /**
+   * 拼 public URL（bucket 是 PUBLIC 时直接拼）。
+   * 失败/老订单路径漂移时, 详情页会回退到 signedUrl。
+   */
+  export function attachmentPublicUrl(storage_path: string): string {
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(storage_path)
+    return data.publicUrl
+  }
+
+  /**
+   * 拼签名 URL（bucket 是 PRIVATE 时使用）。
+   * 有效期 1 小时, 详情页一次性使用足够。
+   * 失败返回 null（object 不存在 / 权限拒绝）。
+   */
+  export async function attachmentSignedUrl(storage_path: string): Promise<string | null> {
+    const { data, error } = await supabase.storage
+      .from(BUCKET)
+      .createSignedUrl(storage_path, 3600)
+    if (error) return null
+    return data?.signedUrl ?? null
+  }
 
 /**
  * useOrderAttachments —— reactive 容器, 在 CheckoutPage 中跟踪用户上传中的图.

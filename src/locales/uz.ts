@@ -363,6 +363,7 @@ export default {
       totalM2: 'Jami m²',
       totalAmount: 'Jami',
       remark: 'Izoh',
+      attachments: 'Biriktirmalar',
       ledger: 'Moliyaviy yozuvlar',
       colDir: 'Turi',
       colAmount: 'Summa',

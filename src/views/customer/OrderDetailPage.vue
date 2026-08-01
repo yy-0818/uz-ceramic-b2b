@@ -25,7 +25,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/composables/useAuth'
 import { useOrders, type OrderRow } from '@/composables/useOrders'
 import { useFinance } from '@/composables/useFinance'
-import { attachmentPublicUrl, fetchOrderAttachments, type OrderAttachmentRow } from '@/composables/useOrderAttachments'
+import { attachmentPublicUrl, attachmentSignedUrl, fetchOrderAttachments, type OrderAttachmentRow } from '@/composables/useOrderAttachments'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -67,6 +67,20 @@ const fmt = (n: number) =>
   new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' UZS'
 
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
+
+/** 选 signed URL 兜底（早期订单 bucket 是 private / 路径漂移） */
+const urlMap = ref<Record<string, string>>({})
+
+const onImgError = async (att: OrderAttachmentRow) => {
+  // public URL 失败, 试试 signed URL (private bucket / 老路径)
+  if (urlMap.value[att.id]) return
+  const signed = await attachmentSignedUrl(att.storage_path)
+  if (signed) {
+    urlMap.value = { ...urlMap.value, [att.id]: signed }
+  }
+}
+
+const attUrl = (att: OrderAttachmentRow) => urlMap.value[att.id] ?? attachmentPublicUrl(att.storage_path)
 
 const fmtSize = (n: number) => {
   if (n < 1024) return `${n} B`
@@ -310,7 +324,7 @@ const statusVariant = (s?: string) => {
             <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
               <ImageIcon class="h-3 w-3" />
             </span>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.attachments') ?? '订单附件' }}</h2>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.attachments') }}</h2>
             <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
               {{ attachments.length }}
             </Badge>
@@ -319,17 +333,19 @@ const statusVariant = (s?: string) => {
             <a
               v-for="att in attachments"
               :key="att.id"
-              :href="attachmentPublicUrl(att.storage_path)"
+              :href="attUrl(att)"
               target="_blank"
               rel="noopener noreferrer"
+              :title="att.storage_path"
               class="group block"
             >
               <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 ring-1 ring-border/50 hover:ring-primary/40 transition">
                 <img
-                  :src="attachmentPublicUrl(att.storage_path)"
+                  :src="attUrl(att)"
                   :alt="att.caption ?? 'attachment'"
                   loading="lazy"
                   class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                  @error="onImgError(att)"
                 />
               </div>
               <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
