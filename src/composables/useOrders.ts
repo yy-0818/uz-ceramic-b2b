@@ -86,7 +86,9 @@ export function useOrders() {
     error.value = null
     let q = supabase
       .from('orders')
-      .select('*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))')
+      .select(
+        '*, account:accounts!orders_account_id_fkey(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))',
+      )
       .order('created_at', { ascending: false })
     if (status) q = q.eq('status', status)
     const { data, error: e } = await q
@@ -116,7 +118,7 @@ export function useOrders() {
     const { data, error: e } = await supabase
       .from('orders')
       .select(
-        '*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))',
+        '*, account:accounts!orders_account_id_fkey(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))',
       )
       .eq('id', id)
       .maybeSingle()
