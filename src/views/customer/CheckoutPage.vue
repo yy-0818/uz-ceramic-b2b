@@ -39,6 +39,7 @@ import {
   ImagePlus,
   X,
   Upload,
+  Search,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
@@ -95,6 +96,39 @@ const loadingSubs = ref(false)
 const subsLoaded = ref(false)
 
 /**
+ * 代客模式下的本地搜索词。
+ * 父客户/子账号列表都可能很长（几十上百个），后台订单员经常
+ * 跨多个客户来回切，所以两边都加了过滤搜索。
+ */
+const parentSearch = ref('')
+const subSearch = ref('')
+
+/**
+ * 大小写不敏感的子串匹配：账号名 / 公司名 / INN / 客户类型都参与
+ * 搜索，但只对 account_name/company_name 做 trim — 其余字段（如
+ * account_type 的 i18n label）不在搜索范围，避免"搜不到俄语/乌语" 的
+ * 体验割裂。
+ */
+const norm = (s: string) => s.toLowerCase().trim()
+const filteredParents = computed(() => {
+  const q = norm(parentSearch.value)
+  if (!q) return parents.value
+  return parents.value.filter((p) => {
+    return norm(p.account_name).includes(q)
+      || norm(p.company_name ?? '').includes(q)
+  })
+})
+const filteredSubs = computed(() => {
+  const q = norm(subSearch.value)
+  const list = !q ? subs.value : subs.value.filter((s) => {
+    return norm(s.account_name).includes(q)
+      || norm(s.inn ?? '').includes(q)
+  })
+  // 主账号锁顶：is_main 排第一，其余按当前顺序
+  return [...list].sort((a, b) => Number(b.is_main) - Number(a.is_main))
+})
+
+/**
  * 当前下单要用的父账号 id：
  *  - customer 模式：从 account 直接出
  *  - 代客模式：从 picker 出，未选则 null（强制走 picker 路径）
@@ -139,6 +173,7 @@ watch(
     subId.value = ''
     subs.value = []
     subsLoaded.value = false
+    subSearch.value = ''   // 切换父客户后，子账号搜索词归零
     loadSubs(id)
   },
 )
@@ -500,16 +535,20 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
           </ul>
         </section>
 
-        <!-- Section 2：父客户选择（仅代客模式） -->
-        <section v-if="isOnBehalf" class="px-5 sm:px-6 py-5 border-b">
+        <!-- Section 2：客户选择（代客：双列；普通客户：单列） -->
+        <section class="px-5 sm:px-6 py-5 border-b">
           <div class="flex items-center gap-2 mb-3">
             <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
               2
             </span>
             <Users class="h-3.5 w-3.5 text-primary" />
-            <h2 class="text-sm font-semibold text-foreground">{{ t('customer.checkout.parentAccountLabel') }}</h2>
+            <h2 class="text-sm font-semibold text-foreground">
+              {{ isOnBehalf
+                ? t('customer.checkout.accountSectionTitle')
+                : t('customer.checkout.subAccountLabel') }}
+            </h2>
             <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wider ml-0.5">
-              {{ t('customer.checkout.parentAccountRequired') }}
+              {{ t('customer.checkout.required') }}
             </span>
             <span
               v-if="selectedParent"
@@ -521,203 +560,337 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
           </div>
 
           <p class="text-[11px] text-muted-foreground leading-relaxed mb-2.5">
-            {{ t('customer.checkout.parentAccountHint') }}
+            {{ isOnBehalf
+              ? t('customer.checkout.accountSectionHint')
+              : t('customer.checkout.subAccountHint') }}
           </p>
 
-          <!-- 加载态 -->
-          <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-2">
-            <Loader2 class="h-3.5 w-3.5 animate-spin" />
-            加载客户中…
-          </div>
+          <!--
+            ==================== 代客模式：双列布局 ====================
+            父客户在左，子账号在右。
+            - 父客户列表几十上百，加搜索框快速定位
+            - 子账号列表通常较小，但跨客户切时需重选，加主账号锁顶
+            - 两列独立 max-h 滚动，互不干扰
+            - 移动端(< md)回到单列堆叠
+          -->
+          <div v-if="isOnBehalf" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <!-- ========== 左列：父客户 ========== -->
+            <div class="relative rounded-lg border border-border/60 bg-muted/20 flex flex-col min-h-0">
+              <!-- 头部：标题 + 总数 + 搜索 -->
+              <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/60 bg-background/95 backdrop-blur rounded-t-lg">
+                <span class="text-[11px] font-semibold text-foreground shrink-0">
+                  {{ t('customer.checkout.parentAccountLabel') }}
+                </span>
+                <span
+                  v-if="parentsLoaded"
+                  class="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono font-bold shrink-0"
+                  :title="t('customer.checkout.parentAccountCount', { n: filteredParents.length })"
+                >
+                  {{ filteredParents.length }}<span class="opacity-60">/{{ parents.length }}</span>
+                </span>
+              </div>
+              <!-- 搜索框 -->
+              <div class="relative px-2 py-1.5 border-b border-border/60">
+                <Search class="absolute left-4 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  v-model="parentSearch"
+                  type="text"
+                  :placeholder="t('customer.checkout.parentSearchPh')"
+                  class="w-full h-7 pl-8 pr-7 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+                <button
+                  v-if="parentSearch"
+                  type="button"
+                  class="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                  :title="t('common.clear')"
+                  @click="parentSearch = ''"
+                >
+                  <X class="h-3 w-3" />
+                </button>
+              </div>
 
-          <!-- 空状态 -->
-          <div
-            v-else-if="parents.length === 0"
-            class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
-          >
-            <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <p class="leading-relaxed">暂无父客户账号，请先在「客户管理」中创建。</p>
+              <!-- 加载态 -->
+              <div v-if="!parentsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4">
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                {{ t('customer.checkout.loadingParents') }}
+              </div>
+              <!-- 空（数据） -->
+              <div
+                v-else-if="parents.length === 0"
+                class="m-2 flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
+              >
+                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <p class="leading-relaxed">{{ t('customer.checkout.noParents') }}</p>
+              </div>
+              <!-- 搜索无结果 -->
+              <div
+                v-else-if="filteredParents.length === 0"
+                class="m-2 flex gap-2 border border-border bg-muted/40 text-muted-foreground rounded-lg p-2.5 text-xs"
+              >
+                <Search class="h-4 w-4 shrink-0 mt-0.5" />
+                <p class="leading-relaxed">{{ t('customer.checkout.noSearchMatch') }}</p>
+              </div>
+              <!-- 列表 -->
+              <div
+                v-else
+                class="relative flex-1 min-h-0"
+              >
+                <div
+                  class="absolute inset-0 overflow-y-auto overscroll-contain p-2"
+                  data-testid="parent-account-list-scroll"
+                >
+                  <div class="space-y-1.5">
+                    <button
+                      v-for="p in filteredParents"
+                      :key="p.id"
+                      type="button"
+                      class="w-full text-left rounded-lg border-2 p-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      :class="pickedParentId === p.id
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+                      @click="pickedParentId = p.id"
+                    >
+                      <div class="flex items-center gap-2">
+                        <div
+                          class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                          :class="pickedParentId === p.id
+                            ? 'border-primary bg-primary'
+                            : 'border-muted-foreground/40'"
+                        >
+                          <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
+                        </div>
+                        <div class="min-w-0 flex-1">
+                          <p class="font-mono text-sm font-semibold truncate">{{ p.account_name }}</p>
+                          <p class="text-[10px] text-muted-foreground truncate">
+                            {{ p.company_name }} · {{ p.account_type }}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+                <!-- 底部渐隐遮罩 -->
+                <div
+                  class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-muted/60 to-transparent rounded-b-lg"
+                  aria-hidden="true"
+                />
+              </div>
+            </div>
+
+            <!-- ========== 右列：子账号 ========== -->
+            <div class="relative rounded-lg border border-border/60 bg-muted/20 flex flex-col min-h-0">
+              <!-- 头部 -->
+              <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/60 bg-background/95 backdrop-blur rounded-t-lg">
+                <span class="text-[11px] font-semibold text-foreground shrink-0">
+                  {{ t('customer.checkout.subAccountLabel') }}
+                </span>
+                <span
+                  v-if="subsLoaded && pickedParentId"
+                  class="ml-auto inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono font-bold shrink-0"
+                  :title="t('customer.checkout.subCount', { n: filteredSubs.length })"
+                >
+                  {{ filteredSubs.length }}<span class="opacity-60">/{{ subs.length }}</span>
+                </span>
+              </div>
+              <!-- 搜索框 -->
+              <div class="relative px-2 py-1.5 border-b border-border/60">
+                <Search class="absolute left-4 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  v-model="subSearch"
+                  type="text"
+                  :placeholder="t('customer.checkout.subSearchPh')"
+                  :disabled="!pickedParentId"
+                  class="w-full h-7 pl-8 pr-7 text-xs rounded-md border border-input bg-background focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                />
+                <button
+                  v-if="subSearch"
+                  type="button"
+                  class="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                  :title="t('common.clear')"
+                  @click="subSearch = ''"
+                >
+                  <X class="h-3 w-3" />
+                </button>
+              </div>
+
+              <!-- 占位：未选父客户 -->
+              <div
+                v-if="!pickedParentId"
+                class="m-2 flex gap-2 border border-dashed border-border text-muted-foreground rounded-lg p-3 text-xs"
+              >
+                <ChevronRight class="h-4 w-4 shrink-0 mt-0.5" />
+                <p class="leading-relaxed">{{ t('customer.checkout.pickParentFirst') }}</p>
+              </div>
+              <!-- 加载态 -->
+              <div
+                v-else-if="!subsLoaded"
+                class="flex items-center gap-2 text-xs text-muted-foreground px-3 py-4"
+              >
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                {{ t('customer.checkout.loadingSubs') }}
+              </div>
+              <!-- 空（数据） -->
+              <div
+                v-else-if="subs.length === 0"
+                class="m-2 flex gap-2 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
+              >
+                <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
+              </div>
+              <!-- 搜索无结果 -->
+              <div
+                v-else-if="filteredSubs.length === 0"
+                class="m-2 flex gap-2 border border-border bg-muted/40 text-muted-foreground rounded-lg p-2.5 text-xs"
+              >
+                <Search class="h-4 w-4 shrink-0 mt-0.5" />
+                <p class="leading-relaxed">{{ t('customer.checkout.noSearchMatch') }}</p>
+              </div>
+              <!-- 列表 -->
+              <div
+                v-else
+                class="relative flex-1 min-h-0"
+              >
+                <div
+                  class="absolute inset-0 overflow-y-auto overscroll-contain p-2"
+                  data-testid="sub-account-list-scroll"
+                >
+                  <div class="space-y-1.5">
+                    <button
+                      v-for="s in filteredSubs"
+                      :key="s.id"
+                      type="button"
+                      class="w-full text-left rounded-lg border-2 p-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                      :class="subId === s.id
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+                      @click="subId = s.id"
+                    >
+                      <div class="flex items-start gap-2">
+                        <div
+                          class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                          :class="subId === s.id
+                            ? 'border-primary bg-primary'
+                            : 'border-muted-foreground/40'"
+                        >
+                          <Check v-if="subId === s.id" class="h-3 w-3 text-primary-foreground" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <span class="font-mono text-sm font-semibold truncate">{{ s.account_name }}</span>
+                            <Badge
+                              v-if="s.is_main"
+                              class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
+                            >
+                              <Star class="h-3 w-3 mr-0.5 fill-current" />
+                              {{ t('customer.checkout.mainBadge') }}
+                            </Badge>
+                            <Badge
+                              v-if="s.status === 'inactive'"
+                              variant="secondary"
+                              class="text-[10px]"
+                            >
+                              {{ t('customer.checkout.inactive') }}
+                            </Badge>
+                          </div>
+                          <p
+                            v-if="s.inn && s.inn !== '-'"
+                            class="text-[10px] text-muted-foreground mt-0.5 font-mono"
+                          >
+                            INN {{ s.inn }}
+                          </p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+                <!-- 底部渐隐遮罩 -->
+                <div
+                  class="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-muted/60 to-transparent rounded-b-lg"
+                  aria-hidden="true"
+                />
+              </div>
+            </div>
           </div>
 
           <!--
-           客户列表：固定高度 + 内部滚动
-
-           后台订单员动辄要服务几十上百个父客户，把整个列表渲染到
-           document 高度上会让"摘要区 + 备注 + 提交按钮"这些真正重要
-           的下半屏被推到屏幕外，必须滚好几屏才能看到底部的提交按钮。
-
-           这里把列表装进一个有 max-height 的容器，让滚动发生在列表内，
-           头部 sticky 保持"已选"和总数常驻，底部加渐隐遮罩 + 剩余条数
-           提示，让用户知道"下面还有可滚的卡片"。
+            ==================== 普通客户模式：单列（不变） ====================
           -->
-          <div
-            v-else
-            class="relative rounded-lg border border-border/60 bg-muted/20"
-          >
-            <!-- 列表头（粘性）：客户总数 + 搜索（可选） -->
-            <div
-              class="sticky top-0 z-10 flex items-center justify-between gap-2 px-2.5 py-1.5 bg-background/95 backdrop-blur border-b border-border/60 text-[11px] text-muted-foreground rounded-t-lg"
-            >
-              <span class="font-mono font-semibold text-foreground/80">
-                {{ t('customer.checkout.parentAccountCount', { n: parents.length }) }}
-              </span>
-              <span class="inline-flex items-center gap-1">
-                <ChevronDown class="h-3 w-3" />
-                {{ t('customer.checkout.parentAccountCountMore', { n: Math.max(parents.length - 6, 0) }) }}
-              </span>
+          <div v-else>
+            <!-- 加载态 -->
+            <div v-if="!subsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
+              <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              {{ t('customer.checkout.loadingSubs') }}
             </div>
-
-            <!--
-             滚动容器
-             - max-h-[60vh]：长屏 1080p 显示 ~20 行卡片；短屏 720p 仍能看 ~12 行
-             - overflow-y-auto：列表内滚动
-             - overscroll-contain：滚到底不会把整页也"接着滚"
-             - p-2 + space-y-1.5：卡片之间留点呼吸空间，不挤
-            -->
+            <!-- 空状态 -->
             <div
-              class="max-h-[60vh] overflow-y-auto overscroll-contain p-2"
-              data-testid="parent-account-list-scroll"
+              v-else-if="subs.length === 0"
+              class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
             >
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  v-for="p in parents"
-                  :key="p.id"
-                  type="button"
-                  class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                  :class="pickedParentId === p.id
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
-                  @click="pickedParentId = p.id"
-                >
-                  <div class="flex items-center gap-2">
-                    <div
-                      class="h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
-                      :class="pickedParentId === p.id
-                        ? 'border-primary bg-primary'
-                        : 'border-muted-foreground/40'"
-                    >
-                      <Check v-if="pickedParentId === p.id" class="h-3 w-3 text-primary-foreground" />
-                    </div>
-                    <div class="min-w-0 flex-1">
-                      <p class="font-mono text-sm font-semibold truncate">
-                        {{ p.account_name }}
-                      </p>
-                      <p class="text-[10px] text-muted-foreground truncate">
-                        {{ p.company_name }} · {{ p.account_type }}
-                      </p>
-                    </div>
-                  </div>
-                </button>
-              </div>
+              <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+              <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
             </div>
-
-            <!-- 底部渐隐遮罩：暗示"列表可继续向下滚" -->
-            <div
-              class="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-lg bg-gradient-to-t from-muted/80 to-transparent"
-              aria-hidden="true"
-            />
-          </div>
-        </section>
-
-        <!-- Section 3：收货子账号 -->
-        <section v-if="!isOnBehalf || pickedParentId" class="px-5 sm:px-6 py-5 border-b">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
-              {{ isOnBehalf ? 3 : 2 }}
-            </span>
-            <Users class="h-3.5 w-3.5 text-primary" />
-            <h2 class="text-sm font-semibold text-foreground">
-              {{ t('customer.checkout.subAccountLabel') }}
-            </h2>
-            <span class="text-[10px] font-semibold text-destructive uppercase tracking-wider ml-0.5">
-              {{ t('customer.checkout.subAccountRequired') }}
-            </span>
-            <span v-if="selectedSub" class="ml-auto text-[10px] text-muted-foreground truncate max-w-[160px]">
-              {{ selectedSub.account_name }}
-            </span>
-          </div>
-
-          <p class="text-[11px] text-muted-foreground leading-relaxed mb-2.5">
-            {{ t('customer.checkout.subAccountHint') }}
-          </p>
-
-          <!-- 加载态 -->
-          <div v-if="!subsLoaded" class="flex items-center gap-2 text-xs text-muted-foreground py-1.5">
-            <Loader2 class="h-3.5 w-3.5 animate-spin" />
-            {{ t('customer.checkout.loadingSubs') }}
-          </div>
-
-          <!-- 空状态 -->
-          <div
-            v-else-if="subs.length === 0"
-            class="flex gap-2.5 border border-amber-200 bg-amber-50 text-amber-900 rounded-lg p-2.5 text-xs"
-          >
-            <AlertCircle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
-            <p class="leading-relaxed">{{ t('customer.checkout.noSubs') }}</p>
-          </div>
-
-          <!-- 子账号卡片列表（紧凑式） -->
-          <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <button
-              v-for="s in subs"
-              :key="s.id"
-              type="button"
-              class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              :class="subId === s.id
-                ? 'border-primary bg-primary/5 shadow-sm'
-                : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
-              @click="subId = s.id"
-            >
-              <div class="flex items-start gap-2.5">
-                <div
-                  class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
-                  :class="subId === s.id
-                    ? 'border-primary bg-primary'
-                    : 'border-muted-foreground/40'"
-                >
-                  <Check v-if="subId === s.id" class="h-3 w-3 text-primary-foreground" />
-                </div>
-
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center gap-1.5 flex-wrap">
-                    <span class="font-mono text-sm font-semibold truncate">
-                      {{ s.account_name }}
-                    </span>
-                    <Badge
-                      v-if="s.is_main"
-                      class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
-                    >
-                      <Star class="h-3 w-3 mr-0.5 fill-current" />
-                      {{ t('customer.checkout.mainBadge') }}
-                    </Badge>
-                    <Badge
-                      v-if="s.status === 'inactive'"
-                      variant="secondary"
-                      class="text-[10px]"
-                    >
-                      {{ t('customer.checkout.inactive') }}
-                    </Badge>
-                  </div>
-                  <p
-                    v-if="s.inn && s.inn !== '-'"
-                    class="text-[10px] text-muted-foreground mt-0.5 font-mono"
+            <!-- 子账号卡片列表（紧凑式） -->
+            <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                v-for="s in subs"
+                :key="s.id"
+                type="button"
+                class="text-left rounded-lg border-2 p-2.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                :class="subId === s.id
+                  ? 'border-primary bg-primary/5 shadow-sm'
+                  : 'border-border/60 hover:border-primary/40 hover:bg-muted/40'"
+                @click="subId = s.id"
+              >
+                <div class="flex items-start gap-2.5">
+                  <div
+                    class="mt-0.5 h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center transition"
+                    :class="subId === s.id
+                      ? 'border-primary bg-primary'
+                      : 'border-muted-foreground/40'"
                   >
-                    INN {{ s.inn }}
-                  </p>
+                    <Check v-if="subId === s.id" class="h-3 w-3 text-primary-foreground" />
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                      <span class="font-mono text-sm font-semibold truncate">
+                        {{ s.account_name }}
+                      </span>
+                      <Badge
+                        v-if="s.is_main"
+                        class="bg-amber-100 text-amber-800 border-amber-200 text-[10px]"
+                      >
+                        <Star class="h-3 w-3 mr-0.5 fill-current" />
+                        {{ t('customer.checkout.mainBadge') }}
+                      </Badge>
+                      <Badge
+                        v-if="s.status === 'inactive'"
+                        variant="secondary"
+                        class="text-[10px]"
+                      >
+                        {{ t('customer.checkout.inactive') }}
+                      </Badge>
+                    </div>
+                    <p
+                      v-if="s.inn && s.inn !== '-'"
+                      class="text-[10px] text-muted-foreground mt-0.5 font-mono"
+                    >
+                      INN {{ s.inn }}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+            </div>
+            <p v-if="subs.length > 0" class="text-[10px] text-muted-foreground/70 mt-2">
+              {{ t('customer.checkout.subAccountPick') }}
+            </p>
           </div>
-          <p v-if="subs.length > 0" class="text-[10px] text-muted-foreground/70 mt-2">
-            {{ t('customer.checkout.subAccountPick') }}
-          </p>
         </section>
 
         <!-- Section 4：附件 + 备注（合并为一组，让"补充信息"集中） -->
         <section class="px-5 sm:px-6 py-5 border-b">
           <div class="flex items-center gap-2 mb-3">
             <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center text-[10px] font-bold">
-              {{ isOnBehalf ? 4 : 3 }}
+              {{ isOnBehalf ? 3 : 3 }}
             </span>
             <Paperclip class="h-3.5 w-3.5 text-primary" />
             <h2 class="text-sm font-semibold text-foreground">附件与备注</h2>
