@@ -267,17 +267,36 @@ export function useOrderAttachments() {
   }
 
   const reset = async () => {
+    // 关键: 不能再删 storage 对象了。
+    //
+    // 历史 bug: checkout 提交订单成功后调用 reset() 会把
+    // 'pending/{uuid}.png' 的 storage 对象删掉，但
+    // order_attachments 表里的 storage_path 仍然指向这些路径 —
+    // 详情页加载附件时 storage 报 NoSuchKey / 400。
+    //
+    // 现在 reset 只清理本地预览状态 (object URL + items 数组)，
+    // 不再触碰 storage。'pending/' 下的孤儿文件等专门的清理脚本处理。
+    for (const it of items.value) {
+      if (it.local_url) URL.revokeObjectURL(it.local_url)
+    }
+    items.value = []
+  }
+
+  /**
+   * 强制清理 — 包括 storage 对象。仅用于用户取消下单 / 上传后未提交
+   * 的场景。订单成功 submit 后不应调用本函数，使用 reset() 即可。
+   */
+  const purge = async () => {
     const paths = items.value.filter((i) => i.storage_path).map((i) => i.storage_path)
     if (paths.length > 0) {
       try { await supabase.storage.from(BUCKET).remove(paths) } catch { /* ignore */ }
     }
-    for (const it of items.value) URL.revokeObjectURL(it.local_url)
-    items.value = []
+    await reset()
   }
 
   const successful = computed(() =>
     items.value.filter((i) => !!i.storage_path && !i.error),
   )
 
-  return { items, uploading, add, remove, reset, successful }
+  return { items, uploading, add, remove, reset, purge, successful }
 }
