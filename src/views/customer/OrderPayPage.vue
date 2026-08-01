@@ -27,7 +27,7 @@ import TableHead from '@/components/ui/TableHead.vue'
 import TableCell from '@/components/ui/TableCell.vue'
 
 import { useI18n } from '@/lib/i18n'
-import { useOrders } from '@/composables/useOrders'
+import { useOrders, type OrderRow } from '@/composables/useOrders'
 import { useAuth } from '@/composables/useAuth'
 
 const { t } = useI18n()
@@ -39,16 +39,13 @@ const { isAdmin, appUser } = useAuth()
 const loading = ref(true)
 
 const orderId = computed(() => route.params.id as string)
-const order = computed(() => ordersApi.items.value.find((o) => o.id === orderId.value))
+// 不依赖 items 单例 — 详情页有自己独立的订单 ref
+const order = ref<OrderRow | null>(null)
 
 const refresh = async () => {
   loading.value = true
   try {
-    if (appUser.value?.role === 'customer' && !isAdmin.value) {
-      await ordersApi.fetchMine()
-    } else {
-      await ordersApi.fetchByStatus(undefined)
-    }
+    order.value = await ordersApi.fetchById(orderId.value)
   } finally {
     loading.value = false
   }
@@ -133,6 +130,12 @@ const statusVariant = (s?: string) => {
         <p class="text-xs text-muted-foreground/70">
           订单可能尚未同步、或你无权限查看。
           订单 id: <code class="font-mono text-[11px]">{{ orderId }}</code>
+        </p>
+        <p
+          v-if="ordersApi.error.value"
+          class="text-[11px] text-destructive max-w-md mx-auto leading-relaxed"
+        >
+          {{ ordersApi.error.value }}
         </p>
         <Button size="sm" variant="outline" class="mt-2" @click="router.push('/orders')">
           <ArrowLeft class="mr-1 h-3.5 w-3.5" />

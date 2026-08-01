@@ -29,8 +29,8 @@ const ordersApi = useOrders()
 const statusFilter = ref<'all' | 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'>('all')
 
 const refresh = async () => {
-  if (statusFilter.value === 'all') await ordersApi.fetchMine()
-  else await ordersApi.fetchByStatus(statusFilter.value)
+  // 列表页全量拉 — 不带 status 参数（RLS 自己决定可见范围）
+  await ordersApi.fetchByStatus(undefined)
 }
 
 onMounted(refresh)
@@ -186,7 +186,19 @@ const statusCount = (s: typeof STATUSES[number]) => {
               </div>
             </TableEmpty>
             <TableEmpty v-else-if="ordersApi.items.value.length === 0">
-              {{ t('orders.empty') }}
+              <div class="space-y-2 py-3 text-center">
+                <p class="text-sm">{{ t('orders.empty') }}</p>
+                <!--
+                  error 暴露：之前只 set error.value 但 UI 没渲染，
+                  admin 用户看到空列表时不知道为什么 RLS 拒绝
+                -->
+                <p
+                  v-if="ordersApi.error.value"
+                  class="text-[11px] text-destructive max-w-md mx-auto leading-relaxed"
+                >
+                  {{ ordersApi.error.value }}
+                </p>
+              </div>
             </TableEmpty>
           </TableBody>
         </Table>

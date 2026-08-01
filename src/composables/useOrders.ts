@@ -104,6 +104,29 @@ export function useOrders() {
     return items.value
   }
 
+  /**
+   * 按 ID 拉取单个订单（含 account / sub_account / items / product）
+   * - 不依赖 items 单例，避免「跳详情页时 items 没装」导致的
+   *   "订单不存在"
+   * - 返回 OrderRow 或 null（RLS 拒绝时也是 null）
+   * - 不会覆盖 items 单例（详情页只关心自己）
+   */
+  const fetchById = async (id: string): Promise<OrderRow | null> => {
+    loading.value = true
+    error.value = null
+    const { data, error: e } = await supabase
+      .from('orders')
+      .select(
+        '*, account:accounts(account_name, company_name), sub_account:accounts!orders_sub_account_id_fkey(id, account_name, inn), items:order_items(*, product:products(model, category, conversion_rate))',
+      )
+      .eq('id', id)
+      .maybeSingle()
+    loading.value = false
+    if (e) { error.value = e.message; return null }
+    if (!data) return null
+    return decorateOrder(data)
+  }
+
   /** 计算总金额 + 装入 OrderRow */
   const decorateOrder = (o: any): OrderRow => ({
     ...o,
@@ -197,7 +220,7 @@ export function useOrders() {
 
   return {
     items, loading, error, totalAmount, fetched,
-    fetchMine, fetchByStatus,
+    fetchMine, fetchByStatus, fetchById,
     submit, transition, updateItemPrice, updateItemBoxes,
     $reset: resetOrders,
   }

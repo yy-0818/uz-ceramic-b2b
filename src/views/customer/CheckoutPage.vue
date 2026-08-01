@@ -52,7 +52,7 @@ import Textarea from '@/components/ui/Textarea.vue'
 import Badge from '@/components/ui/Badge.vue'
 
 import { useCart } from '@/composables/useCart'
-import { useOrders } from '@/composables/useOrders'
+import { useOrders, resetOrders } from '@/composables/useOrders'
 import { useAuth } from '@/composables/useAuth'
 import { useAccounts, type Account } from '@/composables/useAccounts'
 import { useProducts } from '@/composables/useProducts'
@@ -356,6 +356,9 @@ const onSubmit = async () => {
     cart.clear()
     // 离开页面再 reset, 否则本地预览图会立刻 revoke 不优雅
     void attachments.reset()
+    // 清掉 useOrders 模块级单例, 让后续 OrderHistoryPage 进 onMounted
+    // 时干净地全量重新拉（避免新订单没出现在列表里）
+    resetOrders()
     router.push(`/orders/${order.id}/pay`)
   } catch (e: unknown) {
     errMsg.value = e instanceof Error ? e.message : String(t('customer.checkout.submitFail'))

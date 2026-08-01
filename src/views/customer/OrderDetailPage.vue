@@ -23,7 +23,7 @@ import TableCell from '@/components/ui/TableCell.vue'
 
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/composables/useAuth'
-import { useOrders } from '@/composables/useOrders'
+import { useOrders, type OrderRow } from '@/composables/useOrders'
 import { useFinance } from '@/composables/useFinance'
 
 const { t } = useI18n()
@@ -36,16 +36,20 @@ const finance = useFinance()
 const orderId = computed(() => route.params.id as string)
 const ledger = ref<{ direction: 'debit' | 'credit'; amount: number; memo: string | null; recorded_at: string }[]>([])
 
-const order = computed(() => ordersApi.items.value.find((o) => o.id === orderId.value))
+// 不再依赖 useOrders 模块级单例的 items 数组 — 详情页有自己的订单 ref，
+// 由 fetchById 直接按 ID 拉取（避免「items 单例还没装好 → 订单不存在」）。
+const order = ref<OrderRow | null>(null)
 
 const refresh = async () => {
-  if (isAdmin.value || appUser.value?.role !== 'customer') {
-    await ordersApi.fetchByStatus(undefined)
+  // 详情页只关心自己；不污染全局 items 单例
+  const o = await ordersApi.fetchById(orderId.value)
+  order.value = o
+  if (o) {
+    await finance.fetchByOrder(orderId.value)
+    ledger.value = finance.entries.value
   } else {
-    await ordersApi.fetchMine()
+    ledger.value = []
   }
-  await finance.fetchByOrder(orderId.value)
-  ledger.value = finance.entries.value
 }
 
 onMounted(refresh)
@@ -139,15 +143,21 @@ const statusVariant = (s?: string) => {
     </header>
 
     <!-- 加载/未找到态 -->
-    <Card v-if="!ordersApi.fetched.value && !order" class="overflow-hidden">
+    <Card v-if="ordersApi.loading.value && !order" class="overflow-hidden">
       <CardContent class="py-10 text-center text-sm text-muted-foreground">
         <Loader2 class="inline h-4 w-4 mr-2 animate-spin" />
         加载中…
       </CardContent>
     </Card>
     <Card v-else-if="!order" class="overflow-hidden">
-      <CardContent class="py-10 text-center text-sm text-muted-foreground">
-        {{ t('orders.detail.notFound') }}
+      <CardContent class="py-10 text-center text-sm text-muted-foreground space-y-2">
+        <p>{{ t('orders.detail.notFound') }}</p>
+        <p
+          v-if="ordersApi.error.value"
+          class="text-[11px] text-destructive max-w-md mx-auto leading-relaxed"
+        >
+          {{ ordersApi.error.value }}
+        </p>
       </CardContent>
     </Card>
 
