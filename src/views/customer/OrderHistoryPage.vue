@@ -3,7 +3,7 @@
   客户订单历史
 -->
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
 import { Eye, Loader2, ListOrdered, History, ArrowLeft } from 'lucide-vue-next'
@@ -29,6 +29,7 @@ const router = useRouter()
 const ordersApi = useOrders()
 const { appUser } = useAuth()
 const statusFilter = ref<'all' | 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'>('all')
+const STATUSES = ['all', 'pending', 'audited', 'accounted', 'shipped', 'cancelled'] as const
 
 /**
  * 兜底超时：fetch 出错 / promise 挂起时，fetched.value 不会变 true，
@@ -46,8 +47,9 @@ const refresh = async () => {
     }
   }, 8000)
   try {
-    // 列表页全量拉 — 不带 status 参数（RLS 自己决定可见范围）
-    await ordersApi.fetchByStatus(undefined)
+    // 按 statusFilter 拉：'all' → undefined，其他 → 对应状态
+    const target = statusFilter.value === 'all' ? undefined : statusFilter.value
+    await ordersApi.fetchByStatus(target)
   } finally {
     clearTimeout(timer)
     // fetch 完成后立刻关闭兜底（fetched 已 true）
@@ -75,13 +77,14 @@ const goBack = () => {
   else router.push('/catalog')
 }
 
-// 各状态计数（用于 chips 显示绝对数）
-const STATUSES = ['all', 'pending', 'audited', 'accounted', 'shipped', 'cancelled'] as const
-
-const statusCount = (s: typeof STATUSES[number]) => {
-  if (s === 'all') return ordersApi.items.value.length
-  return ordersApi.items.value.filter((o) => o.status === s).length
-}
+// 各状态计数 — 仅展示"全部"总数；其他 chip 不再计数
+// 因为 items 是按 statusFilter 过滤后的，过滤后统计"待审核有几条"等于 items.length，
+// 没有信息量。要展示各状态真实数量需要再发一次全量查询，权衡后只保留「全部」总数。
+const totalCount = computed(() => {
+  // statusFilter === 'all' 时 items 是全集，length 就是总数；
+  // 否则也用 items.length（虽然语义是当前过滤后数量，badge 不显示所以不影响 UI）
+  return ordersApi.items.value.length
+})
 </script>
 
 <template>
@@ -138,7 +141,7 @@ const statusCount = (s: typeof STATUSES[number]) => {
           </div>
         </div>
 
-        <!-- 状态过滤 chips：放 section header 下方 -->
+        <!-- 状态过滤 chips -->
         <div class="px-5 sm:px-6 py-3 border-b bg-background flex gap-2 overflow-x-auto -mx-0">
           <Button
             v-for="s in STATUSES"
@@ -150,11 +153,11 @@ const statusCount = (s: typeof STATUSES[number]) => {
           >
             {{ t(`orders.status.${s}`) }}
             <Badge
-              v-if="statusCount(s) > 0"
+              v-if="s === 'all' && totalCount > 0"
               variant="secondary"
               class="ml-1.5 text-[10px] tabular-nums px-1.5"
             >
-              {{ statusCount(s) }}
+              {{ totalCount }}
             </Badge>
           </Button>
         </div>

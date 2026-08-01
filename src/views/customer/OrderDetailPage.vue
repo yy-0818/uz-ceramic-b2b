@@ -8,7 +8,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { ArrowLeft, Loader2, FileText, Receipt, User, Box, Wallet, History } from 'lucide-vue-next'
+import { ArrowLeft, Loader2, FileText, Receipt, User, Box, Wallet, History, Image as ImageIcon, MessageSquare } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/composables/useAuth'
 import { useOrders, type OrderRow } from '@/composables/useOrders'
 import { useFinance } from '@/composables/useFinance'
+import { attachmentPublicUrl, fetchOrderAttachments, type OrderAttachmentRow } from '@/composables/useOrderAttachments'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -35,6 +36,7 @@ const finance = useFinance()
 
 const orderId = computed(() => route.params.id as string)
 const ledger = ref<{ direction: 'debit' | 'credit'; amount: number; memo: string | null; recorded_at: string }[]>([])
+const attachments = ref<OrderAttachmentRow[]>([])
 
 // 不再依赖 useOrders 模块级单例的 items 数组 — 详情页有自己的订单 ref，
 // 由 fetchById 直接按 ID 拉取（避免「items 单例还没装好 → 订单不存在」）。
@@ -47,8 +49,15 @@ const refresh = async () => {
   if (o) {
     await finance.fetchByOrder(orderId.value)
     ledger.value = finance.entries.value
+    try {
+      attachments.value = await fetchOrderAttachments(orderId.value)
+    } catch (e: any) {
+      // 附件拉取失败不阻塞订单主信息（RLS 拒绝 / network 错）
+      attachments.value = []
+    }
   } else {
     ledger.value = []
+    attachments.value = []
   }
 }
 
@@ -58,6 +67,12 @@ const fmt = (n: number) =>
   new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(n) + ' UZS'
 
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
+
+const fmtSize = (n: number) => {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
 
 const canAudit = computed(() =>
   (appUser.value?.role === 'checker' || isAdmin.value) && order.value?.status === 'pending',
@@ -276,6 +291,55 @@ const statusVariant = (s?: string) => {
               </TableRow>
             </TableBody>
           </Table>
+        </section>
+
+        <!-- Section 3.5：备注（客户提交时填的 remark）-->
+        <section v-if="order.remark" class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+              <MessageSquare class="h-3 w-3" />
+            </span>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.remark') ?? '客户备注' }}</h2>
+          </div>
+          <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ order.remark }}</p>
+        </section>
+
+        <!-- Section 3.6：附件（客户上传的提货图等）-->
+        <section v-if="attachments.length > 0" class="px-5 sm:px-6 py-5 border-b">
+          <div class="flex items-center gap-2 mb-3">
+            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+              <ImageIcon class="h-3 w-3" />
+            </span>
+            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.attachments') ?? '订单附件' }}</h2>
+            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
+              {{ attachments.length }}
+            </Badge>
+          </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            <a
+              v-for="att in attachments"
+              :key="att.id"
+              :href="attachmentPublicUrl(att.storage_path)"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="group block"
+            >
+              <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 ring-1 ring-border/50 hover:ring-primary/40 transition">
+                <img
+                  :src="attachmentPublicUrl(att.storage_path)"
+                  :alt="att.caption ?? 'attachment'"
+                  loading="lazy"
+                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                />
+              </div>
+              <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
+                {{ att.caption }}
+              </p>
+              <p class="text-[10px] text-muted-foreground tabular-nums">
+                {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
+              </p>
+            </a>
+          </div>
         </section>
 
         <!-- Section 4：操作按钮（角色驱动） -->
