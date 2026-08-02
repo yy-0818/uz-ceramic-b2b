@@ -1035,11 +1035,29 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                     class="absolute inset-0"
                   >
                     <img
+                      v-if="isBrowserRenderable(it.mime)"
                       :src="it.local_url"
                       :alt="it.caption ?? `attachment ${idx + 1}`"
                       class="h-full w-full object-contain"
                       loading="lazy"
                     />
+                    <!-- 浏览器不支持的格式 (heic 等) — 不尝试 <img>, 直接显示提示 -->
+                    <div
+                      v-else
+                      class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950/30 dark:to-amber-900/30"
+                    >
+                      <div class="h-12 w-12 rounded-full bg-amber-200/70 dark:bg-amber-800/50 flex items-center justify-center">
+                        <ImagePlus class="h-6 w-6 text-amber-700 dark:text-amber-300" />
+                      </div>
+                      <div class="text-center px-4">
+                        <p class="text-[12px] font-semibold text-amber-900 dark:text-amber-200">
+                          {{ (it.mime || '').replace('image/', '').toUpperCase() || '未知格式' }}
+                        </p>
+                        <p class="text-[10px] text-amber-700/80 dark:text-amber-400/80 mt-0.5">
+                          浏览器无法预览 · 提交时仍会上传
+                        </p>
+                      </div>
+                    </div>
                     <!-- 提交订单时上传进度 overlay -->
                     <div
                       v-if="attachments.uploading.value && (it.progress ?? 0) < 100"
