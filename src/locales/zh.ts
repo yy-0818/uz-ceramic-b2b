@@ -509,6 +509,7 @@ export default {
       totalAmount: '总计',
       remark: '备注',
       attachments: '订单附件',
+      attachmentLost: '附件已丢失',
       ledger: '财务流水',
       colDir: '类型',
       colAmount: '金额',

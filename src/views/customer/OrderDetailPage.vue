@@ -68,19 +68,51 @@ const fmt = (n: number) =>
 
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
 
-/** 选 signed URL 兜底（早期订单 bucket 是 private / 路径漂移） */
+/**
+ * 选 signed URL 兜底（早期订单 bucket 是 private / 路径漂移 / reset bug 删过 storage）
+ */
+/** signed URL 兜底 (private bucket / 老路径) */
 const urlMap = ref<Record<string, string>>({})
+
+/** 已确认 storage 对象丢失的附件 — UI 显示「附件丢失」占位 */
+const brokenAttachments = ref<Set<string>>(new Set())
 
 const onImgError = async (att: OrderAttachmentRow) => {
   // public URL 失败, 试试 signed URL (private bucket / 老路径)
-  if (urlMap.value[att.id]) return
+  if (urlMap.value[att.id]) {
+    // 已走过 signed 兜底 (或者失败过), 不再尝试
+    brokenAttachments.value.add(att.id)
+    return
+  }
+  // 诊断: 打印 path 和 public URL 到 console
+  const publicUrl = attachmentPublicUrl(att.storage_path)
+  // eslint-disable-next-line no-console
+  console.warn('[attachment] public URL 加载失败:', {
+    storage_path: att.storage_path,
+    publicUrl,
+    mime: att.mime,
+    size: att.size_bytes,
+  })
   const signed = await attachmentSignedUrl(att.storage_path)
   if (signed) {
+    // eslint-disable-next-line no-console
+    console.info('[attachment] signed URL 兜底成功:', att.storage_path)
     urlMap.value = { ...urlMap.value, [att.id]: signed }
+  } else {
+    // eslint-disable-next-line no-console
+    console.error(
+      '[attachment] signed URL 也失败 — storage 对象已物理丢失:',
+      att.storage_path,
+    )
+    brokenAttachments.value.add(att.id)
   }
 }
 
-const attUrl = (att: OrderAttachmentRow) => urlMap.value[att.id] ?? attachmentPublicUrl(att.storage_path)
+const attUrl = (att: OrderAttachmentRow) =>
+  urlMap.value[att.id] ?? attachmentPublicUrl(att.storage_path)
+
+const isBroken = (att: OrderAttachmentRow) =>
+  brokenAttachments.value.has(att.id)
 
 const fmtSize = (n: number) => {
   if (n < 1024) return `${n} B`
@@ -330,31 +362,44 @@ const statusVariant = (s?: string) => {
             </Badge>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            <a
-              v-for="att in attachments"
-              :key="att.id"
-              :href="attUrl(att)"
-              target="_blank"
-              rel="noopener noreferrer"
-              :title="att.storage_path"
-              class="group block"
-            >
-              <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 ring-1 ring-border/50 hover:ring-primary/40 transition">
-                <img
-                  :src="attUrl(att)"
-                  :alt="att.caption ?? 'attachment'"
-                  loading="lazy"
-                  class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                  @error="onImgError(att)"
-                />
+            <template v-for="att in attachments" :key="att.id">
+              <a
+                v-if="!isBroken(att)"
+                :href="attUrl(att)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="att.storage_path"
+                class="group block"
+              >
+                <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 ring-1 ring-border/50 hover:ring-primary/40 transition">
+                  <img
+                    :src="attUrl(att)"
+                    :alt="att.caption ?? 'attachment'"
+                    loading="lazy"
+                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                    @error="onImgError(att)"
+                  />
+                </div>
+                <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
+                  {{ att.caption }}
+                </p>
+                <p class="text-[10px] text-muted-foreground tabular-nums">
+                  {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
+                </p>
+              </a>
+              <div v-else class="block">
+                <div class="aspect-square rounded-lg border border-dashed bg-muted/10 flex flex-col items-center justify-center text-muted-foreground p-2">
+                  <ImageIcon class="h-7 w-7 opacity-40 mb-1" />
+                  <p class="text-[10px] text-center leading-tight">{{ t('orders.detail.attachmentLost') ?? '附件已丢失' }}</p>
+                </div>
+                <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
+                  {{ att.caption }}
+                </p>
+                <p class="text-[10px] text-muted-foreground tabular-nums">
+                  {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
+                </p>
               </div>
-              <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
-                {{ att.caption }}
-              </p>
-              <p class="text-[10px] text-muted-foreground tabular-nums">
-                {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
-              </p>
-            </a>
+            </template>
           </div>
         </section>
 

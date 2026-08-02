@@ -364,6 +364,7 @@ export default {
       totalAmount: 'Jami',
       remark: 'Izoh',
       attachments: 'Biriktirmalar',
+      attachmentLost: 'Biriktirma yo\'qolgan',
       ledger: 'Moliyaviy yozuvlar',
       colDir: 'Turi',
       colAmount: 'Summa',

@@ -364,6 +364,7 @@ export default {
       totalAmount: 'Итого',
       remark: 'Примечание',
       attachments: 'Вложения',
+      attachmentLost: 'Вложение потеряно',
       ledger: 'Финансовые записи',
       colDir: 'Тип',
       colAmount: 'Сумма',
