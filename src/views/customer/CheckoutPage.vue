@@ -58,8 +58,7 @@ import { useAccounts, type Account } from '@/composables/useAccounts'
 import { useProducts } from '@/composables/useProducts'
 import {
   useOrderAttachments,
-  attachToOrder,
-  removePending,
+  isBrowserRenderable,
 } from '@/composables/useOrderAttachments'
 
 const { t } = useI18n()
@@ -268,29 +267,36 @@ const onPickClick = () => {
   fileInput.value?.click()
 }
 
-const onFiles = async (files: FileList | null) => {
+const onFiles = (files: FileList | null) => {
   if (!files || files.length === 0) return
   attachmentError.value = null
   const accountId = parentAccountId.value
   if (!accountId) {
-    attachmentError.value = '缺少主账号 id,无法上传'
+    attachmentError.value = '缺少主账号 id, 无法添加附件'
     return
   }
-  const accepted = Array.from(files).slice(0, MAX_ATTACHMENTS - attachments.items.value.length)
+  const remaining = MAX_ATTACHMENTS - attachments.items.value.length
+  const accepted = Array.from(files).slice(0, remaining)
+  const warnHeic: string[] = []
   for (const file of accepted) {
-    if (!ALLOWED_MIME.includes(file.type)) {
-      attachmentError.value = t('customer.checkout.attachmentsBadType')
-      continue
-    }
-    if (file.size > MAX_BYTES) {
-      attachmentError.value = t('customer.checkout.attachmentsTooBig')
-      continue
-    }
     try {
-      await attachments.add(file, accountId)
+      const entry = attachments.add(file, accountId)
+      // heic 浏览器不能本地预览. 不阻止上传, 但提示客户
+      if (!isBrowserRenderable(file.type)) {
+        warnHeic.push(file.name)
+      }
+      // entry 后续不需要用 (响应式已 push), 仅用于类型
+      void entry
     } catch (e: any) {
       attachmentError.value = e?.message ?? String(e)
     }
+  }
+  if (warnHeic.length > 0) {
+    // 追加而非覆盖
+    const msg = `以下图片浏览器无法本地预览 (但仍会上传): ${warnHeic.join(', ')}`
+    attachmentError.value = attachmentError.value
+      ? `${attachmentError.value}\n${msg}`
+      : msg
   }
   if (fileInput.value) fileInput.value.value = ''   // 清空 input 允许重选同一文件
 }
@@ -339,17 +345,15 @@ const onSubmit = async () => {
     )
     createdOrderId = order.id
 
-    // 订单已创建 → 把已上传的 pending 附件绑定上去
-    const successful = attachments.successful.value
-    if (successful.length > 0) {
+    // 订单已创建 → 上传本地的附件 + 绑定到订单
+    // 路径: {account_id}/{order_id}/{uuid}.{ext} — 不再用 pending/ 魔法前缀
+    if (attachments.items.value.length > 0) {
       try {
-        await attachToOrder(successful, {
-          orderId: order.id,
-          accountId: parentAccountId.value,
-        })
-      } catch (attachErr: any) {
-        // 附件绑定失败不应阻塞订单跳转, 但要明确提示
-        errMsg.value = `订单已创建,但附件绑定失败: ${attachErr?.message ?? attachErr}`
+        await attachments.uploadAll(order.id, parentAccountId.value, account.value?.id ?? null)
+      } catch (upErr: any) {
+        // 附件上传失败 → 整体回滚订单 (避免出现"订单没图"的脏状态)
+        // 用 admin 权限删除订单? 客户角色不能删. 提示用户手动处理.
+        errMsg.value = `订单已创建 (${order.id}), 但附件上传失败: ${upErr?.message ?? upErr}。请联系客服处理。`
       }
     }
 
@@ -364,7 +368,7 @@ const onSubmit = async () => {
     errMsg.value = e instanceof Error ? e.message : String(t('customer.checkout.submitFail'))
   } finally {
     submitting.value = false
-    // 订单成功 → 不要再 reset(successful 已经 attach 上去了)
+    // 订单成功 → 不要再 reset (uploadAll 成功后再 reset)
     void createdOrderId
   }
 }
@@ -1036,9 +1040,10 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                       class="h-full w-full object-contain"
                       loading="lazy"
                     />
+                    <!-- 提交订单时上传进度 overlay -->
                     <div
-                      v-if="(it.progress ?? 0) < 100 && !it.error"
-                      class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                      v-if="attachments.uploading.value && (it.progress ?? 0) < 100"
+                      class="absolute inset-0 bg-black/55 flex items-center justify-center backdrop-blur-[1px]"
                     >
                       <div class="text-white text-xs font-medium flex items-center gap-1.5">
                         <Loader2 class="h-3.5 w-3.5 animate-spin" />
@@ -1127,31 +1132,19 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                     loading="lazy"
                   />
                   <span
+                    v-if="!isBrowserRenderable(it.mime)"
+                    class="absolute inset-0 bg-amber-500/85 flex items-center justify-center p-1"
+                    title="浏览器无法本地预览此格式 (提交时仍会上传)"
+                  >
+                    <span class="text-white text-[9px] font-bold text-center leading-tight">
+                      浏览器无法预览
+                    </span>
+                  </span>
+                  <span
                     v-if="it.error"
                     class="absolute inset-0 bg-destructive/70 flex items-center justify-center"
                   >
                     <AlertCircle class="h-3.5 w-3.5 text-white" />
-                  </span>
-                  <span
-                    v-else-if="(it.progress ?? 0) < 100"
-                    class="absolute inset-0 bg-black/55 flex items-center justify-center backdrop-blur-[1px]"
-                  >
-                    <span class="relative inline-flex items-center justify-center">
-                      <!-- 圆环进度 -->
-                      <svg class="h-7 w-7 -rotate-90" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" fill="none" class="text-white/30" />
-                        <circle
-                          cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" fill="none"
-                          stroke-linecap="round"
-                          class="text-white transition-[stroke-dashoffset] duration-200"
-                          :stroke-dasharray="2 * Math.PI * 9"
-                          :stroke-dashoffset="(2 * Math.PI * 9) * (1 - (it.progress ?? 0) / 100)"
-                        />
-                      </svg>
-                      <span class="absolute text-[9px] font-bold text-white tabular-nums">
-                        {{ it.progress ?? 0 }}
-                      </span>
-                    </span>
                   </span>
                   <span
                     class="absolute top-0.5 left-0.5 h-4 min-w-4 px-1 rounded-full bg-black/70 text-white text-[9px] font-bold tabular-nums flex items-center justify-center"
