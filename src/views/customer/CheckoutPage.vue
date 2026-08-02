@@ -1134,9 +1134,24 @@ const selectedParent = computed(() => parents.value.find((p) => p.id === pickedP
                   </span>
                   <span
                     v-else-if="(it.progress ?? 0) < 100"
-                    class="absolute inset-0 bg-black/40 flex items-center justify-center"
+                    class="absolute inset-0 bg-black/55 flex items-center justify-center backdrop-blur-[1px]"
                   >
-                    <Loader2 class="h-3.5 w-3.5 text-white animate-spin" />
+                    <span class="relative inline-flex items-center justify-center">
+                      <!-- 圆环进度 -->
+                      <svg class="h-7 w-7 -rotate-90" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" fill="none" class="text-white/30" />
+                        <circle
+                          cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" fill="none"
+                          stroke-linecap="round"
+                          class="text-white transition-[stroke-dashoffset] duration-200"
+                          :stroke-dasharray="2 * Math.PI * 9"
+                          :stroke-dashoffset="(2 * Math.PI * 9) * (1 - (it.progress ?? 0) / 100)"
+                        />
+                      </svg>
+                      <span class="absolute text-[9px] font-bold text-white tabular-nums">
+                        {{ it.progress ?? 0 }}
+                      </span>
+                    </span>
                   </span>
                   <span
                     class="absolute top-0.5 left-0.5 h-4 min-w-4 px-1 rounded-full bg-black/70 text-white text-[9px] font-bold tabular-nums flex items-center justify-center"

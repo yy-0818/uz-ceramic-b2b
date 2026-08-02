@@ -219,7 +219,7 @@ export function useOrderAttachments() {
       throw new Error('最多 5 张图片')
     }
     uploading.value = true
-    const placeholder = {
+    const placeholder: PendingAttachment & { progress?: number; error?: string } = {
       storage_path: '',
       mime: file.type,
       size_bytes: file.size,
@@ -228,23 +228,21 @@ export function useOrderAttachments() {
       progress: 0,
     }
     items.value.push(placeholder)
+    // 拿到 reactive proxy 引用. 后续进度更新必须走 items.value[idx],
+    // 直接改 placeholder 不会触发响应式 — 因为 push 进去的是非 proxy 的原始对象,
+    // 但 template 看到的是 Vue 给数组元素包的 proxy. 改原对象不影响 proxy.
+    const idx = items.value.length - 1
+    const reactiveRef = items.value[idx]
     try {
       const result = await uploadOrderAttachment(file, {
         accountId,
         caption,
-        onProgress: (p) => { placeholder.progress = p },
+        onProgress: (p) => { reactiveRef.progress = p },
       })
-      // 替换 placeholder 为真结果
-      const idx = items.value.indexOf(placeholder)
-      if (idx >= 0) items.value.splice(idx, 1, { ...result, progress: 100 })
+      // 用 reactive proxy 替换 placeholder, 触发响应
+      items.value.splice(idx, 1, { ...result, progress: 100 })
     } catch (e: any) {
-      const idx = items.value.indexOf(placeholder)
-      if (idx >= 0) {
-        items.value[idx] = {
-          ...placeholder,
-          error: e?.message ?? String(e),
-        }
-      }
+      reactiveRef.error = e?.message ?? String(e)
       throw e
     } finally {
       uploading.value = false
