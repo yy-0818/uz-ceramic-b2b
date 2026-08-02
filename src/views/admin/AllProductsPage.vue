@@ -27,6 +27,7 @@ import {
 } from '@/composables/useProductImage'
 
 import ProductCard, { type UploadState } from './all-products/ProductCard.vue'
+import BulkImportDialog from './all-products/BulkImportDialog.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -167,30 +168,54 @@ const goBack = () => {
   if (window.history.state && (window.history.state as any).back) router.back()
   else router.push('/admin')
 }
+
+// ===== 批量导入 =====
+const bulkDialogOpen = ref(false)
+const modelToProductId = computed(() => {
+  const m = new Map<string, string>()
+  for (const p of items.value) m.set(p.model, p.product_id)
+  return m
+})
+const openBulkImport = () => {
+  if (items.value.length === 0) {
+    error.value = '商品列表为空, 请先刷新页面'
+    return
+  }
+  bulkDialogOpen.value = true
+}
+const onBulkDone = async () => {
+  // 批量上传完成后重新拉一次列表, 让新图即时显示
+  await load()
+}
 </script>
 
 <template>
   <div class="space-y-4">
     <!-- ===================== 顶部 hero（sticky） ===================== -->
     <header class="sticky top-14 z-20">
-      <div class="rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 sm:px-6 py-4 sm:py-5 shadow-sm">
+      <!--
+        mobile 优先: 不用 flex-wrap 做行布局, 改用 grid + 显式行,
+        避免 chip / select / 复选框在窄屏被压扁或溢出
+      -->
+      <div class="rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 py-4 sm:px-6 sm:py-5 shadow-sm relative overflow-hidden">
         <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
         <div class="pointer-events-none absolute -right-4 top-1/2 h-24 w-24 rounded-full bg-primary/5" />
 
-        <div class="relative flex items-start gap-2 flex-wrap">
+        <!-- Row 1: 返回 + 标题 + 刷新 -->
+        <div class="relative flex items-center gap-2">
           <Button size="icon" variant="ghost" class="h-8 w-8 shrink-0 -ml-1" @click="goBack">
             <ArrowLeft class="h-4 w-4" />
           </Button>
           <div class="min-w-0 flex-1">
             <div class="flex items-baseline gap-2 flex-wrap">
-              <h1 class="text-base sm:text-lg font-bold leading-tight">
+              <h1 class="text-base sm:text-lg font-bold leading-tight truncate">
                 {{ t('admin.products.title') }}
               </h1>
-              <span class="text-[10px] font-semibold tracking-wider text-primary uppercase">
+              <span class="text-[10px] font-semibold tracking-wider text-primary uppercase whitespace-nowrap">
                 {{ summary.total }} 商品
               </span>
             </div>
-            <p class="text-xs text-muted-foreground mt-0.5 leading-snug max-w-xl">
+            <p class="text-xs text-muted-foreground mt-0.5 leading-snug max-w-xl hidden sm:block">
               全量商品图册；点击卡片右上角上传商品图，支持按分类 / 库存过滤。
             </p>
           </div>
@@ -200,34 +225,42 @@ const goBack = () => {
           </Button>
         </div>
 
-        <!-- 统计 chips -->
-        <div class="flex flex-wrap gap-2 mt-3">
-          <div class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            <span class="text-muted-foreground">{{ t('admin.productsAll.withImage') }}</span>
-            <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
-              {{ summary.withImage }}
-            </Badge>
-          </div>
-          <div class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
-            <span class="text-muted-foreground">{{ t('admin.productsAll.withStock') }}</span>
-            <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
-              {{ summary.withStock }}
-            </Badge>
-          </div>
-          <div v-if="filtered.length !== items.length" class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs">
-            <span class="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
-            <span class="text-muted-foreground">已过滤</span>
-            <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
-              {{ filtered.length }}
-            </Badge>
+        <!-- Row 2: 统计 chips (横向滚动容器, mobile 不溢出) -->
+        <div class="relative mt-3 -mx-4 sm:mx-0">
+          <div class="flex gap-2 overflow-x-auto px-4 sm:px-0 scrollbar-none">
+            <div class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs shrink-0">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              <span class="text-muted-foreground whitespace-nowrap">{{ t('admin.productsAll.withImage') }}</span>
+              <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
+                {{ summary.withImage }}
+              </Badge>
+            </div>
+            <div class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs shrink-0">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-sky-500" />
+              <span class="text-muted-foreground whitespace-nowrap">{{ t('admin.productsAll.withStock') }}</span>
+              <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
+                {{ summary.withStock }}
+              </Badge>
+            </div>
+            <div v-if="filtered.length !== items.length" class="inline-flex items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-xs shrink-0">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span class="text-muted-foreground whitespace-nowrap">已过滤</span>
+              <Badge variant="secondary" class="text-[10px] tabular-nums ml-0.5">
+                {{ filtered.length }}
+              </Badge>
+            </div>
+            <div class="inline-flex items-center gap-1.5 rounded-full border border-dashed border-primary/40 bg-primary/5 px-2.5 py-1 text-xs shrink-0">
+              <span class="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+              <button type="button" class="text-primary whitespace-nowrap font-medium" @click="openBulkImport">
+                批量导入图册
+              </button>
+            </div>
           </div>
         </div>
 
-        <!-- 搜索 + 分类 + 复选框 -->
-        <div class="flex flex-wrap items-center gap-2 mt-3">
-          <div class="relative flex-1 min-w-[140px]">
+        <!-- Row 3: 搜索 + 分类 + 复选框 (mobile 用 2 列 grid) -->
+        <div class="relative mt-3 grid grid-cols-1 sm:flex sm:flex-wrap sm:items-center gap-2">
+          <div class="relative min-w-0 sm:flex-1">
             <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <Input v-model="search" :placeholder="t('admin.productsAll.searchPh')"
               class="pl-8 pr-8 w-full h-9 text-sm" />
@@ -238,11 +271,11 @@ const goBack = () => {
             </button>
           </div>
           <select v-model="categoryFilter"
-            class="h-9 rounded-md border bg-background px-2 text-sm shrink-0">
+            class="h-9 rounded-md border bg-background px-2 text-sm w-full sm:w-auto sm:shrink-0">
             <option value="all">{{ t('admin.productsAll.allCategory') }}</option>
             <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
           </select>
-          <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none shrink-0">
+          <label class="flex items-center gap-1.5 text-xs cursor-pointer select-none shrink-0 sm:ml-auto">
             <Checkbox :checked="onlyWithStock" @update:checked="onlyWithStock = $event" />
             <span class="whitespace-nowrap">{{ t('admin.productsAll.onlyWithStock') }}</span>
           </label>
@@ -286,5 +319,12 @@ const goBack = () => {
         {{ t('admin.products.allEmpty') }}
       </CardContent>
     </Card>
+
+    <!-- 批量导入 dialog -->
+    <BulkImportDialog
+      v-model:open="bulkDialogOpen"
+      :model-to-product-id="modelToProductId"
+      @done="onBulkDone"
+    />
   </div>
 </template>
