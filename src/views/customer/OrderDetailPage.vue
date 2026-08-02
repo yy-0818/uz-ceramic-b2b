@@ -5,7 +5,7 @@
   - 审核员/财务/仓库：根据角色显示操作按钮
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
 import { ArrowLeft, Loader2, FileText, Receipt, User, Box, Wallet, History, Image as ImageIcon, MessageSquare } from 'lucide-vue-next'
@@ -75,13 +75,13 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
 const urlMap = ref<Record<string, string>>({})
 
 /** 已确认 storage 对象丢失的附件 — UI 显示「附件丢失」占位 */
-const brokenAttachments = ref<Set<string>>(new Set())
+const brokenAttachments = reactive(new Set<string>())
 
 const onImgError = async (att: OrderAttachmentRow) => {
   // public URL 失败, 试试 signed URL (private bucket / 老路径)
   if (urlMap.value[att.id]) {
     // 已走过 signed 兜底 (或者失败过), 不再尝试
-    brokenAttachments.value.add(att.id)
+    brokenAttachments.add(att.id)
     return
   }
   // 诊断: 打印 path 和 public URL 到 console
@@ -104,7 +104,7 @@ const onImgError = async (att: OrderAttachmentRow) => {
       '[attachment] signed URL 也失败 — storage 对象已物理丢失:',
       att.storage_path,
     )
-    brokenAttachments.value.add(att.id)
+    brokenAttachments.add(att.id)
   }
 }
 
@@ -112,7 +112,7 @@ const attUrl = (att: OrderAttachmentRow) =>
   urlMap.value[att.id] ?? attachmentPublicUrl(att.storage_path)
 
 const isBroken = (att: OrderAttachmentRow) =>
-  brokenAttachments.value.has(att.id)
+  brokenAttachments.has(att.id)
 
 const fmtSize = (n: number) => {
   if (n < 1024) return `${n} B`
