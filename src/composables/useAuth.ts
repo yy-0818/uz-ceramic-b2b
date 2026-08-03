@@ -73,6 +73,7 @@ const rolePermissionMap: Record<UserRole, Permission[]> = {
   warehouse: ['order:ship'],
   finance:   ['invoice:accounting', 'finance:view'],
   customer:  ['order:create'],
+  fin_customer: ['order:create'],
 }
 
 // ---------- 模块级单例 ----------

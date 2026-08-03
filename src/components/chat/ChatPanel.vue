@@ -81,6 +81,14 @@ const attachmentsByMessage = ref<Record<string, ChatMessageAttachment[]>>({})
 const metadataByMessage = ref<Record<string, ChatMessageMetadata>>({})
 const signedUrls = ref<Record<string, string>>({})
 
+let typingTimer: number | undefined
+const onTyping = () => {
+  if (!conversation.value) return
+  if (typingTimer) return
+  typingTimer = window.setTimeout(() => { typingTimer = undefined }, 4000)
+  chat.notifyTyping(conversation.value.id).catch(() => { /* ignore */ })
+}
+
 // M2: 待上传图片 (composer 推入)
 interface PendingUpload {
   clientMessageId: string

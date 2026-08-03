@@ -79,7 +79,7 @@ const { members: staffOptions, load: loadStaffOptions } = useTeamMembers()
 
 const onPickSearchHit = async (hit: ChatSearchHit) => {
   closeSearch()
-  let conv = chat.conversations.value.find((c) => c.id === hit.conversation_id)
+  let conv: ChatConversation | null = chat.conversations.value.find((c) => c.id === hit.conversation_id) ?? null
   if (!conv) {
     await fetchList()
     conv = chat.conversations.value.find((c) => c.id === hit.conversation_id) ?? null

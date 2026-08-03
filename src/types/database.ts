@@ -4,7 +4,7 @@
  */
 export type AccountType = '1_public' | '2_cash' | '3_export'
 export type AccountStatus = 'active' | 'inactive'
-export type UserRole = 'admin' | 'checker' | 'warehouse' | 'finance' | 'customer'
+export type UserRole = 'admin' | 'checker' | 'warehouse' | 'finance' | 'customer' | 'fin_customer'
 
 export interface Database {
   public: {
@@ -300,29 +300,6 @@ export interface Database {
         }
         Update: Partial<Database['public']['Tables']['chat_conversation_members']['Row']>
       }
-      chat_messages: {
-        Row: {
-          id: string
-          conversation_id: string
-          sender_id: string
-          message_type: 'text' | 'system'
-          body: string
-          client_message_id: string
-          reply_to_id: string | null
-          created_at: string
-          edited_at: string | null
-          deleted_at: string | null
-        }
-        Insert: {
-          conversation_id: string
-          sender_id: string
-          message_type?: 'text' | 'system'
-          body: string
-          client_message_id: string
-          reply_to_id?: string | null
-        }
-        Update: Partial<Database['public']['Tables']['chat_messages']['Row']>
-      }
       chat_presence: {
         Row: {
           user_id: string
@@ -351,6 +328,100 @@ export interface Database {
           user_id: string
         }
         Update: Partial<Database['public']['Tables']['chat_message_recipients']['Row']>
+      }
+      chat_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          sender_id: string
+          message_type: 'text' | 'system'
+          message_kind: 'text' | 'image' | 'order_card'
+          body: string
+          client_message_id: string
+          reply_to_id: string | null
+          created_at: string
+          edited_at: string | null
+          deleted_at: string | null
+        }
+        Insert: {
+          conversation_id: string
+          sender_id: string
+          message_type?: 'text' | 'system'
+          message_kind?: 'text' | 'image' | 'order_card'
+          body: string
+          client_message_id: string
+          reply_to_id?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['chat_messages']['Row']>
+      }
+      chat_message_attachments: {
+        Row: {
+          id: string
+          message_id: string
+          storage_path: string
+          mime: string
+          size_bytes: number
+          width: number | null
+          height: number | null
+          created_at: string
+        }
+        Insert: {
+          message_id: string
+          storage_path: string
+          mime: string
+          size_bytes: number
+          width?: number | null
+          height?: number | null
+        }
+        Update: Partial<Database['public']['Tables']['chat_message_attachments']['Row']>
+      }
+      chat_message_metadata: {
+        Row: {
+          message_id: string
+          payload: Record<string, any>
+          updated_at: string
+        }
+        Insert: {
+          message_id: string
+          payload?: Record<string, any>
+        }
+        Update: Partial<Database['public']['Tables']['chat_message_metadata']['Row']>
+      }
+      chat_typing: {
+        Row: {
+          conversation_id: string
+          user_id: string
+          started_at: string
+          expires_at: string
+        }
+        Insert: {
+          conversation_id: string
+          user_id: string
+          expires_at?: string
+        }
+        Update: Partial<Database['public']['Tables']['chat_typing']['Row']>
+      }
+      notifications: {
+        Row: {
+          id: string
+          user_id: string
+          kind: 'chat_message' | 'order_status' | 'staff_assigned' | 'staff_transferred' | 'system'
+          title: string
+          body: string
+          link: string | null
+          payload: Record<string, any>
+          read_at: string | null
+          created_at: string
+        }
+        Insert: {
+          user_id: string
+          kind: 'chat_message' | 'order_status' | 'staff_assigned' | 'staff_transferred' | 'system'
+          title: string
+          body?: string
+          link?: string | null
+          payload?: Record<string, any>
+        }
+        Update: Partial<Database['public']['Tables']['notifications']['Row']>
       }
     }
     Functions: {
@@ -458,102 +529,6 @@ export interface Database {
       rpc_notifications_mark_all_read: {
         Args: Record<string, never>
         Returns: number
-      }
-    }
-    Tables: {
-      chat_messages: {
-        Row: {
-          id: string
-          conversation_id: string
-          sender_id: string
-          message_type: 'text' | 'system'
-          message_kind: 'text' | 'image' | 'order_card'
-          body: string
-          client_message_id: string
-          reply_to_id: string | null
-          created_at: string
-          edited_at: string | null
-          deleted_at: string | null
-        }
-        Insert: {
-          conversation_id: string
-          sender_id: string
-          message_type?: 'text' | 'system'
-          message_kind?: 'text' | 'image' | 'order_card'
-          body: string
-          client_message_id: string
-          reply_to_id?: string | null
-        }
-        Update: Partial<Database['public']['Tables']['chat_messages']['Row']>
-      }
-      chat_message_attachments: {
-        Row: {
-          id: string
-          message_id: string
-          storage_path: string
-          mime: string
-          size_bytes: number
-          width: number | null
-          height: number | null
-          created_at: string
-        }
-        Insert: {
-          message_id: string
-          storage_path: string
-          mime: string
-          size_bytes: number
-          width?: number | null
-          height?: number | null
-        }
-        Update: Partial<Database['public']['Tables']['chat_message_attachments']['Row']>
-      }
-      chat_message_metadata: {
-        Row: {
-          message_id: string
-          payload: Record<string, any>
-          updated_at: string
-        }
-        Insert: {
-          message_id: string
-          payload?: Record<string, any>
-        }
-        Update: Partial<Database['public']['Tables']['chat_message_metadata']['Row']>
-      }
-      chat_typing: {
-        Row: {
-          conversation_id: string
-          user_id: string
-          started_at: string
-          expires_at: string
-        }
-        Insert: {
-          conversation_id: string
-          user_id: string
-          expires_at?: string
-        }
-        Update: Partial<Database['public']['Tables']['chat_typing']['Row']>
-      }
-      notifications: {
-        Row: {
-          id: string
-          user_id: string
-          kind: 'chat_message' | 'order_status' | 'staff_assigned' | 'staff_transferred' | 'system'
-          title: string
-          body: string
-          link: string | null
-          payload: Record<string, any>
-          read_at: string | null
-          created_at: string
-        }
-        Insert: {
-          user_id: string
-          kind: 'chat_message' | 'order_status' | 'staff_assigned' | 'staff_transferred' | 'system'
-          title: string
-          body?: string
-          link?: string | null
-          payload?: Record<string, any>
-        }
-        Update: Partial<Database['public']['Tables']['notifications']['Row']>
       }
     }
   }

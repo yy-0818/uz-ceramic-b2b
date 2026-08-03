@@ -60,15 +60,15 @@ watch(
   () => route.query.conversation,
   async (id) => {
     if (!id || typeof id !== 'string') return
-    let conv = chat.conversations.value.find((c) => c.id === id)
-    if (!conv) {
-      try { await chat.fetchConversations() } catch { /* ignore */ }
-      conv = chat.conversations.value.find((c) => c.id === id) ?? null
-    }
-    if (conv) {
-      selectedConversation.value = conv
-      showMobileDetail.value = true
-    }
+  let conv: ChatConversation | null = chat.conversations.value.find((c) => c.id === id) ?? null
+  if (!conv) {
+    try { await chat.fetchConversations() } catch { /* ignore */ }
+    conv = chat.conversations.value.find((c) => c.id === id) ?? null
+  }
+  if (conv) {
+    selectedConversation.value = conv
+    showMobileDetail.value = true
+  }
   },
   { immediate: true },
 )
