@@ -8,7 +8,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { ArrowLeft, Loader2, FileText, Receipt, User, Box, Wallet, History, Image as ImageIcon, MessageSquare } from 'lucide-vue-next'
+import { ArrowLeft, Loader2, FileText, Receipt, User, Box, Wallet, History, Image as ImageIcon, MessageSquare, Send } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -26,13 +26,17 @@ import { useAuth } from '@/composables/useAuth'
 import { useOrders, type OrderRow } from '@/composables/useOrders'
 import { useFinance } from '@/composables/useFinance'
 import { attachmentPublicUrl, attachmentSignedUrl, fetchOrderAttachments, type OrderAttachmentRow } from '@/composables/useOrderAttachments'
+import { useChat } from '@/composables/useChat'
+import { useOrderStatusCache } from '@/composables/useOrderStatusCache'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
-const { appUser, isAdmin } = useAuth()
+const { appUser, isAdmin, account } = useAuth()
 const ordersApi = useOrders()
 const finance = useFinance()
+const chat = useChat()
+const statusCache = useOrderStatusCache()
 
 const orderId = computed(() => route.params.id as string)
 const ledger = ref<{ direction: 'debit' | 'credit'; amount: number; memo: string | null; recorded_at: string }[]>([])
@@ -47,6 +51,8 @@ const refresh = async () => {
   const o = await ordersApi.fetchById(orderId.value)
   order.value = o
   if (o) {
+    // 把首屏订单状态塞进 cache, 这样 ChatOrderCard 复用 realtime 通道时初始值就对
+    statusCache.setImmediate(o.id, o.status, Number(o.total_amount ?? 0), o.order_no)
     await finance.fetchByOrder(orderId.value)
     ledger.value = finance.entries.value
     try {
@@ -118,6 +124,49 @@ const fmtSize = (n: number) => {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+const orderCardInfo = computed(() => {
+  if (!order.value) return null
+  const o = order.value
+  const totalBoxes = (o.items ?? []).reduce((s, it) => s + (it.boxes ?? 0), 0)
+  return {
+    order_no: o.order_no,
+    status: o.status,
+    item_count: o.items?.length ?? 0,
+    total_boxes: totalBoxes,
+    total_amount: o.total_amount ?? 0,
+    updated_at: o.created_at,
+  }
+})
+
+const sendOrderCard = async (): Promise<string | void> => {
+  if (!order.value) return
+  const conv = await chat.ensureConversation({
+    account_id: order.value.account_id,
+    subject_order_id: order.value.id,
+  })
+  const r = await chat.sendOrderCard(conv.id, order.value.id)
+  // 分享完跳到聊天中心, 用户能在那里看到刚发的卡片
+  router.push(`/chat?conversation=${conv.id}`)
+  return r.messageId
+}
+
+const openChat = async (): Promise<void> => {
+  if (!order.value) return
+  const conv = await chat.ensureConversation({
+    account_id: order.value.account_id,
+    subject_order_id: order.value.id,
+  })
+  router.push(`/chat?conversation=${conv.id}`)
+}
+
+const sharing = ref(false)
+const onShare = async () => {
+  if (sharing.value) return
+  sharing.value = true
+  try { await sendOrderCard() } catch { /* ignore */ }
+  finally { sharing.value = false }
 }
 
 const canAudit = computed(() =>
@@ -222,35 +271,13 @@ const statusVariant = (s?: string) => {
       </CardContent>
     </Card>
 
-    <!-- ===================== 主区：单一卡片（多 section） ===================== -->
+    <!-- ===================== 主区 ===================== -->
     <Card v-else class="overflow-hidden">
       <CardContent class="p-0">
-        <!-- Section 1：账号信息 -->
+
+        <!-- 上：商品明细 -->
         <section class="px-5 sm:px-6 py-5 border-b">
           <div class="flex items-center gap-2 mb-3">
-            <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
-              <User class="h-3 w-3" />
-            </span>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.account') }}</h2>
-          </div>
-          <div class="text-sm space-y-1.5">
-            <p class="font-medium">{{ order.account?.account_name }}</p>
-            <p class="text-muted-foreground text-xs">{{ order.account?.company_name }}</p>
-            <div v-if="order.sub_account" class="mt-3 pt-3 border-t border-dashed">
-              <p class="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
-                {{ t('customer.order.orderSubAccount') }}
-              </p>
-              <p class="font-mono font-semibold">{{ order.sub_account.account_name }}</p>
-              <p v-if="order.sub_account.inn && order.sub_account.inn !== '-'" class="text-[11px] text-muted-foreground font-mono mt-0.5">
-                INN {{ order.sub_account.inn }}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        <!-- Section 2：商品明细 -->
-        <section class="px-0 sm:px-0 py-0 border-b">
-          <div class="px-5 sm:px-6 py-4 flex items-center gap-2 border-b bg-muted/20">
             <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
               <Box class="h-3 w-3" />
             </span>
@@ -260,6 +287,7 @@ const statusVariant = (s?: string) => {
             </Badge>
           </div>
 
+          <div class="overflow-x-auto -mx-5 sm:mx-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -286,125 +314,123 @@ const statusVariant = (s?: string) => {
               </TableRow>
             </TableBody>
           </Table>
+          </div>
 
           <!-- 汇总 -->
-          <div class="px-5 sm:px-6 py-3 text-sm space-y-1.5 border-t bg-muted/10">
-            <div class="flex justify-between">
+          <div class="mt-3 pt-3 border-t space-y-1.5">
+            <div class="flex justify-between text-xs">
               <span class="text-muted-foreground">{{ t('orders.detail.totalBoxes') }}</span>
               <span class="tabular-nums font-medium">{{ totalBoxes }} ящ.</span>
             </div>
-            <div class="flex justify-between">
+            <div class="flex justify-between text-xs">
               <span class="text-muted-foreground">{{ t('orders.detail.totalM2') }}</span>
               <span class="tabular-nums font-medium">{{ totalM2.toFixed(2) }} м²</span>
             </div>
-            <div class="flex justify-between text-base font-semibold pt-2 border-t">
+            <div class="flex justify-between text-sm font-semibold pt-1.5 border-t">
               <span>{{ t('orders.detail.totalAmount') }}</span>
               <span class="tabular-nums">{{ fmt(total) }}</span>
             </div>
           </div>
         </section>
 
-        <!-- Section 3：财务流水（仅员工可见） -->
-        <section v-if="appUser?.role !== 'customer' && ledger.length > 0" class="px-5 sm:px-6 py-5 border-b">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
-              <History class="h-3 w-3" />
-            </span>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.ledger') }}</h2>
-            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
-              {{ ledger.length }}
-            </Badge>
-          </div>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{{ t('orders.detail.colDir') }}</TableHead>
-                <TableHead>{{ t('orders.detail.colAmount') }}</TableHead>
-                <TableHead>{{ t('orders.detail.colMemo') }}</TableHead>
-                <TableHead>{{ t('orders.detail.colRecordedAt') }}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow v-for="(l, idx) in ledger" :key="idx">
-                <TableCell>
-                  <Badge :variant="l.direction === 'credit' ? 'default' : 'secondary'" class="text-[10px]">
-                    {{ l.direction === 'credit' ? t('orders.detail.credit') : t('orders.detail.debit') }}
-                  </Badge>
-                </TableCell>
-                <TableCell class="font-medium tabular-nums">{{ fmt(l.amount) }}</TableCell>
-                <TableCell class="text-xs text-muted-foreground">{{ l.memo || '—' }}</TableCell>
-                <TableCell class="text-xs text-muted-foreground">{{ fmtDate(l.recorded_at) }}</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </section>
-
-        <!-- Section 3.5：备注（客户提交时填的 remark）-->
-        <section v-if="order.remark" class="px-5 sm:px-6 py-5 border-b">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
-              <MessageSquare class="h-3 w-3" />
-            </span>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.remark') ?? '客户备注' }}</h2>
-          </div>
-          <p class="text-sm leading-relaxed whitespace-pre-wrap">{{ order.remark }}</p>
-        </section>
-
-        <!-- Section 3.6：附件（客户上传的提货图等）-->
-        <section v-if="attachments.length > 0" class="px-5 sm:px-6 py-5 border-b">
-          <div class="flex items-center gap-2 mb-3">
-            <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
-              <ImageIcon class="h-3 w-3" />
-            </span>
-            <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.attachments') }}</h2>
-            <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">
-              {{ attachments.length }}
-            </Badge>
-          </div>
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-            <template v-for="att in attachments" :key="att.id">
-              <a
-                v-if="!isBroken(att)"
-                :href="attUrl(att)"
-                target="_blank"
-                rel="noopener noreferrer"
-                :title="att.storage_path"
-                class="group block"
-              >
-                <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 ring-1 ring-border/50 hover:ring-primary/40 transition">
-                  <img
-                    :src="attUrl(att)"
-                    :alt="att.caption ?? 'attachment'"
-                    loading="lazy"
-                    class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
-                    @error="onImgError(att)"
-                  />
-                </div>
-                <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
-                  {{ att.caption }}
+        <!-- 2列：账户信息 + 附件/流水 -->
+        <div class="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x border-t">
+          <!-- 左：账户信息 + 备注 -->
+          <section class="px-5 sm:px-6 py-5">
+            <div class="flex items-center gap-2 mb-3">
+              <span class="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                <User class="h-3 w-3" />
+              </span>
+              <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.account') }}</h2>
+            </div>
+            <div class="space-y-2">
+              <div>
+                <p class="text-sm font-semibold">{{ order.account?.account_name }}</p>
+                <p class="text-xs text-muted-foreground">{{ order.account?.company_name }}</p>
+              </div>
+              <div v-if="order.sub_account" class="pt-2 border-t border-dashed">
+                <p class="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
+                  {{ t('customer.order.orderSubAccount') }}
                 </p>
-                <p class="text-[10px] text-muted-foreground tabular-nums">
-                  {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
-                </p>
-              </a>
-              <div v-else class="block">
-                <div class="aspect-square rounded-lg border border-dashed bg-muted/10 flex flex-col items-center justify-center text-muted-foreground p-2">
-                  <ImageIcon class="h-7 w-7 opacity-40 mb-1" />
-                  <p class="text-[10px] text-center leading-tight">{{ t('orders.detail.attachmentLost') ?? '附件已丢失' }}</p>
-                </div>
-                <p v-if="att.caption" class="mt-1.5 text-[11px] text-foreground/80 line-clamp-2 leading-snug">
-                  {{ att.caption }}
-                </p>
-                <p class="text-[10px] text-muted-foreground tabular-nums">
-                  {{ fmtSize(att.size_bytes) }} · {{ fmtDate(att.created_at) }}
+                <p class="font-mono text-sm font-semibold">{{ order.sub_account.account_name }}</p>
+                <p v-if="order.sub_account.inn && order.sub_account.inn !== '-'" class="text-[11px] text-muted-foreground font-mono mt-0.5">
+                  INN {{ order.sub_account.inn }}
                 </p>
               </div>
-            </template>
-          </div>
-        </section>
+            </div>
 
-        <!-- Section 4：操作按钮（角色驱动） -->
-        <div v-if="canAudit || canAccount || canShip || canCancel" class="px-5 sm:px-6 py-4 flex flex-wrap gap-2 bg-muted/20">
+            <div v-if="order.remark" class="mt-4 pt-4 border-t border-dashed">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="h-4 w-4 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+                  <MessageSquare class="h-2.5 w-2.5" />
+                </span>
+                <h3 class="text-xs font-semibold text-foreground">{{ t('orders.detail.remark') ?? '备注' }}</h3>
+              </div>
+              <p class="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground">{{ order.remark }}</p>
+            </div>
+          </section>
+
+          <!-- 右：附件 + 流水 -->
+          <div class="px-5 sm:px-6 py-5 space-y-5">
+            <!-- 附件 -->
+            <section v-if="attachments.length > 0">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+                  <ImageIcon class="h-3 w-3" />
+                </span>
+                <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.attachments') }}</h2>
+                <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">{{ attachments.length }}</Badge>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <template v-for="att in attachments" :key="att.id">
+                  <a v-if="!isBroken(att)" :href="attUrl(att)" target="_blank" rel="noopener noreferrer" class="group block">
+                    <div class="aspect-square rounded-lg overflow-hidden border bg-muted/30 hover:ring-2 hover:ring-primary/40 transition">
+                      <img :src="attUrl(att)" :alt="att.caption ?? 'attachment'" loading="lazy"
+                        class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                        @error="onImgError(att)" />
+                    </div>
+                    <p v-if="att.caption" class="mt-1 text-[10px] text-foreground/80 line-clamp-2 leading-snug">{{ att.caption }}</p>
+                    <p class="text-[9px] text-muted-foreground tabular-nums mt-0.5">{{ fmtSize(att.size_bytes) }}</p>
+                  </a>
+                  <div v-else class="block">
+                    <div class="aspect-square rounded-lg border border-dashed bg-muted/10 flex flex-col items-center justify-center text-muted-foreground p-2">
+                      <ImageIcon class="h-6 w-6 opacity-40" />
+                    </div>
+                    <p class="text-[9px] text-muted-foreground mt-1">{{ t('orders.detail.attachmentLost') ?? '附件丢失' }}</p>
+                  </div>
+                </template>
+              </div>
+            </section>
+
+            <!-- 财务流水 -->
+            <section v-if="appUser?.role !== 'customer' && ledger.length > 0">
+              <div class="flex items-center gap-2 mb-3">
+                <span class="h-5 w-5 rounded-full bg-muted text-muted-foreground flex items-center justify-center">
+                  <History class="h-3 w-3" />
+                </span>
+                <h2 class="text-sm font-semibold text-foreground">{{ t('orders.detail.ledger') }}</h2>
+                <Badge variant="secondary" class="ml-auto text-[10px] tabular-nums">{{ ledger.length }}</Badge>
+              </div>
+              <div class="space-y-1.5">
+                <div
+                  v-for="(l, idx) in ledger"
+                  :key="idx"
+                  class="flex items-center gap-3 py-1.5 border-b border-dashed last:border-0"
+                >
+                  <Badge :variant="l.direction === 'credit' ? 'default' : 'secondary'" class="text-[10px] shrink-0">
+                    {{ l.direction === 'credit' ? t('orders.detail.credit') : t('orders.detail.debit') }}
+                  </Badge>
+                  <span class="text-sm font-medium tabular-nums flex-1">{{ fmt(l.amount) }}</span>
+                  <span class="text-[11px] text-muted-foreground truncate flex-1">{{ l.memo || '—' }}</span>
+                  <span class="text-[10px] text-muted-foreground tabular-nums shrink-0">{{ fmtDate(l.recorded_at) }}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div v-if="canAudit || canAccount || canShip || canCancel || order" class="px-5 sm:px-6 py-4 flex flex-wrap gap-2 bg-muted/20 border-t">
           <Button v-if="canAudit" :disabled="acting" class="shadow-md shadow-primary/20" @click="doTransition('audited')">
             <Loader2 v-if="acting" class="mr-2 h-4 w-4 animate-spin" />
             {{ t('orders.action.audit') }}
@@ -417,6 +443,16 @@ const statusVariant = (s?: string) => {
           </Button>
           <Button v-if="canCancel" variant="outline" :disabled="acting" @click="doTransition('cancelled')">
             {{ t('orders.action.cancel') }}
+          </Button>
+          <div class="flex-1" />
+          <Button variant="outline" :disabled="sharing" @click="openChat">
+            <MessageSquare class="h-4 w-4 mr-1" />
+            {{ t('chat.openChat') }}
+          </Button>
+          <Button variant="outline" :disabled="sharing" @click="onShare">
+            <Send v-if="!sharing" class="h-4 w-4 mr-1" />
+            <Loader2 v-else class="h-4 w-4 mr-1 animate-spin" />
+            {{ t('chat.shareOrderCard') }}
           </Button>
         </div>
       </CardContent>

@@ -12,6 +12,7 @@ import { resetAccountProducts } from './useAccountProducts'
 import { resetAccounts } from './useAccounts'
 import { resetFinance } from './useFinance'
 import { resetCart } from './useCart'
+import { resetChat } from './useChat'
 
 /**
  * 切换账号时，清空所有 composable 模块级单例缓存。
@@ -24,6 +25,7 @@ function clearAllCaches() {
   resetAccounts()
   resetFinance()
   resetCart()
+  resetChat()
 }
 
 export interface Account {

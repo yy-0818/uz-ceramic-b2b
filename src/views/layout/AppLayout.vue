@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, MoreHorizontal, ArrowLeft } from 'lucide-vue-next'
+import { LogOut, Factory, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, Headphones, MoreHorizontal, ArrowLeft } from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import Badge from '@/components/ui/Badge.vue'
@@ -14,6 +14,8 @@ import Button from '@/components/ui/Button.vue'
 import Dialog from '@/components/ui/Dialog.vue'
 import ThemeToggle from '@/components/ui/ThemeToggle.vue'
 import LocaleMenu from '@/components/ui/LocaleMenu.vue'
+import ChatWindow from '@/components/chat/ChatWindow.vue'
+import NotificationBell from '@/components/chat/NotificationBell.vue'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -43,17 +45,22 @@ const navItems = computed<NavItem[]>(() => {
   if (appUser.value?.role === 'warehouse' || isAdmin.value) {
     items.push({ name: t('nav.fulfillment'), to: '/warehouse', icon: Truck })
   }
+  // Phase 7: 统一聊天中心 (unified). 客户一对一 / 后台一对多.
+  const role = appUser.value?.role
+  if (role && (role === 'admin' || role === 'checker' || role === 'finance' || role === 'warehouse' || role === 'customer' || role === 'fin_customer')) {
+    items.push({ name: t('chat.workspace'), to: '/chat', icon: Headphones })
+  }
   return items
 })
 
 // 移动端：底部固定 4 项 = catalog/orders + 当前角色最高频入口 + "更多"
 // 这样在 admin 视角下也能露出核心 + 抽屉。
 const MOBILE_PRIMARY: Record<string, string[]> = {
-  admin:     ['/admin/import', '/admin/products', '/admin/assign', '/admin/accounts'],
-  customer:  ['/catalog', '/orders'],
-  checker:   ['/audit'],
-  finance:   ['/finance'],
-  warehouse: ['/warehouse'],
+  admin:     ['/admin/import', '/admin/products', '/admin/accounts', '/chat'],
+  customer:  ['/catalog', '/orders', '/chat'],
+  checker:   ['/audit', '/chat'],
+  finance:   ['/finance', '/chat'],
+  warehouse: ['/warehouse', '/chat'],
 }
 
 const primaryItems = computed<NavItem[]>(() => {
@@ -186,6 +193,7 @@ onMounted(() => {
           <Badge variant="secondary">{{ appUser?.role }}</Badge>
         </div>
         <div class="flex items-center gap-1">
+          <NotificationBell v-if="appUser" />
           <ThemeToggle />
           <LocaleMenu />
           <Button size="sm" variant="ghost" @click="onLogout">
@@ -253,5 +261,8 @@ onMounted(() => {
         </div>
       </div>
     </Dialog>
+
+    <!-- 全局聊天浮窗 (OrderDetailPage / 其他页面右下角悬浮) -->
+    <ChatWindow v-if="appUser" />
   </div>
 </template>

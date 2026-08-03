@@ -58,6 +58,15 @@ const routes: RouteRecordRaw[] = [
       // 仓库
       { path: 'warehouse', name: 'warehouse', component: () => import('@/views/warehouse/WarehousePage.vue'),
         meta: { roles: ['admin','warehouse'] } },
+
+      // 在线客服聊天 (Phase 1 - 客户 / 员工共用)
+      // Phase 7: unified - 按角色自动切客户一对一 / 后台一对多
+      { path: 'chat', name: 'chat', component: () => import('@/views/ChatListPage.vue'),
+        meta: { roles: ['customer','admin','checker','finance','warehouse'] } },
+
+      // Phase 6: 通知中心 (所有登录用户可访问)
+      { path: 'notifications', name: 'notifications', component: () => import('@/views/NotificationsPage.vue'),
+        meta: { roles: ['customer','admin','checker','finance','warehouse'] } },
     ],
   },
   { path: '/:pathMatch(.*)*', redirect: '/' },

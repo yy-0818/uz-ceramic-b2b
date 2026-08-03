@@ -6,7 +6,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { Eye, Loader2, ListOrdered, History, ArrowLeft } from 'lucide-vue-next'
+import { Eye, Loader2, ListOrdered, History, ArrowLeft, Search } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
@@ -30,6 +30,7 @@ const ordersApi = useOrders()
 const { appUser } = useAuth()
 const statusFilter = ref<'all' | 'pending' | 'audited' | 'accounted' | 'shipped' | 'cancelled'>('all')
 const STATUSES = ['all', 'pending', 'audited', 'accounted', 'shipped', 'cancelled'] as const
+const keyword = ref('')
 
 /**
  * 兜底超时：fetch 出错 / promise 挂起时，fetched.value 不会变 true，
@@ -81,9 +82,19 @@ const goBack = () => {
 // 因为 items 是按 statusFilter 过滤后的，过滤后统计"待审核有几条"等于 items.length，
 // 没有信息量。要展示各状态真实数量需要再发一次全量查询，权衡后只保留「全部」总数。
 const totalCount = computed(() => {
-  // statusFilter === 'all' 时 items 是全集，length 就是总数；
-  // 否则也用 items.length（虽然语义是当前过滤后数量，badge 不显示所以不影响 UI）
   return ordersApi.items.value.length
+})
+
+const filteredOrders = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return ordersApi.items.value
+  return ordersApi.items.value.filter((o) =>
+    (o.order_no ?? '').toLowerCase().includes(q) ||
+    (o.account?.account_name ?? '').toLowerCase().includes(q) ||
+    (o.account?.company_name ?? '').toLowerCase().includes(q) ||
+    (o.sub_account?.account_name ?? '').toLowerCase().includes(q) ||
+    (o.status ?? '').toLowerCase().includes(q),
+  )
 })
 </script>
 
@@ -128,42 +139,51 @@ const totalCount = computed(() => {
     <!-- ===================== 主区：单一卡片 ===================== -->
     <Card class="overflow-hidden">
       <CardContent class="p-0">
-        <!-- 顶部 mini header -->
-        <div class="px-5 sm:px-6 py-4 border-b bg-muted/20 flex items-center gap-3">
-          <div class="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-            <ListOrdered class="h-4 w-4 text-primary" />
+        <!-- 搜索 + 状态过滤 -->
+        <div class="px-5 sm:px-6 py-3 border-b bg-background flex flex-col sm:flex-row gap-3">
+          <!-- 搜索 -->
+          <div class="relative flex-1 min-w-0">
+            <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input
+              v-model="keyword"
+              type="text"
+              :placeholder="t('orders.searchPlaceholder')"
+              class="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-muted/40 border border-transparent focus:border-primary/40 focus:bg-background outline-none"
+            />
           </div>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold leading-tight">订单列表</p>
-            <p class="text-[11px] text-muted-foreground leading-snug">
-              按状态过滤查看订单；空状态会有占位提示
-            </p>
-          </div>
-        </div>
-
-        <!-- 状态过滤 chips -->
-        <div class="px-5 sm:px-6 py-3 border-b bg-background flex gap-2 overflow-x-auto -mx-0">
-          <Button
-            v-for="s in STATUSES"
-            :key="s"
-            size="sm"
-            :variant="statusFilter === s ? 'default' : 'outline'"
-            class="shrink-0"
-            @click="statusFilter = s; refresh()"
-          >
-            {{ t(`orders.status.${s}`) }}
-            <Badge
-              v-if="s === 'all' && totalCount > 0"
-              variant="secondary"
-              class="ml-1.5 text-[10px] tabular-nums px-1.5"
+          <!-- chips -->
+          <div class="flex gap-2 shrink-0">
+            <Button
+              v-for="s in STATUSES"
+              :key="s"
+              size="sm"
+              :variant="statusFilter === s ? 'default' : 'outline'"
+              class="shrink-0"
+              @click="statusFilter = s; refresh()"
             >
-              {{ totalCount }}
-            </Badge>
-          </Button>
+              {{ t(`orders.status.${s}`) }}
+              <Badge
+                v-if="s === 'all' && totalCount > 0"
+                variant="secondary"
+                class="ml-1.5 text-[10px] tabular-nums px-1.5"
+              >
+                {{ totalCount }}
+              </Badge>
+            </Button>
+          </div>
         </div>
 
         <!-- 表格 -->
         <Table>
+          <colgroup>
+            <col style="width: 130px" />
+            <col style="width: 130px" />
+            <col style="width: 120px" />
+            <col style="width: 70px" />
+            <col style="width: 90px" />
+            <col style="width: 90px" />
+            <col style="width: 60px" />
+          </colgroup>
           <TableHeader>
             <TableRow>
               <TableHead>{{ t('orders.colNo') }}</TableHead>
@@ -176,7 +196,7 @@ const totalCount = computed(() => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-for="o in ordersApi.items.value" :key="o.id">
+            <TableRow v-for="o in filteredOrders" :key="o.id">
               <TableCell class="font-mono text-sm">{{ o.order_no }}</TableCell>
               <TableCell class="text-xs text-muted-foreground">{{ fmtDate(o.created_at) }}</TableCell>
               <TableCell>
@@ -198,30 +218,29 @@ const totalCount = computed(() => {
                 </Button>
               </TableCell>
             </TableRow>
-            <!--
-              skeleton 退出条件：fetched=true OR 兜底超时
-              （之前 fetched 只在 fetch 成功路径置 true，fetch 失败会一直卡 skeleton）
-            -->
+            <!-- skeleton -->
             <TableEmpty v-if="!forceShowEmpty && !ordersApi.fetched.value && ordersApi.items.value.length === 0">
-              <div class="space-y-2 py-2">
-                <div v-for="i in 5" :key="i" class="flex items-center gap-3">
-                  <Skeleton class="h-4 w-24" />
-                  <Skeleton class="h-3 w-28" />
-                  <Skeleton class="h-3 w-20" />
-                  <Skeleton class="h-3 w-16" />
-                  <Skeleton class="h-3 w-20" />
-                  <Skeleton class="h-6 w-16 rounded-full" />
-                </div>
+              <table class="w-full">
+                <tr v-for="i in 5" :key="i" class="border-b">
+                  <td class="p-4"><Skeleton class="h-4 w-24" /></td>
+                  <td class="p-4"><Skeleton class="h-3 w-28" /></td>
+                  <td class="p-4"><Skeleton class="h-3 w-20" /></td>
+                  <td class="p-4"><Skeleton class="h-3 w-10" /></td>
+                  <td class="p-4"><Skeleton class="h-3 w-16" /></td>
+                  <td class="p-4"><Skeleton class="h-6 w-16 rounded-full" /></td>
+                  <td class="p-4 text-right"><Skeleton class="h-8 w-8 rounded" /></td>
+                </tr>
+              </table>
+            </TableEmpty>
+            <TableEmpty v-else-if="filteredOrders.length === 0 && ordersApi.items.value.length > 0">
+              <div class="py-8 text-center">
+                <p class="text-sm text-muted-foreground">{{ t('orders.noResults') }}</p>
+                <p class="text-[11px] text-muted-foreground mt-1">换个关键词试试</p>
               </div>
             </TableEmpty>
             <TableEmpty v-else-if="ordersApi.items.value.length === 0">
               <div class="space-y-2 py-3 text-center">
                 <p class="text-sm">{{ t('orders.empty') }}</p>
-                <!--
-                  error 暴露：之前只 set error.value 但 UI 没渲染，
-                  admin 用户看到空列表时不知道为什么 RLS 拒绝。
-                  同时给出 role / account_id 提示，方便排查
-                -->
                 <p
                   v-if="ordersApi.error.value"
                   class="text-[11px] text-destructive max-w-md mx-auto leading-relaxed"

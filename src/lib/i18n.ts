@@ -52,7 +52,23 @@ function lookup(dict: MessageDict, key: string): any {
 
 function format(template: unknown, values?: Record<string, any>): string {
   if (template == null) return ''
-  if (typeof template !== 'string') return String(template)
+  if (typeof template !== 'string') {
+    // 支持多态选择: order_status.body 是个 { pending: '...', shipped: '...' },
+    // 按 values.status_key 选具体文案
+    if (typeof template === 'object' && values) {
+      const selector = values.status_key || values.kind_key || values.message_kind
+      if (selector && typeof (template as any)[selector] === 'string') {
+        return format((template as any)[selector], values)
+      }
+      // 兜底: 找 'unknown' / 第一条 string
+      const fallback = (template as any).unknown
+      if (typeof fallback === 'string') return format(fallback, values)
+      for (const v of Object.values(template as any)) {
+        if (typeof v === 'string') return format(v, values)
+      }
+    }
+    return String(template)
+  }
   if (!values) return template
   return template.replace(/\{(\w+)\}/g, (_m, k) => {
     const v = values[k]
