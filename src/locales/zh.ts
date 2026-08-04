@@ -632,6 +632,8 @@ export default {
     systemOffline: '已下线',
     sendFailed: '发送失败',
     retryHint: '点击重试',
+    react: '添加表情',
+    unreact: '取消表情',
     pendingLabel: '正在发送',
     delivery: '已发送',
     read: '已读',

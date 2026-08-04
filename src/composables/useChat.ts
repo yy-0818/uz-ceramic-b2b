@@ -76,9 +76,21 @@ export interface ChatMessageAttachment {
   height: number | null
 }
 
+export interface ChatMessageReaction {
+  emoji: string
+  user_ids: string[]
+}
+
 export interface ChatMessageMetadata {
   message_id: string
-  payload: Record<string, any>
+  payload: {
+    order_id?: string
+    order_no?: string
+    status?: string
+    total_amount?: number
+    reactions?: ChatMessageReaction[]
+    [key: string]: unknown
+  }
   updated_at: string
 }
 
@@ -176,6 +188,61 @@ const CONV_SELECT = `
   subject_order:orders!chat_conversations_subject_order_id_fkey(order_no, status),
   assigned:users!chat_conversations_assigned_to_fkey(id, full_name, role)
 `
+
+// ---------------------------------------------------------------------
+// 内存缓存层（模块级单例，跨组件共享）
+// ---------------------------------------------------------------------
+const CACHE_TTL_MS = 30_000 // 30 秒内复用缓存，避免重复请求
+
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+}
+
+// 消息缓存：按 conversationId 缓存
+const messagesCache = new Map<string, CacheEntry<ChatMessage[]>>()
+// 成员缓存：按 conversationId 缓存
+const membersCache = new Map<string, CacheEntry<ChatMember[]>>()
+// 附件缓存：按 messageIds 排序后作为 key
+const attachmentsCache = new Map<string, CacheEntry<ChatMessageAttachment[]>>()
+// 元数据缓存
+const metadataCache = new Map<string, CacheEntry<ChatMessageMetadata>>()
+
+function isCacheValid<T>(entry: CacheEntry<T> | undefined): boolean {
+  if (!entry) return false
+  return Date.now() - entry.timestamp < CACHE_TTL_MS
+}
+
+function getCached<T>(map: Map<string, CacheEntry<T>>, key: string): T | undefined {
+  const entry = map.get(key)
+  if (isCacheValid(entry)) return entry!.data
+  map.delete(key)
+  return undefined
+}
+
+function setCached<T>(map: Map<string, CacheEntry<T>>, key: string, data: T): void {
+  map.set(key, { data, timestamp: Date.now() })
+}
+
+/**
+ * 使指定会话的所有缓存失效（收到新消息、UPDATE 等时调用）
+ */
+export function invalidateConversationCache(conversationId: string): void {
+  messagesCache.delete(conversationId)
+  membersCache.delete(conversationId)
+  attachmentsCache.clear() // 附件分散在多个 key，简单起见全清
+  metadataCache.clear()
+}
+
+/**
+ * 清空所有聊天缓存
+ */
+export function clearChatCache(): void {
+  messagesCache.clear()
+  membersCache.clear()
+  attachmentsCache.clear()
+  metadataCache.clear()
+}
 
 export function useChat() {
   // -------------------------------------------------------------------
@@ -479,7 +546,13 @@ export function useChat() {
   // -------------------------------------------------------------------
   // 拉单个会话的成员 + 其它信息
   // -------------------------------------------------------------------
-  const fetchMembers = async (conversationId: string): Promise<ChatMember[]> => {
+  const fetchMembers = async (conversationId: string, options?: { skipCache?: boolean }): Promise<ChatMember[]> => {
+    // 优先返回缓存
+    if (!options?.skipCache) {
+      const cached = getCached(membersCache, conversationId)
+      if (cached) return cached
+    }
+
     const { data, error } = await supabase
       .from('chat_conversation_members')
       .select(`
@@ -490,13 +563,21 @@ export function useChat() {
       .eq('conversation_id', conversationId)
       .is('left_at', null)
     if (error) throw error
-    return (data ?? []) as ChatMember[]
+    const result = (data ?? []) as ChatMember[]
+    setCached(membersCache, conversationId, result)
+    return result
   }
 
   // -------------------------------------------------------------------
   // 消息列表（按 created_at 升序, 拉最近 100 条）
   // -------------------------------------------------------------------
-  const fetchMessages = async (conversationId: string, limit = 100): Promise<ChatMessage[]> => {
+  const fetchMessages = async (conversationId: string, limit = 100, options?: { skipCache?: boolean }): Promise<ChatMessage[]> => {
+    // 优先返回缓存
+    if (!options?.skipCache) {
+      const cached = getCached(messagesCache, conversationId)
+      if (cached) return cached
+    }
+
     const { data, error } = await supabase
       .from('chat_messages')
       .select(`
@@ -510,7 +591,9 @@ export function useChat() {
       .order('id', { ascending: true })
       .limit(limit)
     if (error) throw error
-    return (data ?? []) as ChatMessage[]
+    const result = (data ?? []) as ChatMessage[]
+    setCached(messagesCache, conversationId, result)
+    return result
   }
 
   // -------------------------------------------------------------------
@@ -567,33 +650,66 @@ export function useChat() {
   // -------------------------------------------------------------------
   // M2: 拉一个会话的所有附件 (单 batch 内联)
   // -------------------------------------------------------------------
-  const fetchAttachments = async (messageIds: string[]): Promise<Record<string, ChatMessageAttachment[]>> => {
+  const fetchAttachments = async (messageIds: string[], options?: { skipCache?: boolean }): Promise<Record<string, ChatMessageAttachment[]>> => {
     if (messageIds.length === 0) return {}
+
+    // 优先从缓存逐个获取
+    const result: Record<string, ChatMessageAttachment[]> = {}
+    const missing: string[] = []
+    if (!options?.skipCache) {
+      for (const mid of messageIds) {
+        const cached = getCached(attachmentsCache, mid)
+        if (cached) result[mid] = cached
+        else missing.push(mid)
+      }
+      if (missing.length === 0) return result
+    } else {
+      missing.push(...messageIds)
+    }
+
     const { data, error } = await supabase
       .from('chat_message_attachments')
       .select('id, message_id, storage_path, mime, size_bytes, width, height')
-      .in('message_id', messageIds)
-    if (error) return {}
-    const grouped: Record<string, ChatMessageAttachment[]> = {}
+      .in('message_id', missing)
+    if (error) return result
     for (const row of (data ?? []) as any[]) {
-      ;(grouped[row.message_id] ||= []).push(row as ChatMessageAttachment)
+      const att = row as ChatMessageAttachment
+      if (!result[att.message_id]) result[att.message_id] = []
+      result[att.message_id].push(att)
+      setCached(attachmentsCache, att.message_id, [att])
     }
-    return grouped
+    return result
   }
 
   // -------------------------------------------------------------------
   // M2: 拉 metadata (订单卡片 / 自定义 payload)
   // ---------------------------------------------------------------------
-  const fetchMetadata = async (messageIds: string[]): Promise<Record<string, ChatMessageMetadata>> => {
+  const fetchMetadata = async (messageIds: string[], options?: { skipCache?: boolean }): Promise<Record<string, ChatMessageMetadata>> => {
     if (messageIds.length === 0) return {}
+
+    // 优先从缓存逐个获取
+    const out: Record<string, ChatMessageMetadata> = {}
+    const missing: string[] = []
+    if (!options?.skipCache) {
+      for (const mid of messageIds) {
+        const cached = getCached(metadataCache, mid)
+        if (cached) out[mid] = cached
+        else missing.push(mid)
+      }
+      if (missing.length === 0) return out
+    } else {
+      missing.push(...messageIds)
+    }
+
     const { data, error } = await supabase
       .from('chat_message_metadata')
       .select('message_id, payload, updated_at')
-      .in('message_id', messageIds)
-    if (error) return {}
-    const out: Record<string, ChatMessageMetadata> = {}
+      .in('message_id', missing)
+    if (error) return out
     for (const row of (data ?? []) as any[]) {
-      out[row.message_id] = row as ChatMessageMetadata
+      const meta = row as ChatMessageMetadata
+      out[meta.message_id] = meta
+      setCached(metadataCache, meta.message_id, meta)
     }
     return out
   }
@@ -842,7 +958,11 @@ export function useChat() {
         { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${conversationId}` },
         (payload: any) => {
           const m = payload?.new as ChatMessage
-          if (m) onMessage(m)
+          if (m) {
+            // 让下次 fetchMessages 拉到新消息（避免展示陈旧缓存）
+            messagesCache.delete(conversationId)
+            onMessage(m)
+          }
         },
       )
       .on(
@@ -851,6 +971,8 @@ export function useChat() {
         (payload: any) => {
           const m = payload?.new as ChatMessage
           if (!m) return
+          // 消息被编辑/撤回，清缓存保证下次拿到最新
+          messagesCache.delete(conversationId)
           if (onUpdated) onUpdated(m)
           else onMessage(m) // 兼容旧调用方
         },
@@ -860,7 +982,11 @@ export function useChat() {
         { event: '*', schema: 'public', table: 'chat_conversation_members', filter: `conversation_id=eq.${conversationId}` },
         (payload: any) => {
           const m = payload?.new as ChatMember | null
-          if (m) onMember(m)
+          if (m) {
+            // 成员状态变更（如已读位置变更），清成员缓存
+            membersCache.delete(conversationId)
+            onMember(m)
+          }
         },
       )
       .subscribe()
@@ -902,5 +1028,6 @@ export function useChat() {
     fetchPresence,
     subscribeConversation,
     invalidateList,
+    invalidateCache: invalidateConversationCache,
   }
 }

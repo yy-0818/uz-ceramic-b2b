@@ -24,6 +24,7 @@ import { useChatUpload } from '@/composables/useChatUpload'
 import { useAuth } from '@/composables/useAuth'
 import { useOrderStatusCache } from '@/composables/useOrderStatusCache'
 import { useTeamMembers } from '@/composables/useTeamMembers'
+import { useMessageReactions } from '@/composables/useMessageReactions'
 import { supabase } from '@/lib/supabase'
 import ChatBubble from './ChatBubble.vue'
 import ChatTyping from './ChatTyping.vue'
@@ -33,6 +34,9 @@ import ChatStatusDot from './ChatStatusDot.vue'
 import ChatAvatar from './ChatAvatar.vue'
 import Badge from '@/components/ui/Badge.vue'
 import Button from '@/components/ui/Button.vue'
+import ChatPanelHeader from './ChatPanelHeader.vue'
+import ChatMessageList from './ChatMessageList.vue'
+import ChatEditBar from './ChatEditBar.vue'
 
 const props = defineProps<{
   accountId: string
@@ -66,6 +70,7 @@ const chat = useChat()
 const uploader = useChatUpload()
 const { appUser } = useAuth()
 const statusCache = useOrderStatusCache()
+const reactionsComposable = useMessageReactions()
 
 const conversation = ref<ChatConversation | null>(null)
 const members = ref<ChatMember[]>([])
@@ -125,7 +130,12 @@ interface PendingMessage {
 }
 const pending = ref<PendingMessage[]>([])
 
-const messagesContainer = ref<HTMLElement | null>(null)
+// 子组件引用
+const messageList = ref<InstanceType<typeof ChatMessageList> | null>(null)
+
+const scrollToBottom = () => {
+  messageList.value?.scrollToBottom()
+}
 
 type Row =
   | { kind: 'msg'; message: ChatMessage; delivery: 'pending' | 'sent' | 'failed' | 'read'; failure?: string }
@@ -210,21 +220,22 @@ const rows = computed<Row[]>(() => {
 
 function readDelivery(m: ChatMessage): 'sent' | 'read' {
   if (!appUser.value) return 'sent'
-  const me = members.value.find((mm) => mm.user_id === appUser.value!.id)
-  if (!me?.last_read_message_id) return 'sent'
-  return me.last_read_message_id >= m.id ? 'read' : 'sent'
+  // 自己的消息不应该因为自己已读就显示为"已读"
+  // 这里需要查找"对方"成员的 last_read_message_id
+  // 如果只有自己一个成员（如 staff 看到自己发的消息），则只显示"已发送"
+  const others = members.value.filter((mm) => mm.user_id !== appUser.value!.id)
+  // 没有对方成员 → 对方还没加入会话 → 只显示"已发送"
+  if (others.length === 0) return 'sent'
+  // 只要任一对方成员读到了这条消息，就算"已读"
+  return others.some((other) => other.last_read_message_id && other.last_read_message_id >= m.id)
+    ? 'read'
+    : 'sent'
 }
 
 let unsub: (() => void) | null = null
 let typingChannel: any = null
 let openInFlight: Promise<void> | null = null
 let openingConversationId: string | null = null
-
-const scrollToBottom = async () => {
-  await nextTick()
-  const el = messagesContainer.value
-  if (el) el.scrollTop = el.scrollHeight
-}
 
 /**
  * 同步 unsubscribed channel. supabase realtime 的 removeChannel 异步, 必须 await
@@ -249,7 +260,7 @@ const safeUnsub = async () => {
   }
 }
 
-const openConversation = async () => {
+const openConversation = async (opts?: { skipCache?: boolean }) => {
   // mutex: 同一会话并发请求直接复用
   const targetId = props.accountId ?? ''
   if (openInFlight && openingConversationId === targetId) {
@@ -267,13 +278,13 @@ const openConversation = async () => {
       })
       conversation.value = conv
       const [ms, mems] = await Promise.all([
-        chat.fetchMessages(conv.id),
-        chat.fetchMembers(conv.id),
+        chat.fetchMessages(conv.id, 100, { skipCache: opts?.skipCache }),
+        chat.fetchMembers(conv.id, { skipCache: opts?.skipCache }),
       ])
       messages.value = ms
       members.value = mems
       lastMessageId.value = ms.length > 0 ? ms[ms.length - 1].id : null
-      await reloadExtras(ms.map((m) => m.id))
+      await reloadExtras(ms.map((m) => m.id), { skipCache: opts?.skipCache })
       if (lastMessageId.value) {
         chat.markRead(conv.id, lastMessageId.value).catch(() => { /* ignore */ })
       }
@@ -289,7 +300,16 @@ const openConversation = async () => {
               pendingUploads.value.splice(uidx, 1)
               attachmentsByMessage.value[u.clientMessageId] = undefined as any
             }
+            // 注意：不要为自己发的消息调 markRead
+            // 避免自己发出去的消息立即显示为"已读"
+            if (messages.value.some((mm) => mm.id === msg.id)) return
+            messages.value.push(msg)
+            lastMessageId.value = msg.id
+            reloadExtras([msg.id])
+            scrollToBottom()
+            return
           }
+          // 对方发的消息：推入列表 + 标记已读
           if (messages.value.some((mm) => mm.id === msg.id)) return
           messages.value.push(msg)
           lastMessageId.value = msg.id
@@ -361,10 +381,10 @@ const refreshTyping = async (conversationId: string) => {
   staffTyping.value = typingUsers.value.length > 0
 }
 
-const reloadExtras = async (messageIds: string[]) => {
+const reloadExtras = async (messageIds: string[], opts?: { skipCache?: boolean }) => {
   if (messageIds.length === 0) return
-  const atts = await chat.fetchAttachments(messageIds)
-  const metas = await chat.fetchMetadata(messageIds)
+  const atts = await chat.fetchAttachments(messageIds, { skipCache: opts?.skipCache })
+  const metas = await chat.fetchMetadata(messageIds, { skipCache: opts?.skipCache })
   // 合并 (保留已有)
   attachmentsByMessage.value = { ...attachmentsByMessage.value, ...atts }
   metadataByMessage.value = { ...metadataByMessage.value, ...metas }
@@ -436,7 +456,8 @@ watch(
     metadataByMessage.value = {}
     signedUrls.value = {}
     await safeUnsub()
-    openConversation()
+    // 切换会话时强制跳过缓存（避免拿到旧会话的附件/元数据）
+    openConversation({ skipCache: true })
   },
 )
 
@@ -493,6 +514,34 @@ const onRemove = async (msg: ChatMessage) => {
     // realtime UPDATE 推回, 本地会被替换
   } catch (e: any) {
     window.alert(t('chat.deleteFailed', { error: e?.message ?? String(e) }))
+  }
+}
+
+/**
+ * 切换消息表情反应
+ * - 元数据写入 chat_message_metadata.payload.reactions
+ * - 写入后 invalidate metadata 缓存，让 reloadExtras 拉新数据
+ */
+const onToggleReaction = async (msg: ChatMessage, emoji: string) => {
+  if (!msg?.id) return
+  const current = metadataByMessage.value[msg.id]?.payload?.reactions ?? []
+  try {
+    const updated = await reactionsComposable.toggleReaction(msg.id, emoji, current)
+    // 乐观更新本地 metadata，realtime 推回时再合并
+    metadataByMessage.value = {
+      ...metadataByMessage.value,
+      [msg.id]: {
+        ...metadataByMessage.value[msg.id],
+        message_id: msg.id,
+        payload: {
+          ...metadataByMessage.value[msg.id]?.payload,
+          reactions: updated,
+        },
+        updated_at: new Date().toISOString(),
+      },
+    }
+  } catch (e: any) {
+    window.alert(e?.message ?? String(e))
   }
 }
 
@@ -801,132 +850,91 @@ const isStaff = computed(() => {
   const r = appUser.value?.role
   return r === 'admin' || r === 'checker' || r === 'finance' || r === 'warehouse'
 })
+
+/**
+ * 表情反应（reactions）汇总
+ * 把 metadataByMessage 中的 payload.reactions 转换为 UI 友好的结构
+ */
+const reactionsByMessage = computed(() => {
+  return reactionsComposable.groupReactionsByMessage(metadataByMessage.value)
+})
+
+/**
+ * 复制消息文本到剪贴板
+ */
+const onCopyMessage = async (m: ChatMessage) => {
+  if (!m.body) return
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      await navigator.clipboard.writeText(m.body)
+    }
+  } catch { /* ignore */ }
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full bg-background">
     <!-- 顶部 -->
-    <div
+    <ChatPanelHeader
       v-if="!embedded"
-      class="h-12 px-3 border-b flex items-center gap-2 bg-background sticky top-0 z-10"
+      :conversation="conversation"
+      :counterpart="counterpart"
+      :counterpart-name="counterpartName"
+      :counterpart-status="counterpartStatus"
+      :connection="connection"
+      :context-label="contextLabel"
+      :send-order-card-handler="sendOrderCardHandler"
+      :staff-options="staffOptions"
+      :is-staff="isStaff"
+      @close="emit('close')"
+      @send-order-card="onSendOrderCard"
+      @post-system="onPostSystem"
+      @take-over="onTakeOver"
+      @toggle-action-menu="showActionMenu = !showActionMenu; showTransferMenu = false"
     >
-      <Button
-        v-if="$slots['back']"
-        size="icon"
-        variant="ghost"
-        @click="emit('close')"
-      >
-        <ArrowLeft class="h-4 w-4" />
-      </Button>
-      <ChatAvatar
-        :name="counterpartName"
-        :role="counterpart?.member_type ?? 'staff'"
-        size="sm"
-      />
-      <div class="min-w-0 flex-1">
-        <div class="flex items-center gap-1.5">
-          <span class="text-sm font-semibold truncate">{{ counterpartName }}</span>
-          <ChatStatusDot :status="counterpartStatus" />
-          <Badge v-if="conversation?.subject_order_id" variant="secondary" class="text-[10px]">
-            {{ t('chat.orderBadge') }}
-          </Badge>
-        </div>
-        <p class="text-[10px] text-muted-foreground truncate">
-          {{
-            conversation?.subject_order
-              ? `${t('chat.orderRef')}: ${conversation.subject_order.order_no}`
-              : (contextLabel ?? t('chat.subtitle'))
-          }}
-        </p>
-      </div>
-      <div class="flex items-center gap-1">
-        <Wifi v-if="connection === 'online'" class="h-3.5 w-3.5 text-emerald-500" />
-        <WifiOff v-else class="h-3.5 w-3.5 text-destructive" />
-        <span v-if="connection !== 'online'" class="text-[10px] text-destructive">
-          {{ t('chat.connectError') }}
-        </span>
-        <Button
-          v-if="conversation?.subject_order_id"
-          size="icon"
-          variant="ghost"
-          :title="t('chat.viewOrder')"
-          @click="$router.push(`/orders/${conversation.subject_order_id}`)"
+      <template #status-dot>
+        <ChatStatusDot :status="counterpartStatus" />
+      </template>
+      <template #action-menu>
+        <div
+          v-if="showActionMenu"
+          class="absolute right-0 top-full mt-1 z-30 min-w-[220px] rounded-md border bg-background shadow-lg p-1"
         >
-          <ExternalLink class="h-4 w-4" />
-        </Button>
-        <Button
-          v-if="sendOrderCardHandler"
-          size="sm"
-          variant="outline"
-          :title="t('chat.sendOrderCard')"
-          @click="onSendOrderCard"
-        >
-          <Package class="h-3.5 w-3.5" />
-          <span class="hidden lg:inline">{{ t('chat.sendOrderCard') }}</span>
-        </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            :title="t('chat.postSystem')"
-            @click="onPostSystem"
+          <button
+            class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
+            @click="onTakeOver(); showActionMenu = false"
           >
-            📣
-          </Button>
-        <!-- M3.5: 接管 / 转接 (staff) -->
-        <div v-if="isStaff" class="relative chat-action-menu">
-          <Button
-            size="sm"
-            variant="ghost"
-            :title="t('chat.takeOverOrTransfer')"
-            @click="showActionMenu = !showActionMenu; showTransferMenu = false"
+            <UserPlus class="h-3.5 w-3.5" />
+            {{ t('chat.takeOverSelf') }}
+          </button>
+          <button
+            class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
+            @click="showTransferMenu = !showTransferMenu; showActionMenu = false"
           >
             <ArrowRightLeft class="h-3.5 w-3.5" />
-            <span class="hidden lg:inline">
-              {{ conversation?.assigned_to
-                ? `${t('chat.assignedTo')}: ${staffOptions.find(s => s.id === conversation?.assigned_to)?.full_name ?? '—'}`
-                : t('chat.takeOver') }}
-            </span>
-          </Button>
-          <div
-            v-if="showActionMenu"
-            class="absolute right-0 top-full mt-1 z-30 min-w-[220px] rounded-md border bg-background shadow-lg p-1"
-          >
+            {{ t('chat.transferToOther') }}
+          </button>
+          <div v-if="showTransferMenu" class="mt-1 border-t pt-1 max-h-60 overflow-y-auto">
             <button
-              class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
-              @click="onTakeOver(); showActionMenu = false"
+              class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
+              @click="onTransfer(null); showTransferMenu = false; showActionMenu = false"
             >
-              <UserPlus class="h-3.5 w-3.5" />
-              {{ t('chat.takeOverSelf') }}
+              {{ t('chat.unassign') }}
             </button>
             <button
-              class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
-              @click="showTransferMenu = !showTransferMenu; showActionMenu = false"
+              v-for="s in staffOptions"
+              :key="s.id"
+              class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
+              :class="s.id === conversation?.assigned_to ? 'bg-primary/10' : ''"
+              @click="onTransfer(s.id); showTransferMenu = false; showActionMenu = false"
             >
-              <ArrowRightLeft class="h-3.5 w-3.5" />
-              {{ t('chat.transferToOther') }}
+              {{ s.full_name ?? s.id.slice(0, 8) }}
+              <span class="text-muted-foreground ml-1">· {{ s.role }}</span>
             </button>
-            <div v-if="showTransferMenu" class="mt-1 border-t pt-1 max-h-60 overflow-y-auto">
-              <button
-                class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
-                @click="onTransfer(null); showTransferMenu = false; showActionMenu = false"
-              >
-                {{ t('chat.unassign') }}
-              </button>
-              <button
-                v-for="s in staffOptions"
-                :key="s.id"
-                class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
-                :class="s.id === conversation?.assigned_to ? 'bg-primary/10' : ''"
-                @click="onTransfer(s.id); showTransferMenu = false; showActionMenu = false"
-              >
-                {{ s.full_name ?? s.id.slice(0, 8) }}
-                <span class="text-muted-foreground ml-1">· {{ s.role }}</span>
-              </button>
-            </div>
           </div>
         </div>
-      </div>
-    </div>
+      </template>
+    </ChatPanelHeader>
 
     <div
       v-else
@@ -989,74 +997,39 @@ const isStaff = computed(() => {
       </button>
     </div>
 
-    <div
-      ref="messagesContainer"
-      class="flex-1 overflow-y-auto px-2 sm:px-3 py-3 space-y-1"
-    >
-      <div v-if="loading" class="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
-        <Loader2 class="h-4 w-4 animate-spin" />
-        {{ t('chat.loading') }}
-      </div>
-      <div v-else-if="loadError" class="text-xs text-destructive text-center py-10">
-        {{ loadError }}
-      </div>
-      <template v-else>
-        <div v-if="messages.length === 0 && pending.length === 0 && pendingUploads.length === 0" class="text-center text-xs text-muted-foreground py-10">
-          {{ t('chat.emptyMessages') }}
-        </div>
-        <template v-for="(row, i) in rows" :key="i">
-          <ChatDateDivider v-if="row.kind === 'date'" :iso="row.iso" />
-          <ChatBubble
-            v-else-if="row.kind === 'msg'"
-            :message="row.message"
-            :align="isMyMessage(row.message) ? 'end' : 'start'"
-            :delivery="row.delivery"
-            :failure-text="row.failure"
-            :attachments="attachmentsByMessage[row.message.id]"
-            :signed-urls="signedUrls"
-            :order-card="orderCardInfoFor(row.message)"
-            :reply-to="replyFor(row.message)"
-            :search-q="searchQ"
-            @reply="onReply"
-            @click="row.delivery === 'failed' && onRetry(row.message.client_message_id)"
-            @retry="row.delivery === 'failed' && onRetry(row.message.client_message_id)"
-            @edit="onEdit(row.message)"
-            @remove="onRemove(row.message)"
-          />
-          <ChatTyping
-            v-else-if="row.kind === 'typing'"
-            :who="typingUsers[0]?.full_name"
-            :role="appUser?.role === 'customer' ? 'staff' : 'customer'"
-          />
-        </template>
-      </template>
-    </div>
+    <ChatMessageList
+      ref="messageList"
+      :rows="rows"
+      :loading="loading"
+      :load-error="loadError"
+      :messages="messages"
+      :attachments-by-message="attachmentsByMessage"
+      :signed-urls="signedUrls"
+      :search-q="searchQ"
+      :typing-users="typingUsers"
+      :is-my-message="isMyMessage"
+      :order-card-info-for="orderCardInfoFor"
+      :reply-for="replyFor"
+      :reply-summary="replySummary"
+      :reactions-by-message="reactionsByMessage"
+      @reply="onReply"
+      @retry="onRetry"
+      @edit="onEdit"
+      @remove="onRemove"
+      @copy="onCopyMessage"
+      @toggle-reaction="onToggleReaction"
+    />
 
     <!-- M3.5: 编辑消息 inline 条 -->
-    <div
+    <ChatEditBar
       v-if="editingMessage"
-      class="border-t bg-muted/40 px-3 py-2 flex items-end gap-2"
-    >
-      <div class="flex-1 min-w-0">
-        <p class="text-[10px] text-muted-foreground mb-1">
-          {{ t('chat.editingMessage') }}
-        </p>
-        <textarea
-          id="chat-edit-textarea"
-          v-model="editDraft"
-          rows="2"
-          class="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        />
-      </div>
-      <div class="flex flex-col gap-1">
-        <Button size="sm" :disabled="editSubmitting || !editDraft.trim()" @click="submitEdit">
-          {{ t('chat.save') }}
-        </Button>
-        <Button size="sm" variant="ghost" :disabled="editSubmitting" @click="cancelEdit">
-          {{ t('chat.cancelEdit') }}
-        </Button>
-      </div>
-    </div>
+      :editing-message="editingMessage"
+      :edit-draft="editDraft"
+      :edit-submitting="editSubmitting"
+      @update:edit-draft="editDraft = $event"
+      @submit-edit="submitEdit"
+      @cancel-edit="cancelEdit"
+    />
 
     <slot name="footer" />
 
