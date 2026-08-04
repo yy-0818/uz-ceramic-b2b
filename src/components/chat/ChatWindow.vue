@@ -15,6 +15,7 @@ import { MessageCircle, X, Minus, Send, Loader2 } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useChat, type ChatConversation } from '@/composables/useChat'
 import { useAuth } from '@/composables/useAuth'
+import { isCartPanelOpen } from '@/composables/useFabState'
 import ChatPanel from './ChatPanel.vue'
 
 const props = defineProps<{
@@ -29,7 +30,7 @@ const props = defineProps<{
 
 const fabBottom = computed(() => {
   if (props.position?.bottom) return props.position.bottom
-  return props.fabSize === 'md' ? '112px' : '98px'
+  return props.fabSize === 'md' ? '112px' : '108px'
 })
 
 const { t } = useI18n()
@@ -47,9 +48,10 @@ let routeObserver: any = null
 
 const hideFloat = computed(() => {
   const p = currentPath.value
-  // 整页聊天中心 / 订单详情页都有自己的沟通入口, 全局浮窗不出现
+  // 整页聊天中心 / 订单详情页 / 购物车面板打开时, 全局浮窗不出现
   return p === '/chat' || p.startsWith('/chat?') || p.startsWith('/admin/chat')
     || /^\/orders\/[0-9a-f-]{36}/i.test(p)
+    || isCartPanelOpen.value
 })
 
 const unreadForThis = computed(() => {

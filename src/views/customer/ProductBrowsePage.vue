@@ -25,6 +25,7 @@ import { useProducts, type ProductWithColors } from '@/composables/useProducts'
 import { useCart, type CartItem } from '@/composables/useCart'
 import { useAuth } from '@/composables/useAuth'
 import { supabase } from '@/lib/supabase'
+import { isCartPanelOpen } from '@/composables/useFabState'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -248,6 +249,7 @@ watch(cartItemsCount, (n) => {
 // 关闭详情面板前，把所有未提交的草稿一次性收敛进 cart，避免用户
 // 改了数字但没点 -/+/blur 就关掉面板，导致键入的数字被静默丢弃。
 watch(cartDetailOpen, (open) => {
+  isCartPanelOpen.value = open
   if (open) return
   for (const item of cart.items.value) {
     const k = cart.keyOf(item)
