@@ -263,6 +263,6 @@ onMounted(() => {
     </Dialog>
 
     <!-- 全局聊天浮窗 (OrderDetailPage / 其他页面右下角悬浮) -->
-    <ChatWindow v-if="appUser" />
+    <ChatWindow v-if="appUser" fab-size="sm" />
   </div>
 </template>

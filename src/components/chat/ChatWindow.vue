@@ -23,7 +23,14 @@ const props = defineProps<{
   subjectOrderId?: string | null
   /** 起始位置 offset */
   position?: { bottom?: string; right?: string }
+  /** FAB 尺寸: sm=44px, md=56px */
+  fabSize?: 'sm' | 'md'
 }>()
+
+const fabBottom = computed(() => {
+  if (props.position?.bottom) return props.position.bottom
+  return props.fabSize === 'md' ? '112px' : '98px'
+})
 
 const { t } = useI18n()
 const chat = useChat()
@@ -193,7 +200,7 @@ const onShare = async () => {
     v-if="open"
     class="fixed z-40 shadow-xl rounded-2xl overflow-hidden bg-background border flex flex-col"
     :style="{
-      bottom: (position?.bottom ?? '88px'),
+      bottom: fabBottom,
       right: (position?.right ?? '16px'),
       width: 'min(360px, calc(100vw - 32px))',
       height: minimized ? '48px' : 'min(540px, calc(100dvh - 120px))',
@@ -241,14 +248,15 @@ const onShare = async () => {
   </div>
   <button
     v-else-if="!hideFloat"
-    class="fixed z-40 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-xl inline-flex items-center justify-center hover:bg-primary/90 transition"
+    :class="['fixed z-50 rounded-full bg-primary text-primary-foreground shadow-xl inline-flex items-center justify-center hover:bg-primary/90 transition',
+      fabSize === 'md' ? 'h-14 w-14' : 'h-11 w-11']"
     :style="{
-      bottom: (position?.bottom ?? '88px'),
+      bottom: fabBottom,
       right: (position?.right ?? '16px'),
     }"
     @click="onToggle"
   >
-    <MessageCircle class="h-5 w-5" />
+    <MessageCircle :class="fabSize === 'md' ? 'h-5 w-5' : 'h-[18px] w-[18px]'" />
     <span
       v-if="unreadForThis > 0"
       class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] font-bold tabular-nums inline-flex items-center justify-center"

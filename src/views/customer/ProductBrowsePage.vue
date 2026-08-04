@@ -729,13 +729,13 @@ const onModelQty = (
       <!-- FAB：右下角圆形按钮（带箱数角标）。点击直接展开详情面板。 -->
       <button
         type="button"
-        class="fixed right-4 bottom-14 md:bottom-6 z-30 h-14 w-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
+        class="fixed right-4 bottom-14 md:bottom-6 z-30 h-11 w-11 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center hover:bg-primary/90 transition active:scale-95"
         :class="cartDetailOpen ? 'opacity-0 scale-75 pointer-events-none' : 'opacity-100 scale-100'"
         :aria-label="t('common.cart')"
         @click="cartDetailOpen = true"
       >
-        <ShoppingCart class="h-6 w-6 transition-transform" />
-        <span class="absolute -top-1 -right-1 h-6 min-w-6 px-1.5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center font-mono font-semibold">
+        <ShoppingCart class="h-5 w-5 transition-transform" />
+        <span class="absolute -top-1 -right-1 h-5 min-w-5 px-1 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-mono font-semibold">
           {{ cartItemsCount }}
         </span>
       </button>
