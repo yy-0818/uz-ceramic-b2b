@@ -79,8 +79,9 @@ onMounted(() => {
   chat.fetchConversations().catch(() => { /* ignore */ })
   chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
   heartbeatTimer = window.setInterval(() => {
+    if (document.hidden) return
     chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
-  }, 25_000)
+  }, 30_000)
 })
 
 onBeforeUnmount(() => {

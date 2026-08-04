@@ -11,7 +11,7 @@
 import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { resetChatUpload } from './useChatUpload'
-import { getCurrentUser } from './useSharedAuthUser'
+import { getCurrentUser, throttledHeartbeat } from './useSharedAuthUser'
 
 // ---------------------------------------------------------------------
 // 类型
@@ -1165,20 +1165,23 @@ export function useChat() {
   // 在线状态 upsert
   // -------------------------------------------------------------------
   const heartbeat = async (deviceId = 'web', status: ChatPresenceStatus = 'online'): Promise<void> => {
-    const me = await getCurrentUser()
-    if (!me) return
-    const { error } = await supabase
-      .from('chat_presence')
-      .upsert({
-        user_id: me.id,
-        device_id: deviceId,
-        status,
-        last_seen_at: new Date().toISOString(),
-      } as any)
-    if (error) {
-      // 心跳失败不阻塞 UI
-      if (typeof console !== 'undefined') console.warn('[chat] heartbeat failed', error)
-    }
+    // 模块级节流：25 秒内的多次心跳自动合并为 1 次
+    return throttledHeartbeat(async () => {
+      const me = await getCurrentUser()
+      if (!me) return
+      const { error } = await supabase
+        .from('chat_presence')
+        .upsert({
+          user_id: me.id,
+          device_id: deviceId,
+          status,
+          last_seen_at: new Date().toISOString(),
+        } as any)
+      if (error) {
+        // 心跳失败不阻塞 UI
+        if (typeof console !== 'undefined') console.warn('[chat] heartbeat failed', error)
+      }
+    })
   }
 
   const fetchPresence = async (userIds: string[]): Promise<ChatPresence[]> => {

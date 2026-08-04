@@ -109,20 +109,22 @@ const onPopState = () => {
 
 onMounted(async () => {
   await chat.fetchConversations().catch(() => { /* ignore */ })
-  // 启动心跳 + 5s 同步一次 conversations
+  // 启动心跳：30s 一次（统一节流，避免多个组件重复打心跳）
   chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
   if (poll) window.clearInterval(poll)
   poll = window.setInterval(async () => {
+    // 仅在前台时心跳（document.hidden=true 时跳过）
+    if (document.hidden) return
     try {
       await chat.heartbeat('web', 'online')
     } catch { /* ignore */ }
-    // 监听当前 route
+    // 监听当前 route（route 变化需要重新推断 context）
     const path = window.location.pathname
     if (path !== lastRoutePath) {
       lastRoutePath = path
       tryInferContextFromPath(path)
     }
-  }, 5_000)
+  }, 30_000)
   lastRoutePath = window.location.pathname
   tryInferContextFromPath(lastRoutePath)
 

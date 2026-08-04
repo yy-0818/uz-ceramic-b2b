@@ -199,8 +199,9 @@ onMounted(async () => {
   await loadStaffOptions()
   chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
   heartbeatTimer = window.setInterval(() => {
+    if (document.hidden) return
     chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
-  }, 25_000)
+  }, 30_000)
   // Realtime: messages / conversations / members 变化都刷一次列表
   const { supabase } = await import('@/lib/supabase')
   chatChannel = supabase
