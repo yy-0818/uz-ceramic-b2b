@@ -175,7 +175,7 @@ onMounted(() => {
     </aside>
 
     <div class="flex-1 flex flex-col min-w-0">
-      <header class="sticky top-0 z-10 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur">
+      <header class="sticky top-0 z-40 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur">
         <div class="flex items-center gap-2 min-w-0">
           <button
             v-if="showBack"

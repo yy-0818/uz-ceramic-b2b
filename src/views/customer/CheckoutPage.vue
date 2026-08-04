@@ -21,25 +21,10 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import {
   ArrowLeft,
-  Loader2,
   CheckCircle2,
-  Star,
-  ShoppingCart,
+  Circle,
   Package,
   Receipt,
-  Users,
-  MessageSquare,
-  Paperclip,
-  ChevronLeft,
-  ChevronRight,
-  ChevronDown,
-  AlertCircle,
-  Check,
-  Circle,
-  ImagePlus,
-  X,
-  Upload,
-  Search,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
@@ -47,9 +32,6 @@ import { useI18n } from '@/lib/i18n'
 import Button from '@/components/ui/Button.vue'
 import Card from '@/components/ui/Card.vue'
 import CardContent from '@/components/ui/CardContent.vue'
-import Label from '@/components/ui/Label.vue'
-import Textarea from '@/components/ui/Textarea.vue'
-import Badge from '@/components/ui/Badge.vue'
 
 import { useCart } from '@/composables/useCart'
 import { useOrders, resetOrders } from '@/composables/useOrders'
@@ -60,6 +42,10 @@ import {
   useOrderAttachments,
   isBrowserRenderable,
 } from '@/composables/useOrderAttachments'
+
+import CheckoutSummary from './CheckoutSummary.vue'
+import CheckoutAccountPicker from './CheckoutAccountPicker.vue'
+import CheckoutAttachments from './CheckoutAttachments.vue'
 
 const { t } = useI18n()
 const router = useRouter()
