@@ -11,6 +11,7 @@
 import { ref, computed } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { resetChatUpload } from './useChatUpload'
+import { getCurrentUser } from './useSharedAuthUser'
 
 // ---------------------------------------------------------------------
 // 类型
@@ -343,7 +344,7 @@ export function useChat() {
         const rows = (data ?? []) as ChatConversation[]
 
         // 2. 对每个会话, 拉最后一条消息 + 当前用户未读数
-        const me = (await supabase.auth.getUser()).data.user
+        const me = await getCurrentUser()
         const meId = me?.id ?? null
         if (rows.length === 0) return []
 
@@ -654,7 +655,7 @@ export function useChat() {
     if (cErr) throw cErr
 
     // 3. 加入会话成员 (客户自己 + 当前 staff 员工)
-    const me = (await supabase.auth.getUser()).data.user
+    const me = await getCurrentUser()
     if (!me) throw new Error('未登录')
     const { data: myRow } = await supabase.from('users').select('role').eq('id', me.id).single() as { data: { role: string } | null }
     const memberType: ChatMemberType = myRow?.role === 'customer' ? 'customer' : 'staff'
@@ -798,7 +799,7 @@ export function useChat() {
     clientMessageId: string = uuid(),
     replyToId: string | null = null,
   ): Promise<ChatMessage> => {
-    const me = (await supabase.auth.getUser()).data.user
+    const me = await getCurrentUser()
     if (!me) throw new Error('未登录')
     const trimmed = body.trim()
     if (!trimmed) throw new Error('消息内容为空')
@@ -1018,7 +1019,7 @@ export function useChat() {
       })
     if (error) {
       // 兜底: 走老逻辑, 不阻塞 UI
-      const me = (await supabase.auth.getUser()).data.user
+      const me = await getCurrentUser()
       if (!me) return
       await (supabase.from('chat_conversation_members') as any)
         .update({
@@ -1037,7 +1038,7 @@ export function useChat() {
   // Phase 3: Typing 广播 (6s TTL)
   // ---------------------------------------------------------------------
   const notifyTyping = async (conversationId: string): Promise<void> => {
-    const me = (await supabase.auth.getUser()).data.user
+    const me = await getCurrentUser()
     if (!me) return
     const nowIso = new Date().toISOString()
     const expires = new Date(Date.now() + 6_000).toISOString()
@@ -1063,7 +1064,7 @@ export function useChat() {
     if (cached) return cached
 
     return getOrSetInFlight(typingCache, conversationId, async () => {
-      const me = (await supabase.auth.getUser()).data.user
+      const me = await getCurrentUser()
       const { data, error } = await supabase
         .from('chat_typing')
         .select(`
@@ -1164,7 +1165,7 @@ export function useChat() {
   // 在线状态 upsert
   // -------------------------------------------------------------------
   const heartbeat = async (deviceId = 'web', status: ChatPresenceStatus = 'online'): Promise<void> => {
-    const me = (await supabase.auth.getUser()).data.user
+    const me = await getCurrentUser()
     if (!me) return
     const { error } = await supabase
       .from('chat_presence')

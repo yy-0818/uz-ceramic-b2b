@@ -19,6 +19,7 @@
 import { ref } from 'vue'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from './useAuth'
+import { getCurrentUser } from './useSharedAuthUser'
 import type { ChatMessageReaction, ChatMessageMetadata } from './useChat'
 
 export interface ReactionSummary {
@@ -63,7 +64,7 @@ export async function toggleMessageReaction(
   emoji: string,
   currentReactions: ChatMessageReaction[] = [],
 ): Promise<ChatMessageReaction[]> {
-  const me = (await supabase.auth.getUser()).data.user
+  const me = await getCurrentUser()
   if (!me) throw new Error('未登录')
 
   const myId = me.id
