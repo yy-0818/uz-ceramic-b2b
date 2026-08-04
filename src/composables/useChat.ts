@@ -212,6 +212,10 @@ const metadataCache = new Map<string, CacheEntry<ChatMessageMetadata>>()
 // 会话列表缓存（key: 'customer' / 'staff:open' / 'staff:closed' / 'staff:archived' / 'staff:all'）
 const conversationsCache = new Map<string, CacheEntry<ChatConversation[]>>()
 
+// 消息总数缓存（用于判断"是否还有更多历史"）
+const conversationMessageCounts = new Map<string, CacheEntry<number>>()
+const MESSAGE_COUNT_TTL_MS = 60_000
+
 // 附件 / 元数据的 in-flight 缓存（key = sorted messageIds 拼接）
 const attachmentsInFlight = new Map<string, Promise<Record<string, ChatMessageAttachment[]>>>()
 const metadataInFlight = new Map<string, Promise<Record<string, ChatMessageMetadata>>>()
@@ -283,6 +287,7 @@ export function clearChatCache(): void {
   metadataCache.clear()
   conversationsCache.clear()
   typingCache.clear()
+  conversationMessageCounts.clear()
   attachmentsInFlight.clear()
   metadataInFlight.clear()
 }
@@ -696,29 +701,92 @@ export function useChat() {
   }
 
   // -------------------------------------------------------------------
-  // 消息列表（按 created_at 升序, 拉最近 100 条）
+  // 消息列表（cursor-based 分页）
+  //   - 不传 before: 拉最近 N 条（首页）
+  //   - 传 before: 拉该消息之前（更早的）N 条
+  // 缓存策略：仅缓存首页（不传 before），分页不缓存
   // -------------------------------------------------------------------
-  const fetchMessages = async (conversationId: string, limit = 100, options?: { skipCache?: boolean }): Promise<ChatMessage[]> => {
-    // skipCache 强制重拉
-    if (options?.skipCache) {
-      messagesCache.delete(conversationId)
+  const fetchMessages = async (
+    conversationId: string,
+    limitOrOpts: number | { limit?: number; before?: string } = 50,
+    options?: { skipCache?: boolean },
+  ): Promise<ChatMessage[]> => {
+    // 兼容旧调用: fetchMessages(id, 100, { skipCache })
+    const opts = typeof limitOrOpts === 'object' ? limitOrOpts : { limit: limitOrOpts }
+    const limit = opts.limit ?? 50
+    const before = opts.before
+    const isFirstPage = !before
+
+    // 首页用 in-flight + 缓存；分页不缓存（每次都查）
+    if (isFirstPage) {
+      if (options?.skipCache) {
+        messagesCache.delete(conversationId)
+      }
+      return getOrSetInFlight(messagesCache, conversationId, async () => {
+        const { data, error } = await supabase
+          .from('chat_messages')
+          .select(`
+            id, conversation_id, sender_id, message_type, message_kind, body,
+            client_message_id, reply_to_id, created_at, edited_at, deleted_at,
+            sender:users!chat_messages_sender_id_fkey(id, full_name, role)
+          `)
+          .eq('conversation_id', conversationId)
+          .is('deleted_at', null)
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .limit(limit)
+        if (error) throw error
+        // 翻转成升序（按时间顺序）
+        return ((data ?? []) as ChatMessage[]).slice().reverse()
+      })
     }
-    return getOrSetInFlight(messagesCache, conversationId, async () => {
-      const { data, error } = await supabase
+
+    // 分页查询：找 beforeMessage.created_at，然后取它之前的 N 条
+    // 用单个查询 + 索引字段，避免 2 次 round-trip
+    const { data: beforeMsg, error: beforeErr } = await supabase
+      .from('chat_messages')
+      .select('created_at')
+      .eq('id', before)
+      .maybeSingle()
+    if (beforeErr) throw beforeErr
+    const beforeAt = (beforeMsg as any)?.created_at as string | undefined
+    if (!beforeAt) {
+      // before 找不到（被删除）→ 退到拉最近 N 条
+      // 但要注意：客户端期望"更早的"，所以直接返回空数组
+      return []
+    }
+
+    const { data, error } = await supabase
+      .from('chat_messages')
+      .select(`
+        id, conversation_id, sender_id, message_type, message_kind, body,
+        client_message_id, reply_to_id, created_at, edited_at, deleted_at,
+        sender:users!chat_messages_sender_id_fkey(id, full_name, role)
+      `)
+      .eq('conversation_id', conversationId)
+      .is('deleted_at', null)
+      .lt('created_at', beforeAt)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    // 翻转成升序
+    return ((data ?? []) as ChatMessage[]).slice().reverse()
+  }
+
+  // -------------------------------------------------------------------
+  const fetchMessageCount = async (conversationId: string): Promise<number> => {
+    const cached = getCached(conversationMessageCounts, conversationId, MESSAGE_COUNT_TTL_MS)
+    if (cached !== undefined) return cached
+    return getOrSetInFlight(conversationMessageCounts, conversationId, async () => {
+      const { count, error } = await supabase
         .from('chat_messages')
-        .select(`
-          id, conversation_id, sender_id, message_type, message_kind, body,
-          client_message_id, reply_to_id, created_at, edited_at, deleted_at,
-          sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-        `)
+        .select('*', { count: 'exact', head: true })
         .eq('conversation_id', conversationId)
         .is('deleted_at', null)
-        .order('created_at', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(limit)
       if (error) throw error
-      return (data ?? []) as ChatMessage[]
-    })
+      return count ?? 0
+    }, MESSAGE_COUNT_TTL_MS)
   }
 
   // -------------------------------------------------------------------
@@ -1226,6 +1294,7 @@ export function useChat() {
     fetchMessages,
     fetchAttachments,
     fetchMetadata,
+    fetchMessageCount,
     sendOrderCard,
     sendMessage,
     editMessage,

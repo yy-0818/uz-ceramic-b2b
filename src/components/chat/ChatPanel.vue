@@ -81,6 +81,11 @@ const connection = ref<'online' | 'reconnecting' | 'offline'>(navigator.onLine ?
 const lastMessageId = ref<string | null>(null)
 const staffTyping = ref(false)
 
+// 分页 (向上滚动加载更久远的消息)
+const loadingMore = ref(false)
+const hasMore = ref(true)
+const PAGE_SIZE = 50
+
 // M2: 附件 + metadata
 const attachmentsByMessage = ref<Record<string, ChatMessageAttachment[]>>({})
 const metadataByMessage = ref<Record<string, ChatMessageMetadata>>({})
@@ -277,12 +282,28 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
       })
       conversation.value = conv
       const [ms, mems] = await Promise.all([
-        chat.fetchMessages(conv.id, 100, { skipCache: opts?.skipCache }),
+        chat.fetchMessages(conv.id, { limit: PAGE_SIZE }, { skipCache: opts?.skipCache }),
         chat.fetchMembers(conv.id, { skipCache: opts?.skipCache }),
       ])
       messages.value = ms
       members.value = mems
       lastMessageId.value = ms.length > 0 ? ms[ms.length - 1].id : null
+      // 判断是否还有更多历史消息
+      if (ms.length === 0) {
+        hasMore.value = false
+        loadingMore.value = false
+      } else {
+        // 用总数估值：ms.length < count → 还有更多
+        // 或：直接判断 ms.length >= PAGE_SIZE（拉满一页就认为可能还有）
+        chat.fetchMessageCount(conv.id)
+          .then((total) => {
+            hasMore.value = messages.value.length < total
+          })
+          .catch(() => {
+            // 失败时假设拉满一页就还有更多（保守）
+            hasMore.value = ms.length >= PAGE_SIZE
+          })
+      }
       await reloadExtras(ms.map((m) => m.id), { skipCache: opts?.skipCache })
       if (lastMessageId.value) {
         chat.markRead(conv.id, lastMessageId.value).catch(() => { /* ignore */ })
@@ -455,11 +476,59 @@ watch(
     attachmentsByMessage.value = {}
     metadataByMessage.value = {}
     signedUrls.value = {}
+    loadingMore.value = false
+    hasMore.value = true
     await safeUnsub()
     // 切换会话时强制跳过缓存（避免拿到旧会话的附件/元数据）
     openConversation({ skipCache: true })
   },
 )
+
+/**
+ * 向上滚动加载更久远的消息
+ * - 触发条件：scrollTop <= 阈值 且 还能加载更多
+ * - 保持当前滚动位置（不能跳到顶部）
+ */
+const loadOlderMessages = async () => {
+  if (loadingMore.value || !hasMore.value || !conversation.value) return
+  if (messages.value.length === 0) return
+  const oldestId = messages.value[0].id
+  // 记录当前滚动信息（加载完成后恢复）
+  const container = (messageList.value as any)?.messagesContainer as HTMLElement | undefined
+  const prevScrollHeight = container?.scrollHeight ?? 0
+  const prevScrollTop = container?.scrollTop ?? 0
+
+  loadingMore.value = true
+  try {
+    const older = await chat.fetchMessages(conversation.value.id, {
+      limit: PAGE_SIZE,
+      before: oldestId,
+    })
+    if (older.length === 0) {
+      hasMore.value = false
+    } else {
+      // prepend 到列表前
+      messages.value = [...older, ...messages.value]
+      await reloadExtras(older.map((m) => m.id))
+      // 保持滚动位置（消息 prepend 后 scrollTop 必须补偿新高度）
+      await nextTick()
+      if (container) {
+        const newScrollHeight = container.scrollHeight
+        const addedHeight = newScrollHeight - prevScrollHeight
+        container.scrollTop = prevScrollTop + addedHeight
+      }
+      // 拉满 PAGE_SIZE 说明可能还有更多
+      if (older.length < PAGE_SIZE) {
+        hasMore.value = false
+      }
+    }
+  } catch (e: any) {
+    // 加载失败时静默，不影响用户继续浏览
+    console.warn('[ChatPanel] loadOlderMessages failed', e?.message ?? e)
+  } finally {
+    loadingMore.value = false
+  }
+}
 
 // ---- 上传/发送 --------------------------------------------------------------
 
@@ -1012,12 +1081,15 @@ const onCopyMessage = async (m: ChatMessage) => {
       :reply-for="replyFor"
       :reply-summary="replySummary"
       :reactions-by-message="reactionsByMessage"
+      :loading-more="loadingMore"
+      :has-more="hasMore"
       @reply="onReply"
       @retry="onRetry"
       @edit="onEdit"
       @remove="onRemove"
       @copy="onCopyMessage"
       @toggle-reaction="onToggleReaction"
+      @load-more="loadOlderMessages"
     />
 
     <!-- M3.5: 编辑消息 inline 条 -->
