@@ -192,36 +192,75 @@ const CONV_SELECT = `
 // ---------------------------------------------------------------------
 // 内存缓存层（模块级单例，跨组件共享）
 // ---------------------------------------------------------------------
-const CACHE_TTL_MS = 30_000 // 30 秒内复用缓存，避免重复请求
+const CACHE_TTL_MS = 5 * 60_000 // 5 分钟内复用缓存（消息是历史数据，很少变化）
+const LIST_CACHE_TTL_MS = 30_000 // 会话列表缓存更短（未读数/最后消息会变）
 
 interface CacheEntry<T> {
   data: T
   timestamp: number
+  inFlight?: Promise<T> // 正在请求中的 promise（去重）
 }
 
 // 消息缓存：按 conversationId 缓存
 const messagesCache = new Map<string, CacheEntry<ChatMessage[]>>()
 // 成员缓存：按 conversationId 缓存
 const membersCache = new Map<string, CacheEntry<ChatMember[]>>()
-// 附件缓存：按 messageIds 排序后作为 key
+// 附件缓存：按 messageId 缓存
 const attachmentsCache = new Map<string, CacheEntry<ChatMessageAttachment[]>>()
 // 元数据缓存
 const metadataCache = new Map<string, CacheEntry<ChatMessageMetadata>>()
+// 会话列表缓存（key: 'customer' / 'staff:open' / 'staff:closed' / 'staff:archived' / 'staff:all'）
+const conversationsCache = new Map<string, CacheEntry<ChatConversation[]>>()
 
-function isCacheValid<T>(entry: CacheEntry<T> | undefined): boolean {
+// 附件 / 元数据的 in-flight 缓存（key = sorted messageIds 拼接）
+const attachmentsInFlight = new Map<string, Promise<Record<string, ChatMessageAttachment[]>>>()
+const metadataInFlight = new Map<string, Promise<Record<string, ChatMessageMetadata>>>()
+
+// typing 缓存（TTL 5 秒，因为 typing 状态变化很快）
+const typingCache = new Map<string, CacheEntry<{ user_id: string; full_name: string | null }[]>>()
+
+function isCacheValid<T>(entry: CacheEntry<T> | undefined, ttl = CACHE_TTL_MS): boolean {
   if (!entry) return false
-  return Date.now() - entry.timestamp < CACHE_TTL_MS
+  return Date.now() - entry.timestamp < ttl
 }
 
-function getCached<T>(map: Map<string, CacheEntry<T>>, key: string): T | undefined {
+function getCached<T>(map: Map<string, CacheEntry<T>>, key: string, ttl = CACHE_TTL_MS): T | undefined {
   const entry = map.get(key)
-  if (isCacheValid(entry)) return entry!.data
-  map.delete(key)
+  if (isCacheValid(entry, ttl)) return entry!.data
+  if (entry) map.delete(key)
   return undefined
 }
 
 function setCached<T>(map: Map<string, CacheEntry<T>>, key: string, data: T): void {
   map.set(key, { data, timestamp: Date.now() })
+}
+
+/**
+ * 复用正在请求中的 promise，避免并发请求同一资源
+ */
+function getOrSetInFlight<T>(
+  map: Map<string, CacheEntry<T>>,
+  key: string,
+  factory: () => Promise<T>,
+  ttl = CACHE_TTL_MS,
+): Promise<T> {
+  const entry = map.get(key)
+  if (entry?.inFlight) return entry.inFlight
+  if (isCacheValid(entry, ttl)) return Promise.resolve(entry!.data)
+  const p = factory()
+  map.set(key, { data: entry?.data as T, timestamp: entry?.timestamp ?? 0, inFlight: p })
+  p.then((data) => {
+    map.set(key, { data, timestamp: Date.now() })
+  }).catch((e) => {
+    // 失败时不清缓存（保留上次成功的数据），但要清 inFlight
+    if (entry) {
+      map.set(key, { data: entry.data, timestamp: entry.timestamp })
+    } else {
+      map.delete(key)
+    }
+    throw e
+  })
+  return p
 }
 
 /**
@@ -242,100 +281,145 @@ export function clearChatCache(): void {
   membersCache.clear()
   attachmentsCache.clear()
   metadataCache.clear()
+  conversationsCache.clear()
+  typingCache.clear()
+  attachmentsInFlight.clear()
+  metadataInFlight.clear()
 }
 
 export function useChat() {
   // -------------------------------------------------------------------
   // 拉取会话列表（包含最后一条消息 + 未读数）
   // -------------------------------------------------------------------
-  const fetchConversations = async (): Promise<ChatConversation[]> => {
-    loadingList.value = true
-    listError.value = null
-    try {
-      // 1. 主表
-      const { data, error } = await supabase
-        .from('chat_conversations')
-        .select(CONV_SELECT)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-      if (error) throw error
-      const rows = (data ?? []) as ChatConversation[]
+  const fetchConversations = async (options?: { skipCache?: boolean }): Promise<ChatConversation[]> => {
+    // skipCache: 强制重新拉
+    if (options?.skipCache) {
+      conversationsCache.delete('customer')
+    }
+    const key = 'customer'
 
-      // 2. 对每个会话, 拉最后一条消息 + 当前用户未读数
-      const me = (await supabase.auth.getUser()).data.user
-      const meId = me?.id ?? null
-      if (rows.length === 0) {
-        conversations.value = []
+    // 缓存命中: 直接返回（避免每次 ChatListPage 挂载都重新拉）
+    if (!options?.skipCache) {
+      const cached = getCached(conversationsCache, key, LIST_CACHE_TTL_MS)
+      if (cached) {
+        conversations.value = cached
         fetched.value = true
+        return cached
+      }
+    }
+
+    // 复用正在请求中的 promise（防止 onMounted + watch immediate 重复触发）
+    const entry = conversationsCache.get(key)
+    if (entry?.inFlight) {
+      loadingList.value = true
+      try {
+        const data = await entry.inFlight
+        conversations.value = data
+        fetched.value = true
+        return data
+      } catch {
         return []
+      } finally {
+        loadingList.value = false
       }
+    }
 
-      const ids = rows.map((r) => r.id)
-      const lastMsgMap = new Map<string, { body: string; sender_id: string; created_at: string; message_type: ChatMessageType }>()
-      const unreadMap = new Map<string, number>()
+    // 标记 in-flight
+    const p = (async () => {
+      loadingList.value = true
+      listError.value = null
+      try {
+        // 1. 主表
+        const { data, error } = await supabase
+          .from('chat_conversations')
+          .select(CONV_SELECT)
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+        if (error) throw error
+        const rows = (data ?? []) as ChatConversation[]
 
-      // 2.1 最后一条消息（取 created_at 倒序前 1 条）
-      const { data: lastMsgs } = await supabase
-        .from('chat_messages')
-        .select('conversation_id, body, sender_id, created_at, message_type')
-        .in('conversation_id', ids)
-        .is('deleted_at', null)
-        .order('created_at', { ascending: false })
-      for (const m of (lastMsgs ?? []) as any[]) {
-        if (!lastMsgMap.has(m.conversation_id)) {
-          lastMsgMap.set(m.conversation_id, m)
-        }
-      }
+        // 2. 对每个会话, 拉最后一条消息 + 当前用户未读数
+        const me = (await supabase.auth.getUser()).data.user
+        const meId = me?.id ?? null
+        if (rows.length === 0) return []
 
-      // 2.2 当前用户未读数 = 该会话中, sender_id != me 且 该用户之前是否有 read
-      // 简化: 查 chat_conversation_members.last_read_message_id，统计该消息之后
-      // 并且 created_at 大于 member.joined_at (避免加入前就标记读)
-      if (meId) {
-        const { data: mems } = await supabase
-          .from('chat_conversation_members')
-          .select('conversation_id, last_read_message_id, joined_at')
-          .eq('user_id', meId)
-          .is('left_at', null)
-          .in('conversation_id', ids)
-        const memMap = new Map<string, { last_read_message_id: string | null; joined_at: string }>()
-        for (const m of (mems ?? []) as any[]) {
-          memMap.set(m.conversation_id, { last_read_message_id: m.last_read_message_id, joined_at: m.joined_at })
-        }
+        const ids = rows.map((r) => r.id)
+        const lastMsgMap = new Map<string, { body: string; sender_id: string; created_at: string; message_type: ChatMessageType }>()
+        const unreadMap = new Map<string, number>()
 
-        // 拿每个会话 join 之后所有非自己消息总数
-        // (用客户端估算: member.last_read_message_id 不一定代表时间点,
-        //  更稳: created_at > joined_at AND sender_id != meId)
-        const { data: unreadMsgs } = await supabase
+        // 2.1 最后一条消息
+        const { data: lastMsgs } = await supabase
           .from('chat_messages')
-          .select('conversation_id, sender_id, created_at')
+          .select('conversation_id, body, sender_id, created_at, message_type')
           .in('conversation_id', ids)
-          .neq('sender_id', meId)
           .is('deleted_at', null)
-        for (const u of (unreadMsgs ?? []) as any[]) {
-          const mem = memMap.get(u.conversation_id)
-          if (!mem) continue
-          if (new Date(u.created_at) > new Date(mem.joined_at)) {
-            unreadMap.set(u.conversation_id, (unreadMap.get(u.conversation_id) ?? 0) + 1)
+          .order('created_at', { ascending: false })
+        for (const m of (lastMsgs ?? []) as any[]) {
+          if (!lastMsgMap.has(m.conversation_id)) {
+            lastMsgMap.set(m.conversation_id, m)
           }
         }
-      }
 
-      for (const r of rows) {
-        r.last_message = lastMsgMap.get(r.id) ?? null
-        r.unread_count = unreadMap.get(r.id) ?? 0
+        // 2.2 当前用户未读数
+        if (meId) {
+          const { data: mems } = await supabase
+            .from('chat_conversation_members')
+            .select('conversation_id, last_read_message_id, joined_at')
+            .eq('user_id', meId)
+            .is('left_at', null)
+            .in('conversation_id', ids)
+          const memMap = new Map<string, { last_read_message_id: string | null; joined_at: string }>()
+          for (const m of (mems ?? []) as any[]) {
+            memMap.set(m.conversation_id, { last_read_message_id: m.last_read_message_id, joined_at: m.joined_at })
+          }
+
+          const { data: unreadMsgs } = await supabase
+            .from('chat_messages')
+            .select('conversation_id, sender_id, created_at')
+            .in('conversation_id', ids)
+            .neq('sender_id', meId)
+            .is('deleted_at', null)
+          for (const u of (unreadMsgs ?? []) as any[]) {
+            const mem = memMap.get(u.conversation_id)
+            if (!mem) continue
+            if (new Date(u.created_at) > new Date(mem.joined_at)) {
+              unreadMap.set(u.conversation_id, (unreadMap.get(u.conversation_id) ?? 0) + 1)
+            }
+          }
+        }
+
+        for (const r of rows) {
+          r.last_message = lastMsgMap.get(r.id) ?? null
+          r.unread_count = unreadMap.get(r.id) ?? 0
+        }
+        return rows
+      } catch (e: any) {
+        listError.value = e?.message ?? String(e)
+        return []
+      } finally {
+        loadingList.value = false
       }
+    })()
+
+    conversationsCache.set(key, { data: conversations.value, timestamp: 0, inFlight: p })
+    try {
+      const rows = await p
       conversations.value = rows
       fetched.value = true
+      // 写入缓存
+      conversationsCache.set(key, { data: rows, timestamp: Date.now() })
       return rows
-    } catch (e: any) {
-      listError.value = e?.message ?? String(e)
+    } catch {
+      conversationsCache.delete(key)
       fetched.value = true
       return []
-    } finally {
-      loadingList.value = false
     }
   }
 
-  const invalidateList = () => { fetched.value = false }
+  const invalidateList = () => {
+    fetched.value = false
+    // 同时清会话列表缓存（让下一次 fetchConversations 真正去拉新数据）
+    conversationsCache.clear()
+  }
 
   // -------------------------------------------------------------------
   // 工作台 (staff/admin): 拉全部会话 (可选按状态过滤) 一次性拿到最后一条 + 未读
@@ -343,52 +427,97 @@ export function useChat() {
   // -------------------------------------------------------------------
   const listAdminConversations = async (
     status: ChatConversationStatus | 'all' = 'open',
+    options?: { skipCache?: boolean },
   ): Promise<ChatConversation[]> => {
-    loadingList.value = true
-    listError.value = null
+    const key = `staff:${status}`
+
+    // skipCache: 强制重新拉
+    if (options?.skipCache) {
+      conversationsCache.delete(key)
+    }
+
+    // 缓存命中
+    if (!options?.skipCache) {
+      const cached = getCached(conversationsCache, key, LIST_CACHE_TTL_MS)
+      if (cached) {
+        conversations.value = cached
+        fetched.value = true
+        return cached
+      }
+    }
+
+    // 复用 in-flight
+    const entry = conversationsCache.get(key)
+    if (entry?.inFlight) {
+      loadingList.value = true
+      try {
+        const data = await entry.inFlight
+        conversations.value = data
+        fetched.value = true
+        return data
+      } catch {
+        return []
+      } finally {
+        loadingList.value = false
+      }
+    }
+
+    const p = (async () => {
+      loadingList.value = true
+      listError.value = null
+      try {
+        const statusArg = status === 'all' ? null : status
+        const { data, error } = await (supabase as any)
+          .rpc('rpc_chat_admin_list_conversations', {
+            p_status: statusArg,
+            p_limit: 200,
+            p_offset: 0,
+          })
+        if (error) throw error
+        const rows = (data ?? []) as any[]
+        return rows.map((r) => ({
+          id: r.id,
+          account_id: r.account_id,
+          subject_order_id: r.subject_order_id,
+          assigned_to: r.assigned_to,
+          status: r.status,
+          last_message_at: r.last_message_at_actual ?? r.last_message_at,
+          created_at: r.created_at,
+          updated_at: r.updated_at,
+          account: { account_name: r.account_name ?? '—', company_name: r.company_name ?? '' },
+          subject_order: r.order_no ? { order_no: r.order_no, status: '' } : null,
+          assigned: r.assigned_to
+            ? { id: r.assigned_to, full_name: r.assigned_name ?? null, role: '' }
+            : null,
+          last_message: r.last_message_body
+            ? {
+                body: r.last_message_body,
+                sender_id: r.last_message_sender,
+                created_at: r.last_message_at_actual ?? r.last_message_at,
+                message_type: 'text' as const,
+              }
+            : null,
+          unread_count: Number(r.unread_for_me ?? 0),
+        }))
+      } catch (e: any) {
+        listError.value = e?.message ?? String(e)
+        return []
+      } finally {
+        loadingList.value = false
+      }
+    })()
+
+    conversationsCache.set(key, { data: conversations.value, timestamp: 0, inFlight: p })
     try {
-      const statusArg = status === 'all' ? null : status
-      const { data, error } = await (supabase as any)
-        .rpc('rpc_chat_admin_list_conversations', {
-          p_status: statusArg,
-          p_limit: 200,
-          p_offset: 0,
-        })
-      if (error) throw error
-      const rows = (data ?? []) as any[]
-      const out: ChatConversation[] = rows.map((r) => ({
-        id: r.id,
-        account_id: r.account_id,
-        subject_order_id: r.subject_order_id,
-        assigned_to: r.assigned_to,
-        status: r.status,
-        last_message_at: r.last_message_at_actual ?? r.last_message_at,
-        created_at: r.created_at,
-        updated_at: r.updated_at,
-        account: { account_name: r.account_name ?? '—', company_name: r.company_name ?? '' },
-        subject_order: r.order_no ? { order_no: r.order_no, status: '' } : null,
-        assigned: r.assigned_to
-          ? { id: r.assigned_to, full_name: r.assigned_name ?? null, role: '' }
-          : null,
-        last_message: r.last_message_body
-          ? {
-              body: r.last_message_body,
-              sender_id: r.last_message_sender,
-              created_at: r.last_message_at_actual ?? r.last_message_at,
-              message_type: 'text' as const,
-            }
-          : null,
-        unread_count: Number(r.unread_for_me ?? 0),
-      }))
+      const out = await p
       conversations.value = out
       fetched.value = true
+      conversationsCache.set(key, { data: out, timestamp: Date.now() })
       return out
-    } catch (e: any) {
-      listError.value = e?.message ?? String(e)
+    } catch {
+      conversationsCache.delete(key)
       fetched.value = true
       return []
-    } finally {
-      loadingList.value = false
     }
   }
 
@@ -547,53 +676,49 @@ export function useChat() {
   // 拉单个会话的成员 + 其它信息
   // -------------------------------------------------------------------
   const fetchMembers = async (conversationId: string, options?: { skipCache?: boolean }): Promise<ChatMember[]> => {
-    // 优先返回缓存
-    if (!options?.skipCache) {
-      const cached = getCached(membersCache, conversationId)
-      if (cached) return cached
+    // skipCache 强制重拉
+    if (options?.skipCache) {
+      membersCache.delete(conversationId)
     }
-
-    const { data, error } = await supabase
-      .from('chat_conversation_members')
-      .select(`
-        id, conversation_id, user_id, member_type,
-        last_read_message_id, last_read_at, joined_at, left_at,
-        user:users!chat_conversation_members_user_id_fkey(id, full_name, role, account_id)
-      `)
-      .eq('conversation_id', conversationId)
-      .is('left_at', null)
-    if (error) throw error
-    const result = (data ?? []) as ChatMember[]
-    setCached(membersCache, conversationId, result)
-    return result
+    return getOrSetInFlight(membersCache, conversationId, async () => {
+      const { data, error } = await supabase
+        .from('chat_conversation_members')
+        .select(`
+          id, conversation_id, user_id, member_type,
+          last_read_message_id, last_read_at, joined_at, left_at,
+          user:users!chat_conversation_members_user_id_fkey(id, full_name, role, account_id)
+        `)
+        .eq('conversation_id', conversationId)
+        .is('left_at', null)
+      if (error) throw error
+      return (data ?? []) as ChatMember[]
+    })
   }
 
   // -------------------------------------------------------------------
   // 消息列表（按 created_at 升序, 拉最近 100 条）
   // -------------------------------------------------------------------
   const fetchMessages = async (conversationId: string, limit = 100, options?: { skipCache?: boolean }): Promise<ChatMessage[]> => {
-    // 优先返回缓存
-    if (!options?.skipCache) {
-      const cached = getCached(messagesCache, conversationId)
-      if (cached) return cached
+    // skipCache 强制重拉
+    if (options?.skipCache) {
+      messagesCache.delete(conversationId)
     }
-
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select(`
-        id, conversation_id, sender_id, message_type, message_kind, body,
-        client_message_id, reply_to_id, created_at, edited_at, deleted_at,
-        sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-      `)
-      .eq('conversation_id', conversationId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .limit(limit)
-    if (error) throw error
-    const result = (data ?? []) as ChatMessage[]
-    setCached(messagesCache, conversationId, result)
-    return result
+    return getOrSetInFlight(messagesCache, conversationId, async () => {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select(`
+          id, conversation_id, sender_id, message_type, message_kind, body,
+          client_message_id, reply_to_id, created_at, edited_at, deleted_at,
+          sender:users!chat_messages_sender_id_fkey(id, full_name, role)
+        `)
+        .eq('conversation_id', conversationId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(limit)
+      if (error) throw error
+      return (data ?? []) as ChatMessage[]
+    })
   }
 
   // -------------------------------------------------------------------
@@ -667,18 +792,43 @@ export function useChat() {
       missing.push(...messageIds)
     }
 
-    const { data, error } = await supabase
-      .from('chat_message_attachments')
-      .select('id, message_id, storage_path, mime, size_bytes, width, height')
-      .in('message_id', missing)
-    if (error) return result
-    for (const row of (data ?? []) as any[]) {
-      const att = row as ChatMessageAttachment
-      if (!result[att.message_id]) result[att.message_id] = []
-      result[att.message_id].push(att)
-      setCached(attachmentsCache, att.message_id, [att])
+    // 同一组 missing 在请求中就复用 promise（去重并发）
+    const key = missing.slice().sort().join(',')
+    if (attachmentsInFlight.has(key)) {
+      const inflight = await attachmentsInFlight.get(key)!
+      return { ...result, ...inflight }
     }
-    return result
+
+    const p = (async () => {
+      const { data, error } = await supabase
+        .from('chat_message_attachments')
+        .select('id, message_id, storage_path, mime, size_bytes, width, height')
+        .in('message_id', missing)
+      if (error) throw error
+      const fetched: Record<string, ChatMessageAttachment[]> = {}
+      for (const row of (data ?? []) as any[]) {
+        const att = row as ChatMessageAttachment
+        if (!fetched[att.message_id]) fetched[att.message_id] = []
+        fetched[att.message_id].push(att)
+        setCached(attachmentsCache, att.message_id, [att])
+      }
+      // 没附件的消息也缓存空数组，避免下次又查
+      for (const mid of missing) {
+        if (!fetched[mid]) {
+          setCached(attachmentsCache, mid, [])
+          fetched[mid] = []
+        }
+      }
+      return fetched
+    })()
+
+    attachmentsInFlight.set(key, p)
+    try {
+      const data = await p
+      return { ...result, ...data }
+    } finally {
+      attachmentsInFlight.delete(key)
+    }
   }
 
   // -------------------------------------------------------------------
@@ -701,17 +851,43 @@ export function useChat() {
       missing.push(...messageIds)
     }
 
-    const { data, error } = await supabase
-      .from('chat_message_metadata')
-      .select('message_id, payload, updated_at')
-      .in('message_id', missing)
-    if (error) return out
-    for (const row of (data ?? []) as any[]) {
-      const meta = row as ChatMessageMetadata
-      out[meta.message_id] = meta
-      setCached(metadataCache, meta.message_id, meta)
+    // 同一组 missing 在请求中就复用 promise（去重并发）
+    const key = missing.slice().sort().join(',')
+    if (metadataInFlight.has(key)) {
+      const inflight = await metadataInFlight.get(key)!
+      return { ...out, ...inflight }
     }
-    return out
+
+    const p = (async () => {
+      const { data, error } = await supabase
+        .from('chat_message_metadata')
+        .select('message_id, payload, updated_at')
+        .in('message_id', missing)
+      if (error) throw error
+      const fetched: Record<string, ChatMessageMetadata> = {}
+      for (const row of (data ?? []) as any[]) {
+        const meta = row as ChatMessageMetadata
+        fetched[meta.message_id] = meta
+        setCached(metadataCache, meta.message_id, meta)
+      }
+      // 没 metadata 的消息也缓存空对象
+      for (const mid of missing) {
+        if (!fetched[mid]) {
+          const empty: ChatMessageMetadata = { message_id: mid, payload: {}, updated_at: '' }
+          setCached(metadataCache, mid, empty)
+          fetched[mid] = empty
+        }
+      }
+      return fetched
+    })()
+
+    metadataInFlight.set(key, p)
+    try {
+      const data = await p
+      return { ...out, ...data }
+    } finally {
+      metadataInFlight.delete(key)
+    }
   }
 
   // -------------------------------------------------------------------
@@ -813,20 +989,27 @@ export function useChat() {
    * 拉一个会话"正在输入的人" (排除自己, 排除已过期)
    */
   const fetchTyping = async (conversationId: string): Promise<{ user_id: string; full_name: string | null }[]> => {
-    const me = (await supabase.auth.getUser()).data.user
-    const { data, error } = await supabase
-      .from('chat_typing')
-      .select(`
-        user_id,
-        user:users!chat_typing_user_id_fkey(id, full_name, role)
-      `)
-      .eq('conversation_id', conversationId)
-      .gt('expires_at', new Date().toISOString())
-    if (error) return []
-    const list = (data ?? []) as any[]
-    return list
-      .filter((r) => r.user_id !== me?.id)
-      .map((r) => ({ user_id: r.user_id, full_name: r.user?.full_name ?? null }))
+    // 缓存命中直接返回（避免频繁 SELECT）
+    const TYPING_CACHE_TTL_MS = 5_000
+    const cached = getCached(typingCache, conversationId, TYPING_CACHE_TTL_MS)
+    if (cached) return cached
+
+    return getOrSetInFlight(typingCache, conversationId, async () => {
+      const me = (await supabase.auth.getUser()).data.user
+      const { data, error } = await supabase
+        .from('chat_typing')
+        .select(`
+          user_id,
+          user:users!chat_typing_user_id_fkey(id, full_name, role)
+        `)
+        .eq('conversation_id', conversationId)
+        .gt('expires_at', new Date().toISOString())
+      if (error) return []
+      const list = (data ?? []) as any[]
+      return list
+        .filter((r) => r.user_id !== me?.id)
+        .map((r) => ({ user_id: r.user_id, full_name: r.user?.full_name ?? null }))
+    }, TYPING_CACHE_TTL_MS)
   }
 
   // -------------------------------------------------------------------
@@ -950,17 +1133,27 @@ export function useChat() {
     onMessage: (msg: ChatMessage) => void,
     onMember: (member: ChatMember) => void,
     onUpdated?: (msg: ChatMessage) => void,
-  ): (() => void) => {
+  ): { unsubscribe: () => Promise<void> } => {
     const channel = supabase
-      .channel(`chat:${conversationId}`)
+      .channel(`chat:${conversationId}`, {
+        config: { broadcast: { self: false }, presence: { key: '' } },
+      })
       .on(
         'postgres_changes' as any,
         { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${conversationId}` },
         (payload: any) => {
           const m = payload?.new as ChatMessage
           if (m) {
-            // 让下次 fetchMessages 拉到新消息（避免展示陈旧缓存）
-            messagesCache.delete(conversationId)
+            // 把新消息 append 到缓存（而不是清空）
+            // - 避免下次打开会话时 cache miss 又查 DB
+            // - realtime 回调已经把消息推到 UI，缓存里也有，无需重拉
+            const entry = messagesCache.get(conversationId)
+            if (entry && isCacheValid(entry)) {
+              // 仅在该消息还没在缓存里时 append（避免重复）
+              if (!entry.data.some((x) => x.id === m.id)) {
+                entry.data = [...entry.data, m]
+              }
+            }
             onMessage(m)
           }
         },
@@ -971,8 +1164,14 @@ export function useChat() {
         (payload: any) => {
           const m = payload?.new as ChatMessage
           if (!m) return
-          // 消息被编辑/撤回，清缓存保证下次拿到最新
-          messagesCache.delete(conversationId)
+          // UPDATE（编辑/撤回）: 就地替换缓存里的旧消息
+          const entry = messagesCache.get(conversationId)
+          if (entry && isCacheValid(entry)) {
+            const idx = entry.data.findIndex((x) => x.id === m.id)
+            if (idx !== -1) {
+              entry.data = [...entry.data.slice(0, idx), m, ...entry.data.slice(idx + 1)]
+            }
+          }
           if (onUpdated) onUpdated(m)
           else onMessage(m) // 兼容旧调用方
         },
@@ -983,15 +1182,29 @@ export function useChat() {
         (payload: any) => {
           const m = payload?.new as ChatMember | null
           if (m) {
-            // 成员状态变更（如已读位置变更），清成员缓存
-            membersCache.delete(conversationId)
+            // 成员状态变更（如已读位置变更），就地更新缓存里的成员
+            const entry = membersCache.get(conversationId)
+            if (entry && isCacheValid(entry)) {
+              const idx = entry.data.findIndex((x) => x.id === m.id)
+              if (idx !== -1) {
+                entry.data = [...entry.data.slice(0, idx), m, ...entry.data.slice(idx + 1)]
+              } else {
+                entry.data = [...entry.data, m]
+              }
+            }
             onMember(m)
           }
         },
       )
       .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
+    return {
+      unsubscribe: async () => {
+        try {
+          // 真正等待 channel 断开（避免下次重新订阅时残留回调）
+          await channel.unsubscribe()
+          supabase.removeChannel(channel)
+        } catch { /* ignore */ }
+      },
     }
   }
 

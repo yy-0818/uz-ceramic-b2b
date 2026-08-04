@@ -232,23 +232,22 @@ function readDelivery(m: ChatMessage): 'sent' | 'read' {
     : 'sent'
 }
 
-let unsub: (() => void) | null = null
+let unsub: (() => Promise<void>) | null = null
 let typingChannel: any = null
 let openInFlight: Promise<void> | null = null
 let openingConversationId: string | null = null
 
 /**
- * 同步 unsubscribed channel. supabase realtime 的 removeChannel 异步, 必须 await
+ * 同步 unsubscribed channel. supabase realtime 的 unsubscribe/removeChannel 异步, 必须 await
  * 才能避免 "cannot add postgres_changes callbacks ... after subscribe()"
  */
 const safeUnsub = async () => {
   const u = unsub
   unsub = null
   if (u) {
-    try { u() } catch { /* ignore */ }
+    // 真正等待 channel 断开（sub 返回的 unsubscribe 是 async）
+    try { await u() } catch { /* ignore */ }
   }
-  // 让 supabase 内部队列有时间完成 unsub
-  await new Promise((r) => setTimeout(r, 0))
 
   const tc = typingChannel
   typingChannel = null
@@ -288,7 +287,7 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
       if (lastMessageId.value) {
         chat.markRead(conv.id, lastMessageId.value).catch(() => { /* ignore */ })
       }
-      unsub = chat.subscribeConversation(
+      const sub = chat.subscribeConversation(
         conv.id,
         (msg) => {
           if (msg.sender_id === appUser.value?.id) {
@@ -337,6 +336,7 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
           }
         },
       )
+      unsub = sub.unsubscribe
       // Phase 3: 订阅 chat_typing (在主 channel 之后, 不会冲突)
       await subscribeTyping(conv.id)
       scrollToBottom()
