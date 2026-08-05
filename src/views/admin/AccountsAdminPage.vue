@@ -39,6 +39,7 @@ import {
   Eye,
   EyeOff,
   ArrowLeft,
+  Circle,
 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
@@ -285,14 +286,20 @@ watch(
 )
 
 // ============ 过滤 & 分页 ============
+// 注意: typeFilter 过滤的是子账号 (account_type 1公户/2现金/3出口)
+//   主账号的 account_type 是占位 ('1_public'), 不参与过滤
+//   父账号匹配规则: 它的子账号里至少有一个匹配 typeFilter 即可
 const filteredParents = computed(() => {
   const q = search.value.trim().toLowerCase()
   return parents.value.filter((p) => {
-    if (typeFilter.value !== 'all' && p.account_type !== typeFilter.value) return false
     if (statusFilter.value !== 'all' && p.status !== statusFilter.value) return false
+    const subs = subsByParent.value[p.id] ?? []
+    if (typeFilter.value !== 'all') {
+      const hasMatch = subs.some((s) => s.account_type === typeFilter.value)
+      if (!hasMatch) return false
+    }
     if (!q) return true
     if (p.account_name.toLowerCase().includes(q)) return true
-    const subs = subsByParent.value[p.id] ?? []
     return subs.some((s) => s.account_name.toLowerCase().includes(q) || (s.inn && s.inn.toLowerCase().includes(q)))
   })
 })
@@ -1025,12 +1032,6 @@ const goBack = () => {
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-semibold truncate">{{ p.account_name }}</span>
               <span
-                class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border font-medium"
-                :class="typeClass(p.account_type)"
-              >
-                {{ accountTypes.find((x) => x.value === p.account_type)?.label }}
-              </span>
-              <span
                 v-if="p.status === 'active'"
                 class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200"
               >
@@ -1078,41 +1079,70 @@ const goBack = () => {
           <div v-if="(subsByParent[p.id] ?? []).length === 0" class="text-xs text-muted-foreground py-2 text-center">
             {{ t('admin.accounts.noSubs') }}
           </div>
-          <div v-else class="space-y-1.5">
+          <div v-else class="space-y-1">
             <div
               v-for="s in subsByParent[p.id]"
               :key="s.id"
-              class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 transition"
+              class="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-2 py-2 rounded hover:bg-muted/60 transition"
             >
-              <Star v-if="s.is_main" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
-              <Users v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span class="text-sm flex-1 truncate">{{ s.account_name }}</span>
-              <span v-if="s.inn" class="text-xs text-muted-foreground font-mono hidden sm:inline">{{ s.inn }}</span>
-              <span
-                class="text-xs px-1.5 py-0.5 rounded"
-                :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'"
-              >
-                {{ s.status === 'active' ? t('admin.accounts.subAvailable') : t('admin.accounts.disabled') }}
-              </span>
-              <Button
-                v-if="!s.is_main"
-                size="sm"
-                variant="ghost"
-                class="h-6 w-6 p-0"
-                @click="setMain(p.id, s)"
+              <!-- 图标: 实心星=主联系, 空心圈=普通 -->
+              <Star
+                v-if="s.is_main"
+                class="h-4 w-4 fill-amber-400 text-amber-500"
                 :title="t('admin.accounts.setMain')"
-              >
-                <Star class="h-3 w-3" />
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-6 w-6 p-0"
-                @click="openSubEdit(p, s)"
-                :title="t('admin.accounts.menuEdit')"
-              >
-                <Edit class="h-3 w-3" />
-              </Button>
+              />
+              <Circle v-else class="h-3 w-3 text-muted-foreground" :title="t('admin.accounts.subRegular')" />
+
+              <!-- 名字 + 类型 + 税号 -->
+              <div class="min-w-0">
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="text-sm font-medium truncate">{{ s.account_name }}</span>
+                  <span
+                    class="text-[10px] px-1.5 py-0.5 rounded border font-medium shrink-0"
+                    :class="typeClass(s.account_type)"
+                  >
+                    {{ accountTypes.find((x) => x.value === s.account_type)?.label ?? s.account_type }}
+                  </span>
+                  <span
+                    v-if="s.is_main"
+                    class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 shrink-0"
+                  >
+                    {{ t('admin.accounts.subMainContact') }}
+                  </span>
+                </div>
+                <div v-if="s.inn" class="text-[11px] text-muted-foreground font-mono mt-0.5 truncate">
+                  {{ t('admin.accounts.subInnLabel') }} {{ s.inn }}
+                </div>
+              </div>
+
+              <!-- 状态 + 操作 -->
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span
+                  class="text-xs px-1.5 py-0.5 rounded-full"
+                  :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'"
+                >
+                  {{ s.status === 'active' ? t('admin.accounts.subAvailable') : t('admin.accounts.disabled') }}
+                </span>
+                <Button
+                  v-if="!s.is_main"
+                  size="sm"
+                  variant="ghost"
+                  class="h-6 w-6 p-0"
+                  @click="setMain(p.id, s)"
+                  :title="t('admin.accounts.setMain')"
+                >
+                  <Star class="h-3 w-3" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="h-6 w-6 p-0"
+                  @click="openSubEdit(p, s)"
+                  :title="t('admin.accounts.menuEdit')"
+                >
+                  <Edit class="h-3 w-3" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
