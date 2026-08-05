@@ -8,3 +8,15 @@ dist
 tsconfig.tsbuildinfo
 *.xlsx
 *.xls
+
+# CI artifacts (transient reports from check-i18n.mjs)
+i18n-missing-*.json
+
+# Playwright
+playwright-report/
+test-results/
+
+# Editor
+.idea/
+.vscode/
+
