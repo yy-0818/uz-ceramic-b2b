@@ -95,8 +95,12 @@ let typingTimer: number | undefined
 const onTyping = () => {
   if (!conversation.value) return
   if (typingTimer) return
-  typingTimer = window.setTimeout(() => { typingTimer = undefined }, 4000)
-  chat.notifyTyping(conversation.value.id).catch(() => { /* ignore */ })
+  typingTimer = window.setTimeout(() => {
+    typingTimer = undefined
+  }, 4000)
+  chat.notifyTyping(conversation.value.id).catch(() => {
+    /* ignore */
+  })
 }
 
 // M2: 待上传图片 (composer 推入)
@@ -179,7 +183,11 @@ const rows = computed<Row[]>(() => {
         created_at: p.created_at,
         edited_at: null,
         deleted_at: null,
-        sender: { id: appUser.value?.id ?? '', full_name: appUser.value?.full_name ?? null, role: appUser.value?.role ?? 'customer' },
+        sender: {
+          id: appUser.value?.id ?? '',
+          full_name: appUser.value?.full_name ?? null,
+          role: appUser.value?.role ?? 'customer',
+        },
       } as ChatMessage,
       delivery: p.status === 'pending' ? 'pending' : 'failed',
       failure: p.failure,
@@ -200,7 +208,11 @@ const rows = computed<Row[]>(() => {
       created_at: new Date().toISOString(),
       edited_at: null,
       deleted_at: null,
-      sender: { id: appUser.value?.id ?? '', full_name: appUser.value?.full_name ?? null, role: appUser.value?.role ?? 'customer' },
+      sender: {
+        id: appUser.value?.id ?? '',
+        full_name: appUser.value?.full_name ?? null,
+        role: appUser.value?.role ?? 'customer',
+      },
     }
     const fakeAtt: ChatMessageAttachment = {
       id: u.clientMessageId,
@@ -232,9 +244,7 @@ function readDelivery(m: ChatMessage): 'sent' | 'read' {
   // 没有对方成员 → 对方还没加入会话 → 只显示"已发送"
   if (others.length === 0) return 'sent'
   // 只要任一对方成员读到了这条消息，就算"已读"
-  return others.some((other) => other.last_read_message_id && other.last_read_message_id >= m.id)
-    ? 'read'
-    : 'sent'
+  return others.some((other) => other.last_read_message_id && other.last_read_message_id >= m.id) ? 'read' : 'sent'
 }
 
 let unsub: (() => Promise<void>) | null = null
@@ -251,7 +261,11 @@ const safeUnsub = async () => {
   unsub = null
   if (u) {
     // 真正等待 channel 断开（sub 返回的 unsubscribe 是 async）
-    try { await u() } catch { /* ignore */ }
+    try {
+      await u()
+    } catch {
+      /* ignore */
+    }
   }
 
   const tc = typingChannel
@@ -260,7 +274,9 @@ const safeUnsub = async () => {
     try {
       const removed = await supabase.removeChannel(tc)
       await removed
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 }
 
@@ -281,6 +297,25 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
         subject_order_id: props.subjectOrderId ?? null,
       })
       conversation.value = conv
+
+      // Staff 接管: admin/checker 直接点开任意会话就能看 / 参与。
+      //   - 原因: chat_messages / chat_conversation_members 的 SELECT RLS
+      //     是 is_chat_member_of(conv_id), 如果当前 staff 不是成员就读不到消息
+      //   - 修法: open 前先调 rpc_chat_join_conversation (upsert onConflict do nothing),
+      //     幂等; customer 端调会被 RPC reject 'staff only', 但已被 try/catch 吞掉
+      //     — 对 customer 端没有副作用 (customer auth.uid = 父账号 user_id,
+      //     ensureConversation 那一步已经把自己插进去了)
+      const role = appUser.value?.role
+      if (role && role !== 'customer' && role !== 'fin_customer') {
+        try {
+          await chat.joinConversation(conv.id)
+        } catch (e) {
+          // 兜底: join 失败也不阻塞后续 fetch (RPC 可能 rejected, 网络问题等)
+          // 让用户至少能看到基础信息, 接管失败时右上角管理员仍可在后续手动接管
+          if (typeof console !== 'undefined') console.warn('[chat] joinConversation failed', e)
+        }
+      }
+
       const [ms, mems] = await Promise.all([
         chat.fetchMessages(conv.id, { limit: PAGE_SIZE }, { skipCache: opts?.skipCache }),
         chat.fetchMembers(conv.id, { skipCache: opts?.skipCache }),
@@ -295,7 +330,8 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
       } else {
         // 用总数估值：ms.length < count → 还有更多
         // 或：直接判断 ms.length >= PAGE_SIZE（拉满一页就认为可能还有）
-        chat.fetchMessageCount(conv.id)
+        chat
+          .fetchMessageCount(conv.id)
           .then((total) => {
             hasMore.value = messages.value.length < total
           })
@@ -304,9 +340,14 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
             hasMore.value = ms.length >= PAGE_SIZE
           })
       }
-      await reloadExtras(ms.map((m) => m.id), { skipCache: opts?.skipCache })
+      await reloadExtras(
+        ms.map((m) => m.id),
+        { skipCache: opts?.skipCache },
+      )
       if (lastMessageId.value) {
-        chat.markRead(conv.id, lastMessageId.value).catch(() => { /* ignore */ })
+        chat.markRead(conv.id, lastMessageId.value).catch(() => {
+          /* ignore */
+        })
       }
       const sub = chat.subscribeConversation(
         conv.id,
@@ -334,7 +375,9 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
           messages.value.push(msg)
           lastMessageId.value = msg.id
           reloadExtras([msg.id])
-          chat.markRead(conv.id, msg.id).catch(() => { /* ignore */ })
+          chat.markRead(conv.id, msg.id).catch(() => {
+            /* ignore */
+          })
           scrollToBottom()
         },
         (member) => {
@@ -381,7 +424,9 @@ const subscribeTyping = async (conversationId: string) => {
     try {
       const removed = await supabase.removeChannel(tc)
       await removed
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   const channel = supabase
     .channel(`chat:typing:${conversationId}`)
@@ -415,7 +460,9 @@ const reloadExtras = async (messageIds: string[], opts?: { skipCache?: boolean }
     .filter((id): id is string => typeof id === 'string')
   statusCache.hydrate(orderIds)
   // 预签
-  const paths = Object.values(atts).flat().map((a) => a.storage_path)
+  const paths = Object.values(atts)
+    .flat()
+    .map((a) => a.storage_path)
   if (paths.length) {
     await Promise.all(paths.map((p) => uploader.getSignedUrl(p).catch(() => null)))
     const m: Record<string, string> = { ...signedUrls.value }
@@ -450,12 +497,20 @@ onBeforeUnmount(async () => {
   window.removeEventListener('offline', onOffline)
   document.removeEventListener('click', onDocClick)
   for (const u of pendingUploads.value) {
-    try { URL.revokeObjectURL(u.localUrl) } catch { /* ignore */ }
+    try {
+      URL.revokeObjectURL(u.localUrl)
+    } catch {
+      /* ignore */
+    }
   }
 })
 
-function onOnline() { connection.value = 'online' }
-function onOffline() { connection.value = 'offline' }
+function onOnline() {
+  connection.value = 'online'
+}
+function onOffline() {
+  connection.value = 'offline'
+}
 
 // 点击外部关闭 action menu
 function onDocClick(e: MouseEvent) {
@@ -541,13 +596,16 @@ const onReply = (m: ChatMessage) => {
     document.querySelector<HTMLTextAreaElement>('textarea[data-chat-composer]')?.focus()
   })
 }
-const onCancelReply = () => { replyTo.value = null }
+const onCancelReply = () => {
+  replyTo.value = null
+}
 
 const onSend = async (body: string) => {
   if (!conversation.value) return
-  const clientMessageId = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  const clientMessageId =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
   const replyToId = replyTo.value?.id ?? null
   pending.value.push({
     client_message_id: clientMessageId,
@@ -713,7 +771,9 @@ const onRetry = async (clientMessageId: string) => {
     pendingUploads.value[uidx] = { ...u, status: 'uploading', failure: undefined }
     try {
       await uploadOne(u)
-    } catch { /* marked by uploadOne */ }
+    } catch {
+      /* marked by uploadOne */
+    }
   }
 }
 
@@ -729,29 +789,37 @@ const onPickImage = async (file: File, clientMessageId: string) => {
   // 给 attachmentsByMessage 一个 placeholder 让 bubble 显示本地预览
   attachmentsByMessage.value = {
     ...attachmentsByMessage.value,
-    [clientMessageId]: [{
-      id: clientMessageId,
-      message_id: clientMessageId,
-      storage_path: clientMessageId, // 任意, 但 pending 时走 localUrl 分支
-      mime: file.type,
-      size_bytes: file.size,
-      width: null,
-      height: null,
-    }],
+    [clientMessageId]: [
+      {
+        id: clientMessageId,
+        message_id: clientMessageId,
+        storage_path: clientMessageId, // 任意, 但 pending 时走 localUrl 分支
+        mime: file.type,
+        size_bytes: file.size,
+        width: null,
+        height: null,
+      },
+    ],
   }
   // 让 ChatBubble 能拿到本地 URL (通过 signedUrls[path=clientMessageId] = localUrl)
   signedUrls.value = { ...signedUrls.value, [clientMessageId]: localUrl }
   scrollToBottom()
   try {
     await uploadOne(pending)
-  } catch { /* marked by uploadOne */ }
+  } catch {
+    /* marked by uploadOne */
+  }
 }
 
 const onRemoveImage = async (clientMessageId: string) => {
   const idx = pendingUploads.value.findIndex((u) => u.clientMessageId === clientMessageId)
   if (idx === -1) return
   const u = pendingUploads.value[idx]
-  try { URL.revokeObjectURL(u.localUrl) } catch { /* ignore */ }
+  try {
+    URL.revokeObjectURL(u.localUrl)
+  } catch {
+    /* ignore */
+  }
   pendingUploads.value.splice(idx, 1)
 }
 
@@ -830,20 +898,25 @@ const messageMap = computed(() => {
   for (const m of messages.value) map.set(m.id, m)
   // pending 也算 (本地乐观, 发送失败时也要能渲染占位)
   for (const p of pending.value as any[]) {
-    if (p.client_message_id) map.set(p.client_message_id, {
-      id: p.client_message_id,
-      conversation_id: '',
-      sender_id: appUser.value?.id ?? '',
-      message_type: 'text',
-      message_kind: 'text',
-      body: p.body,
-      client_message_id: p.client_message_id,
-      reply_to_id: null,
-      created_at: p.created_at,
-      edited_at: null,
-      deleted_at: null,
-      sender: { id: appUser.value?.id ?? '', full_name: appUser.value?.full_name ?? null, role: appUser.value?.role ?? 'customer' },
-    } as ChatMessage)
+    if (p.client_message_id)
+      map.set(p.client_message_id, {
+        id: p.client_message_id,
+        conversation_id: '',
+        sender_id: appUser.value?.id ?? '',
+        message_type: 'text',
+        message_kind: 'text',
+        body: p.body,
+        client_message_id: p.client_message_id,
+        reply_to_id: null,
+        created_at: p.created_at,
+        edited_at: null,
+        deleted_at: null,
+        sender: {
+          id: appUser.value?.id ?? '',
+          full_name: appUser.value?.full_name ?? null,
+          role: appUser.value?.role ?? 'customer',
+        },
+      } as ChatMessage)
   }
   return map
 })
@@ -866,7 +939,10 @@ const searchQ = ref('')
 const highlighted = (body: string): string => {
   if (!searchQ.value || !body) return body
   const escaped = searchQ.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return body.replace(new RegExp(`(${escaped})`, 'gi'), '<mark class="bg-yellow-200 dark:bg-yellow-700 rounded px-0.5">$1</mark>')
+  return body.replace(
+    new RegExp(`(${escaped})`, 'gi'),
+    '<mark class="bg-yellow-200 dark:bg-yellow-700 rounded px-0.5">$1</mark>',
+  )
 }
 const isHighlighted = (m: ChatMessage): boolean => {
   if (!searchQ.value) return false
@@ -937,7 +1013,9 @@ const onCopyMessage = async (m: ChatMessage) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       await navigator.clipboard.writeText(m.body)
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 </script>
 
@@ -959,7 +1037,10 @@ const onCopyMessage = async (m: ChatMessage) => {
       @send-order-card="onSendOrderCard"
       @post-system="onPostSystem"
       @take-over="onTakeOver"
-      @toggle-action-menu="showActionMenu = !showActionMenu; showTransferMenu = false"
+      @toggle-action-menu="
+        showActionMenu = !showActionMenu
+        showTransferMenu = false
+      "
     >
       <template #status-dot>
         <ChatStatusDot :status="counterpartStatus" />
@@ -971,14 +1052,20 @@ const onCopyMessage = async (m: ChatMessage) => {
         >
           <button
             class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
-            @click="onTakeOver(); showActionMenu = false"
+            @click="
+              onTakeOver()
+              showActionMenu = false
+            "
           >
             <UserPlus class="h-3.5 w-3.5" />
             {{ t('chat.takeOverSelf') }}
           </button>
           <button
             class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
-            @click="showTransferMenu = !showTransferMenu; showActionMenu = false"
+            @click="
+              showTransferMenu = !showTransferMenu
+              showActionMenu = false
+            "
           >
             <ArrowRightLeft class="h-3.5 w-3.5" />
             {{ t('chat.transferToOther') }}
@@ -986,7 +1073,11 @@ const onCopyMessage = async (m: ChatMessage) => {
           <div v-if="showTransferMenu" class="mt-1 border-t pt-1 max-h-60 overflow-y-auto">
             <button
               class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
-              @click="onTransfer(null); showTransferMenu = false; showActionMenu = false"
+              @click="
+                onTransfer(null)
+                showTransferMenu = false
+                showActionMenu = false
+              "
             >
               {{ t('chat.unassign') }}
             </button>
@@ -995,7 +1086,11 @@ const onCopyMessage = async (m: ChatMessage) => {
               :key="s.id"
               class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
               :class="s.id === conversation?.assigned_to ? 'bg-primary/10' : ''"
-              @click="onTransfer(s.id); showTransferMenu = false; showActionMenu = false"
+              @click="
+                onTransfer(s.id)
+                showTransferMenu = false
+                showActionMenu = false
+              "
             >
               {{ s.full_name ?? s.id.slice(0, 8) }}
               <span class="text-muted-foreground ml-1">· {{ s.role }}</span>
@@ -1005,15 +1100,8 @@ const onCopyMessage = async (m: ChatMessage) => {
       </template>
     </ChatPanelHeader>
 
-    <div
-      v-else
-      class="px-3 py-2 border-b flex items-center gap-2 bg-muted/30"
-    >
-      <ChatAvatar
-        :name="counterpartName"
-        :role="counterpart?.member_type ?? 'staff'"
-        size="sm"
-      />
+    <div v-else class="px-3 py-2 border-b flex items-center gap-2 bg-muted/30">
+      <ChatAvatar :name="counterpartName" :role="counterpart?.member_type ?? 'staff'" size="sm" />
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold truncate flex items-center gap-1.5">
           {{ counterpartName }}
@@ -1036,13 +1124,7 @@ const onCopyMessage = async (m: ChatMessage) => {
       >
         <Package class="h-3.5 w-3.5" />
       </Button>
-      <Button
-        v-if="isStaff"
-        size="icon"
-        variant="ghost"
-        :title="t('chat.takeOver')"
-        @click="onTakeOver"
-      >
+      <Button v-if="isStaff" size="icon" variant="ghost" :title="t('chat.takeOver')" @click="onTakeOver">
         <UserPlus class="h-3.5 w-3.5" />
       </Button>
     </div>
@@ -1106,10 +1188,7 @@ const onCopyMessage = async (m: ChatMessage) => {
     <slot name="footer" />
 
     <!-- Phase 9: 引用回复预览条 -->
-    <div
-      v-if="replyTo"
-      class="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-muted/40 border-t border-b text-xs"
-    >
+    <div v-if="replyTo" class="flex items-center gap-2 px-3 sm:px-4 py-1.5 bg-muted/40 border-t border-b text-xs">
       <div class="flex-1 min-w-0 pl-2 border-l-2 border-primary/60">
         <p class="text-[10px] font-semibold text-primary truncate">
           {{ replyTo.sender?.full_name ?? t('chat.staff') }}
@@ -1129,7 +1208,9 @@ const onCopyMessage = async (m: ChatMessage) => {
     </div>
 
     <ChatComposer
-      :uploading="pendingUploads.map((u) => ({ clientMessageId: u.clientMessageId, localUrl: u.localUrl, file: u.file }))"
+      :uploading="
+        pendingUploads.map((u) => ({ clientMessageId: u.clientMessageId, localUrl: u.localUrl, file: u.file }))
+      "
       :draft-key="conversation?.id ?? props.accountId ?? undefined"
       @send="onSend"
       @pick-image="onPickImage"

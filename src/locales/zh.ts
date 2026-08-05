@@ -555,7 +555,8 @@ export default {
     invalidLinkHint: '请联系你的业务对接人（管理员）重新发送邀请',
     errNoToken: '链接无效（缺少 token）',
     errInvalidOrExpired: '链接无效、已过期、或者已被使用',
-    errNoLoginEmail: '该主账号尚未绑定真实登录邮箱，请联系管理员在父账号编辑里先填一个有效邮箱（如 customer@yourcompany.com）。',
+    errNoLoginEmail:
+      '该主账号尚未绑定真实登录邮箱，请联系管理员在父账号编辑里先填一个有效邮箱（如 customer@yourcompany.com）。',
     errPasswordShort: '密码至少 8 位',
     errPasswordMismatch: '两次密码不一致',
     welcome: '欢迎，{name}',
@@ -642,7 +643,7 @@ export default {
     read: '已读',
     // M1 工作台新增
     workspace: '客服工作台',
-    workspaceHint: '按客户主账号分组查看所有会话',
+    workspaceHint: '默认显示全部客户会话，点击即可查看与参与（自动接管）',
     filterAll: '全部',
     filterOpen: '进行中',
     filterClosed: '已关闭',
@@ -712,12 +713,12 @@ export default {
     takeOverFailed: '接管失败: {error}',
     assignedTo: '指派',
     // M4: 订单状态变更 → 系统消息文案
-    sysOrderPending:   '订单已提交待审',
-    sysOrderAudited:   '订单已审核',
+    sysOrderPending: '订单已提交待审',
+    sysOrderAudited: '订单已审核',
     sysOrderAccounted: '订单已记账',
-    sysOrderShipped:   '订单已发货',
+    sysOrderShipped: '订单已发货',
     sysOrderCancelled: '订单已取消',
-    sysOrderUnknown:   '订单状态更新',
+    sysOrderUnknown: '订单状态更新',
     // Staff 手动补一句系统消息
     postSystem: '发系统消息',
     postSystemPlaceholder: '例: 物流单号已发出, 请查收邮件',
@@ -747,20 +748,20 @@ export default {
     },
     // 通知内容模板 (kind_key 提供对应模板)
     chat_message: {
-      title: '{sender_name}',                  // 标题就是发送人名字
-      body: '{preview}',                       // 副文本 - 预览
+      title: '{sender_name}', // 标题就是发送人名字
+      body: '{preview}', // 副文本 - 预览
       bodyImage: '[图片]',
       bodyOrderCard: '[订单卡片]',
     },
     order_status: {
       title: '订单 #{order_no}',
       body: {
-        pending:   '订单已提交待审',
-        audited:   '订单已审核',
+        pending: '订单已提交待审',
+        audited: '订单已审核',
         accounted: '订单已记账',
-        shipped:   '订单已发货',
+        shipped: '订单已发货',
         cancelled: '订单已取消',
-        unknown:   '订单状态更新',
+        unknown: '订单状态更新',
       },
     },
   },
