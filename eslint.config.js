@@ -21,6 +21,7 @@ export default [
       'dist/**',
       'node_modules/**',
       'coverage/**',
+      'public/**',           // 静态资源（含 service worker），不被 ESLint 解析
       '*.config.{js,ts}',
       'vite.config.ts',
       'tailwind.config.js',
