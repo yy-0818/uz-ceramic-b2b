@@ -27,3 +27,16 @@ app.use(router)
 registerPermissionDirective(app)
 
 app.mount('#app')
+
+// PWA: 注册 service worker（仅生产 + 浏览器支持）
+if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js', { scope: '/' })
+      .catch((e) => {
+        // 不要 throw — PWA 是可选的，失败也不影响主业务
+        // eslint-disable-next-line no-console
+        console.warn('[pwa] sw register failed', e)
+      })
+  })
+}

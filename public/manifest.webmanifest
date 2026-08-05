@@ -1,0 +1,39 @@
+{
+  "name": "中鹏陶瓷 B2B",
+  "short_name": "Ceramic B2B",
+  "description": "中鹏陶瓷（乌兹别克斯坦）工厂 B2B 下单平台",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "lang": "ru",
+  "categories": ["business", "productivity"],
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "新建订单",
+      "url": "/checkout",
+      "description": "直接进入下单流程"
+    },
+    {
+      "name": "在线客服",
+      "url": "/chat",
+      "description": "打开客服聊天窗口"
+    }
+  ]
+}
