@@ -30,10 +30,11 @@ const emit = defineEmits<{
 
 const accountTypes: Array<{ value: AccountType; label: string; desc: string }> = [
   { value: '1_public', label: '1 公户', desc: '对公大客户' },
-  { value: '2_cash',   label: '2 现金', desc: '现金客户' },
+  { value: '2_cash', label: '2 现金', desc: '现金客户' },
   { value: '3_export', label: '3 出口', desc: '出口客户' },
 ]
 
+// 编辑模式下也保留账户原类型；新建则使用默认值
 const form = ref({
   account_name: '',
   account_type: '1_public' as AccountType,
@@ -92,17 +93,33 @@ const onSubmit = () => {
         <Input v-model="form.account_name" placeholder="例如：贾汉 / I客户 / W客户" class="h-9" />
       </div>
       <div>
-        <Label>客户登录邮箱 <span class="text-xs text-muted-foreground">（邀请时使用，留空自动生成占位邮箱）</span></Label>
+        <Label>
+          客户登录邮箱
+          <span class="text-xs text-muted-foreground">（邀请时使用，留空自动生成占位邮箱）</span>
+        </Label>
         <Input v-model="form.login_email" type="email" placeholder="customer@example.com" class="h-9" />
       </div>
       <div>
-        <Label>类型</Label>
+        <Label>
+          类型
+          <span class="text-xs text-muted-foreground">（新建时设置；编辑时锁定不可改）</span>
+        </Label>
         <div class="grid grid-cols-3 gap-2 mt-1">
-          <button v-for="t in accountTypes" :key="t.value"
+          <button
+            v-for="t in accountTypes"
+            :key="t.value"
             type="button"
-            class="border rounded-md px-2 py-2 text-sm transition text-left"
-            :class="form.account_type === t.value ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted'"
-            @click="form.account_type = t.value">
+            :disabled="!!target"
+            class="border rounded-md px-2 py-2 text-sm transition text-left disabled:cursor-not-allowed"
+            :class="[
+              form.account_type === t.value
+                ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                : target
+                  ? 'opacity-50'
+                  : 'hover:bg-muted',
+            ]"
+            @click="form.account_type = t.value"
+          >
             <p class="font-medium">{{ t.label }}</p>
             <p class="text-xs text-muted-foreground">{{ t.desc }}</p>
           </button>

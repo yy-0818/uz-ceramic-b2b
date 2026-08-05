@@ -13,10 +13,32 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
 import {
-  Loader2, Plus, RefreshCw, Search, ChevronLeft, ChevronRight, ChevronDown,
-  Upload, Users, Tag, Star, Edit, Power, PowerOff, X,
-  MoreHorizontal, Folder, Check, Mail, KeyRound, Copy,
-  Database, CheckCircle2, Eye, EyeOff, ArrowLeft,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Upload,
+  Users,
+  Tag,
+  Star,
+  Edit,
+  Power,
+  PowerOff,
+  X,
+  MoreHorizontal,
+  Folder,
+  Check,
+  Mail,
+  KeyRound,
+  Copy,
+  Database,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  ArrowLeft,
 } from 'lucide-vue-next'
 
 import Button from '@/components/ui/Button.vue'
@@ -116,7 +138,10 @@ const computePos = (trigger: HTMLElement, menuHeight: number) => {
 }
 
 const toggleMenu = (e: MouseEvent, id: string) => {
-  if (openMenuId.value === id) { openMenuId.value = null; return }
+  if (openMenuId.value === id) {
+    openMenuId.value = null
+    return
+  }
   openMenuId.value = id
   const trigger = e.currentTarget as HTMLElement
   if (!trigger) return
@@ -127,15 +152,21 @@ const toggleMenu = (e: MouseEvent, id: string) => {
   })
 }
 
-const closeMenu = () => { openMenuId.value = null }
+const closeMenu = () => {
+  openMenuId.value = null
+}
 const currentMenuParent = computed(() =>
-  openMenuId.value ? pagedParents.value.find(p => p.id === openMenuId.value) ?? null : null,
+  openMenuId.value ? (pagedParents.value.find((p) => p.id === openMenuId.value) ?? null) : null,
 )
 const isMobileMenu = ref(false)
 const mql = typeof window !== 'undefined' ? window.matchMedia('(max-width: 639px)') : null
-const syncMobile = () => { isMobileMenu.value = !!mql?.matches }
+const syncMobile = () => {
+  isMobileMenu.value = !!mql?.matches
+}
 
-const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMenu() }
+const onKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') closeMenu()
+}
 const onDocClick = (e: MouseEvent) => {
   if (!openMenuId.value) return
   if ((e.target as HTMLElement).closest('[data-row-menu]')) return
@@ -169,7 +200,10 @@ const allStockGroups = ref<StockGroup[]>([])
 const inviteOpen = ref(false)
 const inviteTarget = ref<Account | null>(null)
 const inviteResult = ref<{
-  url: string; loginEmail: string; expiresAt: string; token: string
+  url: string
+  loginEmail: string
+  expiresAt: string
+  token: string
 } | null>(null)
 
 const resetOpen = ref(false)
@@ -178,9 +212,24 @@ const resetTempPassword = ref<string | null>(null)
 
 // ============ 常量 ============
 const accountTypes = computed<Array<{ value: AccountType; label: string; desc: string; class: string }>>(() => [
-  { value: '1_public', label: t('admin.accounts.type1Public'), desc: t('admin.accounts.rev'),   class: 'bg-blue-100 text-blue-800 border-blue-200' },
-  { value: '2_cash',   label: t('admin.accounts.type2Cash'),   desc: t('admin.accounts.cash'),  class: 'bg-amber-100 text-amber-800 border-amber-200' },
-  { value: '3_export', label: t('admin.accounts.type3Export'), desc: t('admin.accounts.exp'),   class: 'bg-violet-100 text-violet-800 border-violet-200' },
+  {
+    value: '1_public',
+    label: t('admin.accounts.type1Public'),
+    desc: t('admin.accounts.rev'),
+    class: 'bg-blue-100 text-blue-800 border-blue-200',
+  },
+  {
+    value: '2_cash',
+    label: t('admin.accounts.type2Cash'),
+    desc: t('admin.accounts.cash'),
+    class: 'bg-amber-100 text-amber-800 border-amber-200',
+  },
+  {
+    value: '3_export',
+    label: t('admin.accounts.type3Export'),
+    desc: t('admin.accounts.exp'),
+    class: 'bg-violet-100 text-violet-800 border-violet-200',
+  },
 ])
 const typeClass = (t: AccountType) => accountTypes.value.find((x) => x.value === t)?.class ?? ''
 
@@ -225,9 +274,15 @@ onBeforeUnmount(() => {
   mql?.removeEventListener('change', syncMobile)
 })
 
-watch(expanded, (v) => {
-  try { localStorage.setItem('admin.accounts.expanded', JSON.stringify(v)) } catch {}
-}, { deep: true })
+watch(
+  expanded,
+  (v) => {
+    try {
+      localStorage.setItem('admin.accounts.expanded', JSON.stringify(v))
+    } catch {}
+  },
+  { deep: true },
+)
 
 // ============ 过滤 & 分页 ============
 const filteredParents = computed(() => {
@@ -238,10 +293,7 @@ const filteredParents = computed(() => {
     if (!q) return true
     if (p.account_name.toLowerCase().includes(q)) return true
     const subs = subsByParent.value[p.id] ?? []
-    return subs.some((s) =>
-      s.account_name.toLowerCase().includes(q) ||
-      (s.inn && s.inn.toLowerCase().includes(q)),
-    )
+    return subs.some((s) => s.account_name.toLowerCase().includes(q) || (s.inn && s.inn.toLowerCase().includes(q)))
   })
 })
 
@@ -262,13 +314,19 @@ const pageRangeCollapsed = computed(() => {
   return out
 })
 
-watch([search, typeFilter, statusFilter], () => { page.value = 1 })
-watch(filteredParents, () => { page.value = 1 })
+watch([search, typeFilter, statusFilter], () => {
+  page.value = 1
+})
+watch(filteredParents, () => {
+  page.value = 1
+})
 
 const summary = computed(() => {
   const totalSubs = Object.values(subsByParent.value).reduce((s, arr) => s + arr.length, 0)
   const activeParents = parents.value.filter((p) => p.status === 'active').length
-  const inactiveSubs = Object.values(subsByParent.value).flat().filter((s) => s.status === 'inactive').length
+  const inactiveSubs = Object.values(subsByParent.value)
+    .flat()
+    .filter((s) => s.status === 'inactive').length
   return { totalParents: parents.value.length, activeParents, totalSubs, inactiveSubs }
 })
 
@@ -280,12 +338,14 @@ const expandAll = () => {
   for (const p of filteredParents.value) next[p.id] = true
   expanded.value = next
 }
-const collapseAll = () => { expanded.value = {} }
+const collapseAll = () => {
+  expanded.value = {}
+}
 const allExpanded = computed(() => {
   const list = filteredParents.value
-  return list.length > 0 && list.every(p => expanded.value[p.id])
+  return list.length > 0 && list.every((p) => expanded.value[p.id])
 })
-const toggleExpandAll = () => allExpanded.value ? collapseAll() : expandAll()
+const toggleExpandAll = () => (allExpanded.value ? collapseAll() : expandAll())
 
 // ============ 选择 ============
 const toggleSelect = (id: string, shift: boolean) => {
@@ -311,7 +371,10 @@ const toggleSelectPage = () => {
   else ids.forEach((id) => s.add(id))
   selected.value = s
 }
-const clearSelection = () => { selected.value = new Set(); lastSelectedId.value = null }
+const clearSelection = () => {
+  selected.value = new Set()
+  lastSelectedId.value = null
+}
 
 // ============ 父：open + submit ============
 const openParentCreate = () => {
@@ -323,7 +386,11 @@ const openParentEdit = (p: Account) => {
   openMenuId.value = null
   parentEditOpen.value = true
 }
-const submitParent = async ({ form }: { form: { account_name: string; account_type: AccountType; login_email: string } }) => {
+const submitParent = async ({
+  form,
+}: {
+  form: { account_name: string; account_type: AccountType; login_email: string }
+}) => {
   loading.value = true
   error.value = null
   try {
@@ -350,10 +417,15 @@ const submitParent = async ({ form }: { form: { account_name: string; account_ty
 }
 const toggleParent = async (p: Account) => {
   openMenuId.value = null
-  if (!confirm(t('admin.accounts.confirmToggleParent', {
-    action: p.status === 'active' ? t('admin.accounts.disabled') : t('admin.accounts.enabled'),
-    name: p.account_name,
-  }))) return
+  if (
+    !confirm(
+      t('admin.accounts.confirmToggleParent', {
+        action: p.status === 'active' ? t('admin.accounts.disabled') : t('admin.accounts.enabled'),
+        name: p.account_name,
+      }),
+    )
+  )
+    return
   loading.value = true
   try {
     await acc.updateParent(p.id, { status: p.status === 'active' ? 'inactive' : 'active' })
@@ -378,7 +450,18 @@ const openSubEdit = (parent: Account, sub: Account) => {
   subEditDefaultParentId.value = parent.id
   subEditOpen.value = true
 }
-const submitSub = async ({ form }: { form: { parent_id: string; account_name: string; account_type: AccountType; inn: string; is_main: boolean; status: 'active' | 'inactive' } }) => {
+const submitSub = async ({
+  form,
+}: {
+  form: {
+    parent_id: string
+    account_name: string
+    account_type: AccountType
+    inn: string
+    is_main: boolean
+    status: 'active' | 'inactive'
+  }
+}) => {
   loading.value = true
   error.value = null
   try {
@@ -460,10 +543,15 @@ const submitAssign = async ({ codes }: { codes: string[] }) => {
 }
 const batchToggle = async (to: 'active' | 'inactive') => {
   if (selected.value.size === 0) return
-  if (!confirm(t('admin.accounts.confirmBatchToggle', {
-    n: selected.value.size,
-    state: to === 'active' ? t('admin.accounts.active') : t('admin.accounts.disabled'),
-  }))) return
+  if (
+    !confirm(
+      t('admin.accounts.confirmBatchToggle', {
+        n: selected.value.size,
+        state: to === 'active' ? t('admin.accounts.active') : t('admin.accounts.disabled'),
+      }),
+    )
+  )
+    return
   loading.value = true
   try {
     for (const id of selected.value) {
@@ -496,7 +584,8 @@ const submitInvite = async () => {
       inviteTarget.value.id,
     )
     inviteResult.value = {
-      url, loginEmail,
+      url,
+      loginEmail,
       expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
       token: url.split('token=')[1] ?? '',
     }
@@ -545,7 +634,9 @@ const goBack = () => {
 <template>
   <div class="space-y-4">
     <!-- ===================== 顶部 hero ===================== -->
-    <header class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 sm:px-6 py-4 sm:py-5">
+    <header
+      class="relative overflow-hidden rounded-2xl border bg-gradient-to-br from-primary/[0.04] via-background to-background px-4 sm:px-6 py-4 sm:py-5"
+    >
       <div class="pointer-events-none absolute -right-12 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
       <div class="pointer-events-none absolute -right-4 top-1/2 h-24 w-24 rounded-full bg-primary/5" />
 
@@ -556,7 +647,7 @@ const goBack = () => {
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline gap-2 flex-wrap">
             <h1 class="text-base sm:text-lg font-bold leading-tight">
-              {{ t("admin.accounts.title") }}
+              {{ t('admin.accounts.title') }}
             </h1>
             <span class="text-[10px] font-semibold tracking-wider text-primary uppercase">
               Parent · Subs · StockGroups
@@ -666,28 +757,66 @@ const goBack = () => {
             <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input v-model="search" :placeholder="t('admin.accounts.searchPh')" class="pl-9 h-8 text-sm" />
           </div>
-          <Button size="sm" variant="ghost" @click="toggleExpandAll" class="shrink-0" :title="allExpanded ? t('common.collapseAll') : t('common.expandAll')">
+          <Button
+            size="sm"
+            variant="ghost"
+            @click="toggleExpandAll"
+            class="shrink-0"
+            :title="allExpanded ? t('common.collapseAll') : t('common.expandAll')"
+          >
             <ChevronDown v-if="!allExpanded" class="h-4 w-4" />
             <ChevronRight v-else class="h-4 w-4" />
           </Button>
         </div>
         <div class="flex flex-wrap gap-1.5">
-          <Button size="sm" variant="outline" class="h-7 text-xs"
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
             :class="typeFilter === 'all' ? 'border-primary text-primary' : ''"
-            @click="typeFilter = 'all'">{{ t('admin.accounts.typeAll') }}</Button>
-          <Button v-for="t in accountTypes" :key="t.value" size="sm" variant="outline" class="h-7 text-xs"
+            @click="typeFilter = 'all'"
+          >
+            {{ t('admin.accounts.typeAll') }}
+          </Button>
+          <Button
+            v-for="t in accountTypes"
+            :key="t.value"
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
             :class="typeFilter === t.value ? 'border-primary text-primary' : ''"
-            @click="typeFilter = t.value">{{ t.label }}</Button>
+            @click="typeFilter = t.value"
+          >
+            {{ t.label }}
+          </Button>
           <span class="w-px h-5 bg-border mx-1" />
-          <Button size="sm" variant="outline" class="h-7 text-xs"
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
             :class="statusFilter === 'all' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'all'">{{ t('admin.accounts.statusAll') }}</Button>
-          <Button size="sm" variant="outline" class="h-7 text-xs"
+            @click="statusFilter = 'all'"
+          >
+            {{ t('admin.accounts.statusAll') }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
             :class="statusFilter === 'active' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'active'">{{ t('admin.accounts.active') }}</Button>
-          <Button size="sm" variant="outline" class="h-7 text-xs"
+            @click="statusFilter = 'active'"
+          >
+            {{ t('admin.accounts.active') }}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            class="h-7 text-xs"
             :class="statusFilter === 'inactive' ? 'border-primary text-primary' : ''"
-            @click="statusFilter = 'inactive'">{{ t('admin.accounts.inactive') }}</Button>
+            @click="statusFilter = 'inactive'"
+          >
+            {{ t('admin.accounts.inactive') }}
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -708,31 +837,66 @@ const goBack = () => {
         @click.stop
       >
         <template v-if="isMobileMenu">
-          <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-            @click="openAssign(currentMenuParent); closeMenu()">
-            <Tag class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuAssign') }}
+          <button
+            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+            @click="
+              openAssign(currentMenuParent)
+              closeMenu()
+            "
+          >
+            <Tag class="h-4 w-4 text-muted-foreground" />
+            {{ t('admin.accounts.menuAssign') }}
           </button>
-          <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-            @click="openSubCreate(currentMenuParent); closeMenu()">
-            <Plus class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuAddSub') }}
+          <button
+            class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+            @click="
+              openSubCreate(currentMenuParent)
+              closeMenu()
+            "
+          >
+            <Plus class="h-4 w-4 text-muted-foreground" />
+            {{ t('admin.accounts.menuAddSub') }}
           </button>
           <div class="my-1 border-t" />
         </template>
-        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-          @click="openParentEdit(currentMenuParent); closeMenu()">
-          <Edit class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuEdit') }}
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="
+            openParentEdit(currentMenuParent)
+            closeMenu()
+          "
+        >
+          <Edit class="h-4 w-4 text-muted-foreground" />
+          {{ t('admin.accounts.menuEdit') }}
         </button>
-        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-          @click="openInvite(currentMenuParent); closeMenu()">
-          <Mail class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuInvite') }}
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="
+            openInvite(currentMenuParent)
+            closeMenu()
+          "
+        >
+          <Mail class="h-4 w-4 text-muted-foreground" />
+          {{ t('admin.accounts.menuInvite') }}
         </button>
-        <button class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-          @click="openReset(currentMenuParent); closeMenu()">
-          <KeyRound class="h-4 w-4 text-muted-foreground" />{{ t('admin.accounts.menuReset') }}
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
+          @click="
+            openReset(currentMenuParent)
+            closeMenu()
+          "
+        >
+          <KeyRound class="h-4 w-4 text-muted-foreground" />
+          {{ t('admin.accounts.menuReset') }}
         </button>
         <div class="my-1 border-t" />
-        <button class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
-          @click="toggleParent(currentMenuParent); closeMenu()">
+        <button
+          class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
+          @click="
+            toggleParent(currentMenuParent)
+            closeMenu()
+          "
+        >
           <PowerOff v-if="currentMenuParent.status === 'active'" class="h-4 w-4" />
           <Power v-else class="h-4 w-4" />
           {{ currentMenuParent.status === 'active' ? t('admin.accounts.disabled') : t('admin.accounts.enabled') }}
@@ -749,26 +913,38 @@ const goBack = () => {
       leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
-      <div v-if="selected.size > 0"
-        class="sticky top-0 z-10 bg-primary text-primary-foreground rounded-lg shadow-lg px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+      <div
+        v-if="selected.size > 0"
+        class="sticky top-0 z-10 bg-primary text-primary-foreground rounded-lg shadow-lg px-4 py-2.5 flex items-center justify-between gap-3 flex-wrap"
+      >
         <div class="flex items-center gap-3">
           <div class="text-sm font-medium">
-            {{ t('admin.accounts.selected') }} <span class="text-lg tabular-nums">{{ selected.size }}</span> {{ t('admin.accounts.parentsUnit') }}
+            {{ t('admin.accounts.selected') }}
+            <span class="text-lg tabular-nums">{{ selected.size }}</span>
+            {{ t('admin.accounts.parentsUnit') }}
           </div>
-          <Button size="sm" variant="ghost" class="text-primary-foreground hover:bg-primary-foreground/10 h-7"
-            @click="clearSelection">
-            <X class="h-3 w-3 mr-1" />{{ t('admin.accounts.clear') }}
+          <Button
+            size="sm"
+            variant="ghost"
+            class="text-primary-foreground hover:bg-primary-foreground/10 h-7"
+            @click="clearSelection"
+          >
+            <X class="h-3 w-3 mr-1" />
+            {{ t('admin.accounts.clear') }}
           </Button>
         </div>
         <div class="flex items-center gap-2">
           <Button size="sm" variant="secondary" @click="batchAssign">
-            <Tag class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.batchAssign') }}
+            <Tag class="h-3.5 w-3.5 mr-1" />
+            {{ t('admin.accounts.batchAssign') }}
           </Button>
           <Button size="sm" variant="secondary" @click="batchToggle('active')">
-            <Power class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.enabled') }}
+            <Power class="h-3.5 w-3.5 mr-1" />
+            {{ t('admin.accounts.enabled') }}
           </Button>
           <Button size="sm" variant="secondary" @click="batchToggle('inactive')">
-            <PowerOff class="h-3.5 w-3.5 mr-1" />{{ t('admin.accounts.disabled') }}
+            <PowerOff class="h-3.5 w-3.5 mr-1" />
+            {{ t('admin.accounts.disabled') }}
           </Button>
         </div>
       </div>
@@ -785,9 +961,19 @@ const goBack = () => {
       </p>
       <div class="flex justify-center gap-2">
         <Button v-if="parents.length === 0" size="sm" @click="goImport">
-          <Upload class="h-4 w-4 mr-1" />{{ t('admin.accounts.uploadCta') }}
+          <Upload class="h-4 w-4 mr-1" />
+          {{ t('admin.accounts.uploadCta') }}
         </Button>
-        <Button v-else size="sm" variant="outline" @click="search = ''; typeFilter = 'all'; statusFilter = 'all'">
+        <Button
+          v-else
+          size="sm"
+          variant="outline"
+          @click="
+            search = ''
+            typeFilter = 'all'
+            statusFilter = 'all'
+          "
+        >
           {{ t('admin.accounts.clearFilter') }}
         </Button>
       </div>
@@ -797,43 +983,63 @@ const goBack = () => {
     <div v-else class="space-y-2">
       <div class="flex items-center justify-between text-xs text-muted-foreground px-1">
         <label class="flex items-center gap-2 cursor-pointer hover:text-foreground">
-          <input type="checkbox" class="rounded"
-            :checked="pagedParents.every(p => selected.has(p.id)) && pagedParents.length > 0"
-            @change="toggleSelectPage" />
+          <input
+            type="checkbox"
+            class="rounded"
+            :checked="pagedParents.every((p) => selected.has(p.id)) && pagedParents.length > 0"
+            @change="toggleSelectPage"
+          />
           {{ t('admin.accounts.page', { p: page, total: totalPages, n: filteredParents.length }) }}
         </label>
-        <span v-if="selected.size > 0" class="text-primary">{{ t('admin.accounts.pageSelected', { n: selected.size }) }}</span>
+        <span v-if="selected.size > 0" class="text-primary">
+          {{ t('admin.accounts.pageSelected', { n: selected.size }) }}
+        </span>
       </div>
 
       <Card v-for="p in pagedParents" :key="p.id" class="overflow-hidden">
-        <div class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
-          :class="selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-muted/40'">
-          <input type="checkbox" class="rounded shrink-0"
+        <div
+          class="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-3 transition"
+          :class="selected.has(p.id) ? 'bg-primary/5' : 'hover:bg-muted/40'"
+        >
+          <input
+            type="checkbox"
+            class="rounded shrink-0"
             :checked="selected.has(p.id)"
             @click.stop
-            @change="toggleSelect(p.id, ($event as MouseEvent).shiftKey)" />
+            @change="toggleSelect(p.id, ($event as MouseEvent).shiftKey)"
+          />
           <button class="shrink-0 p-1 -m-1 rounded hover:bg-muted" @click.stop="toggleExpand(p.id)">
             <component :is="expanded[p.id] ? ChevronDown : ChevronRight" class="h-4 w-4 text-muted-foreground" />
           </button>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <span class="font-semibold truncate">{{ p.account_name }}</span>
-              <span class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border font-medium"
-                :class="typeClass(p.account_type)">
-                {{ accountTypes.find(x => x.value === p.account_type)?.label }}              </span>
-              <span v-if="p.status === 'active'"
-                class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" />{{ t('admin.accounts.active') }}
+              <span
+                class="text-xs inline-flex items-center px-1.5 py-0.5 rounded border font-medium"
+                :class="typeClass(p.account_type)"
+              >
+                {{ accountTypes.find((x) => x.value === p.account_type)?.label }}
               </span>
-              <span v-else
-                class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-                <span class="w-1.5 h-1.5 rounded-full bg-gray-400" />{{ t('admin.accounts.disabled') }}
+              <span
+                v-if="p.status === 'active'"
+                class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200"
+              >
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                {{ t('admin.accounts.active') }}
+              </span>
+              <span
+                v-else
+                class="text-xs inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200"
+              >
+                <span class="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                {{ t('admin.accounts.disabled') }}
               </span>
             </div>
             <p class="text-xs text-muted-foreground mt-0.5">
               {{ subsByParent[p.id]?.length ?? 0 }} {{ t('admin.accounts.subsUnit') }}
               <span v-if="subsByParent[p.id]?.length">
-                · {{ (subsByParent[p.id] ?? []).filter(s => s.status === 'active').length }} {{ t('admin.accounts.subsActiveSuffix') }}
+                · {{ (subsByParent[p.id] ?? []).filter((s) => s.status === 'active').length }}
+                {{ t('admin.accounts.subsActiveSuffix') }}
               </span>
             </p>
           </div>
@@ -847,8 +1053,7 @@ const goBack = () => {
               <span class="hidden md:inline">{{ t('admin.accounts.menuAddSub') }}</span>
             </Button>
             <div class="relative" data-row-menu :data-row-id="p.id">
-              <Button size="sm" variant="ghost" class="h-8 w-8 p-0"
-                @click.stop="toggleMenu($event, p.id)">
+              <Button size="sm" variant="ghost" class="h-8 w-8 p-0" @click.stop="toggleMenu($event, p.id)">
                 <MoreHorizontal class="h-4 w-4" />
               </Button>
             </div>
@@ -864,22 +1069,38 @@ const goBack = () => {
             {{ t('admin.accounts.noSubs') }}
           </div>
           <div v-else class="space-y-1.5">
-            <div v-for="s in subsByParent[p.id]" :key="s.id"
-              class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 transition">
+            <div
+              v-for="s in subsByParent[p.id]"
+              :key="s.id"
+              class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/60 transition"
+            >
               <Star v-if="s.is_main" class="h-3.5 w-3.5 text-amber-500 shrink-0" />
               <Users v-else class="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               <span class="text-sm flex-1 truncate">{{ s.account_name }}</span>
               <span v-if="s.inn" class="text-xs text-muted-foreground font-mono hidden sm:inline">{{ s.inn }}</span>
-              <span class="text-xs px-1.5 py-0.5 rounded"
-                :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'">
+              <span
+                class="text-xs px-1.5 py-0.5 rounded"
+                :class="s.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'"
+              >
                 {{ s.status === 'active' ? t('admin.accounts.subAvailable') : t('admin.accounts.disabled') }}
               </span>
-              <Button v-if="!s.is_main" size="sm" variant="ghost" class="h-6 w-6 p-0"
-                @click="setMain(p.id, s)" :title="t('admin.accounts.setMain')">
+              <Button
+                v-if="!s.is_main"
+                size="sm"
+                variant="ghost"
+                class="h-6 w-6 p-0"
+                @click="setMain(p.id, s)"
+                :title="t('admin.accounts.setMain')"
+              >
                 <Star class="h-3 w-3" />
               </Button>
-              <Button size="sm" variant="ghost" class="h-6 w-6 p-0"
-                @click="openSubEdit(p, s)" :title="t('admin.accounts.menuEdit')">
+              <Button
+                size="sm"
+                variant="ghost"
+                class="h-6 w-6 p-0"
+                @click="openSubEdit(p, s)"
+                :title="t('admin.accounts.menuEdit')"
+              >
                 <Edit class="h-3 w-3" />
               </Button>
             </div>
@@ -894,21 +1115,16 @@ const goBack = () => {
       class="flex flex-col sm:flex-row items-center justify-between gap-3 px-1"
     >
       <p class="text-xs text-muted-foreground tabular-nums">
-        第 <span class="font-medium text-foreground">{{ page }}</span> /
-        <span class="font-medium text-foreground">{{ totalPages }}</span> 页
-        · 共 <span class="font-medium text-foreground">{{ filteredParents.length }}</span> 个父账号
-        · 每页 {{ PAGE_SIZE }}
+        第
+        <span class="font-medium text-foreground">{{ page }}</span>
+        /
+        <span class="font-medium text-foreground">{{ totalPages }}</span>
+        页 · 共
+        <span class="font-medium text-foreground">{{ filteredParents.length }}</span>
+        个父账号 · 每页 {{ PAGE_SIZE }}
       </p>
       <div class="flex items-center gap-1">
-        <Button
-          size="sm"
-          variant="outline"
-          :disabled="page === 1"
-          class="h-8 px-2"
-          @click="page = 1"
-        >
-          «
-        </Button>
+        <Button size="sm" variant="outline" :disabled="page === 1" class="h-8 px-2" @click="page = 1">«</Button>
         <Button
           size="sm"
           variant="outline"
@@ -974,13 +1190,7 @@ const goBack = () => {
         >
           <ChevronRight class="h-3.5 w-3.5" />
         </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          :disabled="page === totalPages"
-          class="h-8 px-2"
-          @click="page = totalPages"
-        >
+        <Button size="sm" variant="outline" :disabled="page === totalPages" class="h-8 px-2" @click="page = totalPages">
           »
         </Button>
       </div>
@@ -1035,7 +1245,7 @@ const goBack = () => {
 </template>
 
 <style scoped>
-input[type="checkbox"] {
+input[type='checkbox'] {
   cursor: pointer;
 }
 </style>
