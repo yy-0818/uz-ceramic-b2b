@@ -149,3 +149,43 @@ jobs:
       - name: Run npm audit (high+)
         # audit-level=high 只阻断高危以上漏洞，低/中不阻断
         run: npm audit --audit-level=high --omit=dev
+
+  # Job 5: Playwright E2E（仅跑不依赖真实 Supabase 的"守卫"测试）
+  e2e:
+    name: E2E (guard tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --ignore-scripts
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        env:
+          VITE_SUPABASE_URL: https://placeholder.supabase.co
+          VITE_SUPABASE_ANON_KEY: placeholder-anon-key
+          VITE_SUPABASE_FUNCTIONS_URL: https://placeholder.supabase.co/functions/v1
+        run: npm run build
+
+      - name: Run E2E (only auth + guard + mobile suites)
+        # 跑不需要真实后端的测试
+        run: npx playwright test auth.spec.ts guard.spec.ts mobile.spec.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.sha }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
