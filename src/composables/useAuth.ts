@@ -13,6 +13,7 @@ import { resetAccounts } from './useAccounts'
 import { resetFinance } from './useFinance'
 import { resetCart } from './useCart'
 import { resetChat } from './useChat'
+import { setUserContext, reportError } from '@/lib/sentry'
 
 /**
  * 切换账号时，清空所有 composable 模块级单例缓存。
@@ -152,6 +153,11 @@ export function useAuth() {
       }
       appUser.value = userRow
       try { localStorage.setItem('appUser', JSON.stringify(userRow)) } catch {}
+      // Sentry: 同步 user context（错误归属到具体人）
+      setUserContext({
+        id: uid,
+        role: userRow.role,
+      })
 
       // 3. 拿父账号（兼容 customer 路径：acc 已经在前面拿到）
       if (!account.value) {
@@ -162,6 +168,8 @@ export function useAuth() {
       }
     } catch (e: unknown) {
       error.value = e instanceof Error ? e.message : 'profile load failed'
+      // 业务错误：登录后 profile 缺失这种，应上报供管理员排查
+      reportError(e, { phase: 'loadProfile', uid })
     }
   }
 
@@ -181,6 +189,7 @@ export function useAuth() {
 
   const signOut = async () => {
     clearAllCaches()
+    setUserContext(null)
     await supabase.auth.signOut()
     appUser.value = null
     account.value = null

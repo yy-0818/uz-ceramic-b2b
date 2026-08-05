@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import { i18n, useI18n, setLocale } from './lib/i18n'
+import { initSentry } from './lib/sentry'
 import { initTheme } from './composables/useTheme'
 import { registerPermissionDirective } from './directives/permission'
 
@@ -12,6 +13,9 @@ import './assets/main.css'
 initTheme()
 
 const app = createApp(App)
+
+// Sentry 必须在最早错误可能产生前初始化（接住模块顶层 throw）
+initSentry({ app, router })
 
 app.config.globalProperties.$t = i18n.global.t
 app.config.globalProperties.$i18n = i18n
