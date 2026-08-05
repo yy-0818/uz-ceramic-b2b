@@ -1038,8 +1038,10 @@ const onCopyMessage = async (m: ChatMessage) => {
       @post-system="onPostSystem"
       @take-over="onTakeOver"
       @toggle-action-menu="
-        showActionMenu = !showActionMenu
-        showTransferMenu = false
+        () => {
+          showActionMenu = !showActionMenu
+          showTransferMenu = false
+        }
       "
     >
       <template #status-dot>
@@ -1053,8 +1055,10 @@ const onCopyMessage = async (m: ChatMessage) => {
           <button
             class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
             @click="
-              onTakeOver()
-              showActionMenu = false
+              ($event) => {
+                onTakeOver()
+                showActionMenu = false
+              }
             "
           >
             <UserPlus class="h-3.5 w-3.5" />
@@ -1063,8 +1067,10 @@ const onCopyMessage = async (m: ChatMessage) => {
           <button
             class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted flex items-center gap-1.5"
             @click="
-              showTransferMenu = !showTransferMenu
-              showActionMenu = false
+              ($event) => {
+                showTransferMenu = !showTransferMenu
+                showActionMenu = false
+              }
             "
           >
             <ArrowRightLeft class="h-3.5 w-3.5" />
@@ -1074,9 +1080,11 @@ const onCopyMessage = async (m: ChatMessage) => {
             <button
               class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
               @click="
-                onTransfer(null)
-                showTransferMenu = false
-                showActionMenu = false
+                ($event) => {
+                  onTransfer(null)
+                  showTransferMenu = false
+                  showActionMenu = false
+                }
               "
             >
               {{ t('chat.unassign') }}
@@ -1087,9 +1095,11 @@ const onCopyMessage = async (m: ChatMessage) => {
               class="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted"
               :class="s.id === conversation?.assigned_to ? 'bg-primary/10' : ''"
               @click="
-                onTransfer(s.id)
-                showTransferMenu = false
-                showActionMenu = false
+                ($event) => {
+                  onTransfer(s.id)
+                  showTransferMenu = false
+                  showActionMenu = false
+                }
               "
             >
               {{ s.full_name ?? s.id.slice(0, 8) }}
