@@ -342,8 +342,10 @@ const titleOf = (c: ChatConversation) => {
           size="sm"
           :variant="filter === 'all' ? 'default' : 'ghost'"
           @click="
-            filter = 'all'
-            fetchList()
+            () => {
+              filter = 'all'
+              fetchList()
+            }
           "
         >
           {{ t('chat.filterAll') }}
@@ -352,8 +354,10 @@ const titleOf = (c: ChatConversation) => {
           size="sm"
           :variant="filter === 'open' ? 'default' : 'ghost'"
           @click="
-            filter = 'open'
-            fetchList()
+            () => {
+              filter = 'open'
+              fetchList()
+            }
           "
         >
           {{ t('chat.filterOpen') }}
@@ -362,8 +366,10 @@ const titleOf = (c: ChatConversation) => {
           size="sm"
           :variant="filter === 'closed' ? 'default' : 'ghost'"
           @click="
-            filter = 'closed'
-            fetchList()
+            () => {
+              filter = 'closed'
+              fetchList()
+            }
           "
         >
           {{ t('chat.filterClosed') }}
@@ -547,8 +553,10 @@ const titleOf = (c: ChatConversation) => {
                 class="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-muted"
                 :title="t('chat.selectAllInGroup')"
                 @click.stop="
-                  for (const c of g.conversations) selectedIds.add(c.id)
-                  selectedIds = new Set(selectedIds)
+                  () => {
+                    g.conversations.forEach((c) => selectedIds.add(c.id))
+                    selectedIds = new Set(selectedIds)
+                  }
                 "
               >
                 <CheckSquare class="h-4 w-4 text-primary" />

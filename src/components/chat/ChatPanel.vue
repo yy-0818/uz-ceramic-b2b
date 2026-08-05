@@ -887,10 +887,27 @@ const counterpartStatus = computed(() => {
 })
 
 const counterpartName = computed(() => {
+  // 1) 优先用 account.account_name (admin 维护的"客户名"通常不含邮箱，
+  //    也不会因为 invite 时把 email 写进 users.full_name 而带脏数据)
+  if (accountInfo.value?.account_name) return accountInfo.value.account_name
+  // 2) fallback 到 user.full_name (清空旧邮箱后的干净名字)
   if (counterpart.value?.user?.full_name) return counterpart.value.user.full_name
   if (appUser.value?.role === 'customer') return t('chat.notAssigned')
   return t('chat.staff')
 })
+
+// 拉一次 account 字段 (account_name / login_email) 作为 counterpartName 的优先来源
+const accountInfo = ref<{ account_name: string | null; login_email: string | null } | null>(null)
+watch(
+  () => props.accountId,
+  async (id) => {
+    accountInfo.value = null
+    if (!id) return
+    const { data } = await supabase.from('accounts').select('account_name, login_email').eq('id', id).maybeSingle()
+    accountInfo.value = (data as any) ?? null
+  },
+  { immediate: true },
+)
 
 // Phase 9: 引用解析 - 用本地缓存找到被引用消息
 const messageMap = computed(() => {
