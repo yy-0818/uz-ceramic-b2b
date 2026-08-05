@@ -8,16 +8,24 @@
  *   - 禁用/启用：留接口，迁移 0026 后接入
  */
 import { ref, onMounted, computed } from 'vue'
-import { Plus, RefreshCcw, ShieldCheck, Package, Wallet, Wrench } from 'lucide-vue-next'
+import { Plus, RefreshCcw, ShieldCheck, Package, Wallet, Wrench, KeyRound, Copy, Loader2 } from 'lucide-vue-next'
 import { useI18n } from '@/lib/i18n'
 import { useStaffManagement, type StaffRole, type StaffMember } from '@/composables/useStaffManagement'
+import { reportIfInteresting } from '@/lib/sentry'
 
 const { t } = useI18n()
-const { members, loading, error, fetchMembers, createMember, roles } = useStaffManagement()
+const { members, loading, error, fetchMembers, createMember, resetPassword, roles } = useStaffManagement()
 
 const showDialog = ref(false)
 const submitting = ref(false)
 const dialogError = ref<string | null>(null)
+
+// 重置密码 dialog 状态
+const resetTarget = ref<StaffMember | null>(null)
+const resetTempPassword = ref<string | null>(null)
+const resetEmail = ref<string | null>(null)
+const resetLoading = ref(false)
+const resetCopied = ref(false)
 const form = ref<{
   email: string
   password: string
@@ -36,17 +44,25 @@ const form = ref<{
 
 const roleIcon = (r: StaffRole) => {
   switch (r) {
-    case 'admin': return ShieldCheck
-    case 'checker': return ShieldCheck
-    case 'warehouse': return Package
-    case 'finance': return Wallet
-    default: return Wrench
+    case 'admin':
+      return ShieldCheck
+    case 'checker':
+      return ShieldCheck
+    case 'warehouse':
+      return Package
+    case 'finance':
+      return Wallet
+    default:
+      return Wrench
   }
 }
 
 const grouped = computed(() => {
   const out: Record<StaffRole, StaffMember[]> = {
-    admin: [], checker: [], warehouse: [], finance: [],
+    admin: [],
+    checker: [],
+    warehouse: [],
+    finance: [],
   }
   for (const m of members.value) {
     if (m.role in out) out[m.role as StaffRole].push(m)
@@ -60,8 +76,12 @@ const onOpenDialog = () => {
   showDialog.value = true
   dialogError.value = null
   form.value = {
-    email: '', password: '', password2: '',
-    role: 'checker', full_name: '', phone: '',
+    email: '',
+    password: '',
+    password2: '',
+    role: 'checker',
+    full_name: '',
+    phone: '',
   }
 }
 
@@ -85,6 +105,47 @@ const onSubmit = async () => {
     showDialog.value = false
   } else {
     dialogError.value = r.error ?? t('staff.createFail')
+  }
+}
+
+const openResetDialog = (m: StaffMember) => {
+  resetTarget.value = m
+  resetTempPassword.value = null
+  resetEmail.value = null
+  resetCopied.value = false
+}
+
+const closeResetDialog = () => {
+  resetTarget.value = null
+  resetTempPassword.value = null
+  resetEmail.value = null
+  resetLoading.value = false
+  resetCopied.value = false
+}
+
+const onResetPassword = async () => {
+  if (!resetTarget.value) return
+  resetLoading.value = true
+  const r = await resetPassword(resetTarget.value.id)
+  resetLoading.value = false
+  if (r.ok && r.tempPassword) {
+    resetTempPassword.value = r.tempPassword
+    resetEmail.value = r.email ?? null
+  } else {
+    // 用 alert 简单提示错误 (staff 页面已用 alert-error 风格)
+    reportIfInteresting(new Error(r.error ?? '重置失败'), { phase: 'resetStaffPassword' })
+    alert(r.error ?? '重置失败')
+  }
+}
+
+const copyTempPassword = async () => {
+  if (!resetTempPassword.value) return
+  try {
+    await navigator.clipboard.writeText(resetTempPassword.value)
+    resetCopied.value = true
+    setTimeout(() => (resetCopied.value = false), 1500)
+  } catch {
+    /* clipboard 不可用, 用户手动复制 */
   }
 }
 </script>
@@ -130,6 +191,9 @@ const onSubmit = async () => {
                 <div class="text-sm opacity-70" v-else>{{ m.phone || `id: ${m.id.slice(0, 8)}…` }}</div>
               </div>
               <span class="badge badge-ghost">{{ m.is_active ? t('staff.active') : t('staff.inactive') }}</span>
+              <button class="btn btn-ghost btn-xs" title="重置密码" @click="openResetDialog(m)">
+                <KeyRound class="w-3.5 h-3.5" />
+              </button>
             </li>
           </ul>
         </div>
@@ -180,6 +244,45 @@ const onSubmit = async () => {
         </form>
       </div>
       <form method="dialog" class="modal-backdrop"><button @click="showDialog = false">close</button></form>
+    </dialog>
+
+    <!-- 重置密码对话框 -->
+    <dialog class="modal" :open="resetTarget !== null">
+      <div class="modal-box">
+        <h3 class="font-bold text-lg mb-4">重置密码：{{ resetTarget?.full_name || resetTarget?.email || '员工' }}</h3>
+
+        <!-- step 1: 确认 -->
+        <div v-if="!resetTempPassword" class="space-y-3">
+          <p class="text-sm text-base-content/70">将生成新的临时密码。员工登录后建议自行修改。</p>
+          <div class="modal-action">
+            <button class="btn" @click="closeResetDialog">取消</button>
+            <button class="btn btn-primary" :disabled="resetLoading" @click="onResetPassword">
+              <Loader2 v-if="resetLoading" class="w-4 h-4 mr-1 animate-spin" />
+              <KeyRound v-else class="w-4 h-4 mr-1" />
+              生成临时密码
+            </button>
+          </div>
+        </div>
+
+        <!-- step 2: 显示临时密码 -->
+        <div v-else class="space-y-3">
+          <div class="alert alert-warning text-xs">
+            临时密码已生成，请复制并安全转交给员工。本对话框关闭后无法再次查看。
+          </div>
+          <div v-if="resetEmail" class="text-xs text-base-content/60">登录邮箱：{{ resetEmail }}</div>
+          <div class="flex items-center gap-2">
+            <input :value="resetTempPassword" readonly class="input input-bordered input-sm flex-1 font-mono" />
+            <button class="btn btn-outline btn-sm" @click="copyTempPassword">
+              <Copy class="w-3.5 h-3.5" />
+              {{ resetCopied ? '已复制' : '复制' }}
+            </button>
+          </div>
+          <div class="modal-action">
+            <button class="btn btn-primary" @click="closeResetDialog">完成</button>
+          </div>
+        </div>
+      </div>
+      <form method="dialog" class="modal-backdrop"><button @click="closeResetDialog">close</button></form>
     </dialog>
   </div>
 </template>

@@ -23,7 +23,7 @@ export interface StaffMember {
   full_name: string | null
   phone: string | null
   role: StaffRole
-  is_active: boolean   // 由 created_at + last_sign_in_at 推算，简化版本
+  is_active: boolean // 由 created_at + last_sign_in_at 推算，简化版本
   created_at: string
   last_sign_in_at: string | null
 }
@@ -36,6 +36,7 @@ interface UseStaffManagement {
   error: Ref<string | null>
   fetchMembers(): Promise<void>
   createMember(input: CreateMemberInput): Promise<{ ok: boolean; userId?: string; error?: string }>
+  resetPassword(userId: string): Promise<{ ok: boolean; tempPassword?: string; email?: string; error?: string }>
   roles: typeof STAFF_ROLES
 }
 
@@ -80,7 +81,7 @@ export function useStaffManagement(): UseStaffManagement {
       }>
       members.value = list.map((u) => ({
         id: u.id,
-        email: null,    // 创建后由 function 回填；MVP 不展示给管理员（避免泄漏）
+        email: null, // 创建后由 function 回填；MVP 不展示给管理员（避免泄漏）
         full_name: u.full_name,
         phone: u.phone,
         role: u.role as StaffRole,
@@ -112,8 +113,8 @@ export function useStaffManagement(): UseStaffManagement {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+          Authorization: `Bearer ${accessToken}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
         },
         body: JSON.stringify(input),
       })
@@ -130,5 +131,37 @@ export function useStaffManagement(): UseStaffManagement {
     }
   }
 
-  return { members, loading, error, fetchMembers, createMember, roles: STAFF_ROLES }
+  /** Admin 重置员工密码：调 reset-staff-password edge function, 拿到 temp password */
+  const resetPassword = async (
+    userId: string,
+  ): Promise<{ ok: boolean; tempPassword?: string; email?: string; error?: string }> => {
+    error.value = null
+    try {
+      const { data: sessionData } = await supabase.auth.getSession()
+      const accessToken = sessionData.session?.access_token
+      if (!accessToken) {
+        return { ok: false, error: '当前未登录' }
+      }
+      const fnUrl = `${import.meta.env.VITE_SUPABASE_FUNCTIONS_URL}/reset-staff-password`
+      const resp = await fetch(fnUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? '',
+        },
+        body: JSON.stringify({ user_id: userId }),
+      })
+      const result = await resp.json().catch(() => ({}))
+      if (!resp.ok) {
+        return { ok: false, error: result?.error ?? `HTTP ${resp.status}` }
+      }
+      return { ok: true, tempPassword: result.temp_password, email: result.email }
+    } catch (e: any) {
+      reportIfInteresting(e, { phase: 'resetStaffPassword', userId })
+      return { ok: false, error: e?.message ?? '重置密码失败' }
+    }
+  }
+
+  return { members, loading, error, fetchMembers, createMember, resetPassword, roles: STAFF_ROLES }
 }

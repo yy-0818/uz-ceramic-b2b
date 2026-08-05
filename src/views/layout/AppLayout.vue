@@ -6,7 +6,23 @@
 import { computed, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from '@/lib/i18n'
-import { LogOut, Factory, Package, Upload, Filter, FileText, ClipboardCheck, Landmark, Truck, Database, Users, Headphones, MoreHorizontal, ArrowLeft } from 'lucide-vue-next'
+import {
+  LogOut,
+  Factory,
+  Package,
+  Upload,
+  Filter,
+  FileText,
+  ClipboardCheck,
+  Landmark,
+  Truck,
+  Database,
+  Users,
+  Headphones,
+  MoreHorizontal,
+  ArrowLeft,
+  Settings,
+} from 'lucide-vue-next'
 
 import { useAuth } from '@/composables/useAuth'
 import Badge from '@/components/ui/Badge.vue'
@@ -47,7 +63,15 @@ const navItems = computed<NavItem[]>(() => {
   }
   // Phase 7: 统一聊天中心 (unified). 客户一对一 / 后台一对多.
   const role = appUser.value?.role
-  if (role && (role === 'admin' || role === 'checker' || role === 'finance' || role === 'warehouse' || role === 'customer' || role === 'fin_customer')) {
+  if (
+    role &&
+    (role === 'admin' ||
+      role === 'checker' ||
+      role === 'finance' ||
+      role === 'warehouse' ||
+      role === 'customer' ||
+      role === 'fin_customer')
+  ) {
     items.push({ name: t('chat.workspace'), to: '/chat', icon: Headphones })
   }
   return items
@@ -56,10 +80,10 @@ const navItems = computed<NavItem[]>(() => {
 // 移动端：底部固定 4 项 = catalog/orders + 当前角色最高频入口 + "更多"
 // 这样在 admin 视角下也能露出核心 + 抽屉。
 const MOBILE_PRIMARY: Record<string, string[]> = {
-  admin:     ['/admin/import', '/admin/products', '/admin/accounts', '/chat'],
-  customer:  ['/catalog', '/orders', '/chat'],
-  checker:   ['/audit', '/chat'],
-  finance:   ['/finance', '/chat'],
+  admin: ['/admin/import', '/admin/products', '/admin/accounts', '/chat'],
+  customer: ['/catalog', '/orders', '/chat'],
+  checker: ['/audit', '/chat'],
+  finance: ['/finance', '/chat'],
   warehouse: ['/warehouse', '/chat'],
 }
 
@@ -86,8 +110,7 @@ const overflowItems = computed<NavItem[]>(() => {
 
 const moreOpen = ref(false)
 
-const isActive = (to: string) =>
-  route.path === to || route.path.startsWith(to + '/')
+const isActive = (to: string) => route.path === to || route.path.startsWith(to + '/')
 
 const onLogout = async () => {
   await signOut()
@@ -125,12 +148,18 @@ const onBack = () => {
 // 按角色自动落到对应首页（避免管理员登录后落在客户式浏览页）
 const homeByRole = (role: string | undefined) => {
   switch (role) {
-    case 'admin':     return '/admin/import'
-    case 'checker':   return '/audit'
-    case 'finance':   return '/finance'
-    case 'warehouse': return '/warehouse'
-    case 'customer':  return '/catalog'
-    default:          return '/orders'
+    case 'admin':
+      return '/admin/import'
+    case 'checker':
+      return '/audit'
+    case 'finance':
+      return '/finance'
+    case 'warehouse':
+      return '/warehouse'
+    case 'customer':
+      return '/catalog'
+    default:
+      return '/orders'
   }
 }
 import { onMounted } from 'vue'
@@ -175,7 +204,9 @@ onMounted(() => {
     </aside>
 
     <div class="flex-1 flex flex-col min-w-0">
-      <header class="sticky top-0 z-40 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur">
+      <header
+        class="sticky top-0 z-40 h-14 border-b flex items-center justify-between px-4 bg-background/95 backdrop-blur"
+      >
         <div class="flex items-center gap-2 min-w-0">
           <button
             v-if="showBack"
@@ -196,6 +227,15 @@ onMounted(() => {
           <NotificationBell v-if="appUser" />
           <ThemeToggle />
           <LocaleMenu />
+          <Button
+            size="sm"
+            variant="ghost"
+            :title="'账户设置'"
+            :aria-label="'账户设置'"
+            @click="router.push('/settings')"
+          >
+            <Settings class="h-4 w-4" />
+          </Button>
           <Button size="sm" variant="ghost" @click="onLogout">
             <LogOut class="h-4 w-4" />
           </Button>
@@ -208,7 +248,10 @@ onMounted(() => {
 
       <!-- 移动端底部 nav：精简 4 个 + "更多" -->
       <nav class="md:hidden fixed bottom-0 inset-x-0 border-t bg-background/95 backdrop-blur z-20">
-        <div class="grid items-center h-14" :style="{ gridTemplateColumns: `repeat(${primaryItems.length + 1}, minmax(0, 1fr))` }">
+        <div
+          class="grid items-center h-14"
+          :style="{ gridTemplateColumns: `repeat(${primaryItems.length + 1}, minmax(0, 1fr))` }"
+        >
           <RouterLink
             v-for="it in primaryItems"
             :key="it.to"
@@ -251,7 +294,8 @@ onMounted(() => {
       </ul>
       <div class="mt-4 pt-3 border-t space-y-3">
         <p class="text-xs text-muted-foreground">
-          {{ t('common.currentRole') }}<strong>{{ appUser?.role }}</strong>
+          {{ t('common.currentRole') }}
+          <strong>{{ appUser?.role }}</strong>
           · {{ account?.account_name }}
         </p>
         <!-- 移动端把语言/主题放进抽屉，避免挤底部 4 项 -->

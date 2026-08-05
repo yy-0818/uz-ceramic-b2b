@@ -24,3 +24,12 @@ verify_jwt = true
 # create-staff-user：admin 已登录态调用，前端带 admin JWT 即可
 [functions.create-staff-user]
 verify_jwt = true
+
+# change-own-password：登录用户改自己的密码 (客户/员工通用)
+# 必须已登录 (网关验证 JWT), 函数内再校验旧密码
+[functions.change-own-password]
+verify_jwt = true
+
+# reset-staff-password：admin 重置员工密码, admin 已登录态调用, 带 admin JWT
+[functions.reset-staff-password]
+verify_jwt = true

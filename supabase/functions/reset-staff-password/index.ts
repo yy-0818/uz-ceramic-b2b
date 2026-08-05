@@ -1,10 +1,10 @@
-// supabase/functions/reset-customer-password/index.ts
-// Admin flow: 重置主账号对应的客户密码 → 返回 temp password
+// supabase/functions/reset-staff-password/index.ts
+// Admin flow: 重置员工 (admin/checker/warehouse/finance) 密码 → 返回 temp password
 //   1. 校验调用者是 admin
-//   2. 拉 accounts.user_id + accounts.login_email
+//   2. 校验目标用户的 role 是 staff role (防止误重置 customer)
 //   3. 生成随机临时密码
 //   4. 用 service_role 改密码
-//   5. 把所有未使用的 invite 标 used（防止旧链接被用）
+//   5. 返回 temp password
 
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -14,17 +14,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const STAFF_ROLES = ['admin', 'checker', 'warehouse', 'finance']
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders })
 
-  // 1. 校验 admin
   const ctx = await requireAdmin(req)
   if (!ctx.ok) return ctx.response
 
   try {
-    const { parent_id } = await req.json()
-    if (!parent_id) return json({ error: 'missing parent_id' }, 400)
+    const { user_id } = await req.json()
+    if (!user_id) return json({ error: 'missing user_id' }, 400)
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -32,42 +33,35 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
-    // 2. 拉父账号
-    const { data: acc, error: aErr } = await supabaseAdmin
-      .from('accounts')
-      .select('id, user_id, login_email, account_name')
-      .eq('id', parent_id)
+    // 1. 校验目标用户存在 + role 是 staff
+    const { data: profile, error: pErr } = await supabaseAdmin
+      .from('users')
+      .select('role, email')
+      .eq('id', user_id)
       .single()
-    if (aErr || !acc) return json({ error: 'account not found' }, 404)
-    if (!acc.user_id) return json({ error: '该主账号尚未绑登录账号，请先邀请客户登录' }, 400)
-    if (!acc.login_email) return json({ error: '该主账号没有 login_email' }, 400)
+    if (pErr || !profile) return json({ error: '用户不存在' }, 404)
+    if (!STAFF_ROLES.includes(profile.role)) {
+      return json({ error: '只能重置员工账号 (admin/checker/warehouse/finance)' }, 400)
+    }
+
+    // 2. 拿到 email（返回给前端显示）
+    const { data: userData, error: uErr } = await supabaseAdmin.auth.admin.getUserById(user_id)
+    if (uErr || !userData?.user) return json({ error: 'auth user not found' }, 404)
+    const email = userData.user.email ?? profile.email
 
     // 3. 生成临时密码
     const tempPassword = generatePassword()
 
     // 4. 改密码
-    const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(acc.user_id, { password: tempPassword })
+    const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { password: tempPassword })
     if (updErr) return json({ error: updErr.message }, 500)
 
-    // 5. 标记未使用的 invite 为 used.
-    //    如果这条失败, 旧 invite 仍可用 → 客户能用邀请链接登录 (用 invite 流程重设密码)
-    //    主流程已成功, 这里 best-effort 记录错误日志但仍返回成功.
-    const { error: inviteErr } = await supabaseAdmin
-      .from('customer_invites')
-      .update({ used_at: new Date().toISOString() })
-      .eq('account_id', parent_id)
-      .is('used_at', null)
-    if (inviteErr) {
-      console.log('[reset-customer-password] invite mark-used failed (non-fatal):', inviteErr.message)
-    }
-
-    return json({ ok: true, temp_password: tempPassword, email: acc.login_email })
-  } catch (e) {
+    return json({ ok: true, temp_password: tempPassword, email })
+  } catch (e: any) {
     return json({ error: String(e?.message ?? e) }, 500)
   }
 })
 
-/** 校验调用者是 admin；返回 { ok: true } 或 { ok: false, response } */
 async function requireAdmin(req: Request): Promise<{ ok: true } | { ok: false; response: Response }> {
   const auth = req.headers.get('authorization')
   if (!auth?.startsWith('Bearer ')) {

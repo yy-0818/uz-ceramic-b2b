@@ -66,16 +66,26 @@ Deno.serve(async (req) => {
       .eq('id', parent_id)
     if (updErr) return json({ error: updErr.message }, 500)
 
-    // 5. 写 public.users
-    await supabaseAdmin
-      .from('users')
-      .upsert({
+    // 5. 写 public.users.
+    //    如果失败, accounts 已绑 login_email + user_id 但 public.users 没更新
+    //    → 客户登录后角色不对 (触发器推断角色失败).
+    //    显式检测错误并清理 accounts 绑回, 让 admin 可重试.
+    const { error: usersErr } = await supabaseAdmin.from('users').upsert(
+      {
         id: userId,
         account_id: parent_id,
         role: 'customer',
         is_main: true,
         full_name: acc.account_name,
-      }, { onConflict: 'id' })
+      },
+      { onConflict: 'id' },
+    )
+    if (usersErr) {
+      console.log('[bind-customer-email] users upsert failed, rolling back accounts:', usersErr.message)
+      // 回滚 accounts 绑定 (auth.users 已创建, 这里只能清掉 user_id 让 admin 重试)
+      await supabaseAdmin.from('accounts').update({ user_id: null, login_email: null }).eq('id', parent_id)
+      return json({ error: `users 写入失败: ${usersErr.message}` }, 500)
+    }
 
     return json({ ok: true, user_id: userId })
   } catch (e) {
@@ -98,11 +108,7 @@ async function requireAdmin(req: Request): Promise<{ ok: true } | { ok: false; r
   if (error || !data?.user) {
     return { ok: false, response: json({ error: 'invalid token' }, 401) }
   }
-  const { data: profile } = await supabaseAdmin
-    .from('users')
-    .select('role')
-    .eq('id', data.user.id)
-    .single()
+  const { data: profile } = await supabaseAdmin.from('users').select('role').eq('id', data.user.id).single()
   if (profile?.role !== 'admin') {
     return { ok: false, response: json({ error: 'admin only' }, 403) }
   }
