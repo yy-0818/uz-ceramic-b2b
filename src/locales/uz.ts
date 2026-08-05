@@ -474,6 +474,7 @@ export default {
     // M1 工作台新增
     workspace: "Yordamchi ish o'rni",
     workspaceHint: "Barcha mijoz chatlari ko'rinadi. Ochish — avtomatik qo'shilish",
+    listLoadError: "Chatlar ro'yxatini yuklashda xatolik (pastda RPC xatosi; muqobil RLS ishlatildi)",
     filterAll: 'Hammasi',
     filterOpen: 'Ochiq',
     filterClosed: 'Yopilgan',

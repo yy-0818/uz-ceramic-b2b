@@ -644,6 +644,7 @@ export default {
     // M1 工作台新增
     workspace: '客服工作台',
     workspaceHint: '默认显示全部客户会话，点击即可查看与参与（自动接管）',
+    listLoadError: '会话列表加载失败（详见下方 RPC 错误，后端已自动回退到 RLS 模式）',
     filterAll: '全部',
     filterOpen: '进行中',
     filterClosed: '已关闭',

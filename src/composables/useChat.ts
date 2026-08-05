@@ -492,12 +492,39 @@ export function useChat() {
       listError.value = null
       try {
         const statusArg = status === 'all' ? null : status
+        // 1. 优先走 RPC (一次拿完 + 计算 unread_for_me)
         const { data, error } = await (supabase as any).rpc('rpc_chat_admin_list_conversations', {
           p_status: statusArg,
           p_limit: 200,
           p_offset: 0,
         })
-        if (error) throw error
+        if (error) {
+          // 暴露 PostgREST 400 详细 (code/details/hint), 方便排查
+          if (typeof console !== 'undefined') {
+            try {
+              console.error(
+                '[chat] rpc_chat_admin_list_conversations HTTP error\n' +
+                  JSON.stringify(
+                    {
+                      code: error?.code,
+                      details: error?.details,
+                      hint: error?.hint,
+                      message: error?.message,
+                      status: statusArg,
+                      keys: error && typeof error === 'object' ? Object.keys(error) : [],
+                    },
+                    null,
+                    2,
+                  ) +
+                  '\nraw error:\n' +
+                  JSON.stringify(error, Object.getOwnPropertyNames(error || {}), 2),
+              )
+            } catch {
+              console.error('[chat] rpc_chat_admin_list_conversations HTTP error', error)
+            }
+          }
+          throw error
+        }
         const rows = (data ?? []) as any[]
         return rows.map((r) => ({
           id: r.id,
@@ -521,9 +548,60 @@ export function useChat() {
             : null,
           unread_count: Number(r.unread_for_me ?? 0),
         }))
-      } catch (e: any) {
-        listError.value = e?.message ?? String(e)
-        return []
+      } catch (rpcErr: any) {
+        // -------- Fallback: 直接 from().select() 走 RLS --------
+        //   触发条件: RPC 因为 PostgREST 12.x 已知问题 / 上游 schema cache
+        //   stale / 函数 schema mismatch 返回 400 (raise exception 透传)
+        //   行为: 走 chat_conversations RLS — admin 看所有 / staff 看成员;
+        //   缺失的 last_message / unread_count 用 null 兜底 (UI 仍可读)
+        //   - 标记 _usedFallback=true 让前端 header 提示
+        if (typeof console !== 'undefined') {
+          console.warn('[chat] listAdminConversations RPC failed, falling back to direct select', rpcErr?.message)
+        }
+        try {
+          let q = (supabase as any)
+            .from('chat_conversations')
+            .select(
+              `
+              id, account_id, subject_order_id, assigned_to, status,
+              last_message_at, created_at, updated_at,
+              account:accounts!chat_conversations_account_id_fkey(account_name, company_name),
+              subject_order:orders!chat_conversations_subject_order_id_fkey(order_no, status),
+              assigned:users!chat_conversations_assigned_to_fkey(id, full_name, role)
+            `,
+            )
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .limit(200)
+          if (status !== 'all') q = q.eq('status', status)
+          const { data: rows, error: selectErr } = await q
+          if (selectErr) throw selectErr
+          return (rows ?? []).map((r: any) => ({
+            id: r.id,
+            account_id: r.account_id,
+            subject_order_id: r.subject_order_id,
+            assigned_to: r.assigned_to,
+            status: r.status,
+            last_message_at: r.last_message_at,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            account: {
+              account_name: r.account?.account_name ?? '—',
+              company_name: r.account?.company_name ?? '',
+            },
+            subject_order: r.subject_order
+              ? { order_no: r.subject_order.order_no, status: r.subject_order.status ?? '' }
+              : null,
+            assigned: r.assigned
+              ? { id: r.assigned.id, full_name: r.assigned.full_name, role: r.assigned.role ?? '' }
+              : null,
+            last_message: null,
+            unread_count: 0,
+            _usedFallback: true,
+          })) as any[]
+        } catch (fallbackErr: any) {
+          listError.value = `${rpcErr?.message ?? 'RPC failed'} → ${fallbackErr?.message ?? 'fallback failed'}`
+          return []
+        }
       } finally {
         loadingList.value = false
       }
