@@ -16,6 +16,7 @@ import { useI18n } from '@/lib/i18n'
 import { useChat, type ChatConversation } from '@/composables/useChat'
 import { useAuth } from '@/composables/useAuth'
 import { isCartPanelOpen } from '@/composables/useFabState'
+import { reportIfInteresting } from '@/lib/sentry'
 import ChatPanel from './ChatPanel.vue'
 
 const props = defineProps<{
@@ -49,9 +50,13 @@ const routeObserver: any = null
 const hideFloat = computed(() => {
   const p = currentPath.value
   // 整页聊天中心 / 订单详情页 / 购物车面板打开时, 全局浮窗不出现
-  return p === '/chat' || p.startsWith('/chat?') || p.startsWith('/admin/chat')
-    || /^\/orders\/[0-9a-f-]{36}/i.test(p)
-    || isCartPanelOpen.value
+  return (
+    p === '/chat' ||
+    p.startsWith('/chat?') ||
+    p.startsWith('/admin/chat') ||
+    /^\/orders\/[0-9a-f-]{36}/i.test(p) ||
+    isCartPanelOpen.value
+  )
 })
 
 const unreadForThis = computed(() => {
@@ -84,12 +89,20 @@ const ensureConversation = async () => {
     subjectOrderId.value = props.subjectOrderId ?? null
   }
   if (!accountId.value) return
-  const conv = await chat.ensureConversation({
-    account_id: accountId.value,
-    subject_order_id: subjectOrderId.value,
-  })
-  conversation.value = conv
-  chat.fetchConversations().catch(() => { /* ignore */ })
+  try {
+    const conv = await chat.ensureConversation({
+      account_id: accountId.value,
+      subject_order_id: subjectOrderId.value,
+    })
+    conversation.value = conv
+    chat.fetchConversations().catch(() => {
+      /* ignore */
+    })
+  } catch (e) {
+    // 不让 unhandled rejection 冒到 console；上报 Sentry 由 useChat 内部过滤噪音
+    // （race 时 23505 已被 useChat 内 in-flight dedup + upsert 吃掉，这里通常不会触发）
+    reportIfInteresting(e, { phase: 'chatWindow.ensureConversation' })
+  }
 }
 
 // 监听 props 变化, 已 open 也跟着切换
@@ -108,16 +121,22 @@ const onPopState = () => {
 }
 
 onMounted(async () => {
-  await chat.fetchConversations().catch(() => { /* ignore */ })
+  await chat.fetchConversations().catch(() => {
+    /* ignore */
+  })
   // 启动心跳：30s 一次（统一节流，避免多个组件重复打心跳）
-  chat.heartbeat('web', 'online').catch(() => { /* ignore */ })
+  chat.heartbeat('web', 'online').catch(() => {
+    /* ignore */
+  })
   if (poll) window.clearInterval(poll)
   poll = window.setInterval(async () => {
     // 仅在前台时心跳（document.hidden=true 时跳过）
     if (document.hidden) return
     try {
       await chat.heartbeat('web', 'online')
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     // 监听当前 route（route 变化需要重新推断 context）
     const path = window.location.pathname
     if (path !== lastRoutePath) {
@@ -135,7 +154,9 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (poll) window.clearInterval(poll)
-  chat.heartbeat('web', 'offline').catch(() => { /* ignore */ })
+  chat.heartbeat('web', 'offline').catch(() => {
+    /* ignore */
+  })
   window.removeEventListener('popstate', tryInferContextFromRoute)
   window.removeEventListener('pushstate' as any, tryInferContextFromRoute)
 })
@@ -155,14 +176,13 @@ const tryInferContextFromPath = async (path: string) => {
     if (accountId.value) {
       try {
         const { supabase } = await import('@/lib/supabase')
-        await (supabase.from('orders') as any)
-          .select('account_id')
-          .eq('id', orderId)
-          .maybeSingle()
+        await (supabase.from('orders') as any).select('account_id').eq('id', orderId).maybeSingle()
         if (account.value) {
           accountId.value = account.value.parent_id ?? account.value.id ?? null
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     return
   }
@@ -192,8 +212,11 @@ const onShare = async () => {
   sharing.value = true
   try {
     await chat.sendOrderCard(conversation.value.id, subjectOrderId.value)
-  } catch { /* ignore */ }
-  finally { sharing.value = false }
+  } catch {
+    /* ignore */
+  } finally {
+    sharing.value = false
+  }
 }
 </script>
 
@@ -205,7 +228,7 @@ const onShare = async () => {
     class="fixed z-40 shadow-xl rounded-2xl overflow-hidden bg-background border flex flex-col"
     :style="{
       bottom: fabBottom,
-      right: (position?.right ?? '16px'),
+      right: position?.right ?? '16px',
       width: 'min(360px, calc(100vw - 32px))',
       height: minimized ? '48px' : 'min(540px, calc(100dvh - 120px))',
       transition: 'height 200ms ease',
@@ -242,21 +265,18 @@ const onShare = async () => {
       </button>
     </div>
     <div v-if="!minimized" class="flex-1 min-h-0">
-      <ChatPanel
-        v-if="conversation && accountId"
-        :account-id="accountId"
-        :subject-order-id="subjectOrderId"
-        embedded
-      />
+      <ChatPanel v-if="conversation && accountId" :account-id="accountId" :subject-order-id="subjectOrderId" embedded />
     </div>
   </div>
   <button
     v-else-if="!hideFloat"
-    :class="['fixed z-50 rounded-full bg-primary text-primary-foreground shadow-xl inline-flex items-center justify-center hover:bg-primary/90 transition',
-      fabSize === 'md' ? 'h-14 w-14' : 'h-11 w-11']"
+    :class="[
+      'fixed z-50 rounded-full bg-primary text-primary-foreground shadow-xl inline-flex items-center justify-center hover:bg-primary/90 transition',
+      fabSize === 'md' ? 'h-14 w-14' : 'h-11 w-11',
+    ]"
     :style="{
       bottom: fabBottom,
-      right: (position?.right ?? '16px'),
+      right: position?.right ?? '16px',
     }"
     @click="onToggle"
   >

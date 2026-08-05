@@ -131,7 +131,11 @@ export function resetChat() {
   loadingList.value = false
   listError.value = null
   fetched.value = false
-  try { resetChatUpload() } catch { /* ignore */ }
+  try {
+    resetChatUpload()
+  } catch {
+    /* ignore */
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -291,6 +295,18 @@ export function clearChatCache(): void {
   conversationMessageCounts.clear()
   attachmentsInFlight.clear()
   metadataInFlight.clear()
+  ensureConversationInFlight.clear()
+}
+
+/**
+ * ensureConversation 的 in-flight dedup Map —— 同 (account_id, subject_order_id)
+ * 并发调用复用同一 promise，避免多次插入同一会话/成员导致 23505 race。
+ * Module-level singleton（跨 useChat() 实例共享，跟其它 cache 一致）。
+ */
+const ensureConversationInFlight = new Map<string, Promise<ChatConversation>>()
+
+function ensureConvKey(accountId: string, subjectOrderId: string | null): string {
+  return `${accountId}|${subjectOrderId ?? ''}`
 }
 
 export function useChat() {
@@ -349,7 +365,10 @@ export function useChat() {
         if (rows.length === 0) return []
 
         const ids = rows.map((r) => r.id)
-        const lastMsgMap = new Map<string, { body: string; sender_id: string; created_at: string; message_type: ChatMessageType }>()
+        const lastMsgMap = new Map<
+          string,
+          { body: string; sender_id: string; created_at: string; message_type: ChatMessageType }
+        >()
         const unreadMap = new Map<string, number>()
 
         // 2.1 最后一条消息
@@ -473,12 +492,11 @@ export function useChat() {
       listError.value = null
       try {
         const statusArg = status === 'all' ? null : status
-        const { data, error } = await (supabase as any)
-          .rpc('rpc_chat_admin_list_conversations', {
-            p_status: statusArg,
-            p_limit: 200,
-            p_offset: 0,
-          })
+        const { data, error } = await (supabase as any).rpc('rpc_chat_admin_list_conversations', {
+          p_status: statusArg,
+          p_limit: 200,
+          p_offset: 0,
+        })
         if (error) throw error
         const rows = (data ?? []) as any[]
         return rows.map((r) => ({
@@ -492,9 +510,7 @@ export function useChat() {
           updated_at: r.updated_at,
           account: { account_name: r.account_name ?? '—', company_name: r.company_name ?? '' },
           subject_order: r.order_no ? { order_no: r.order_no, status: '' } : null,
-          assigned: r.assigned_to
-            ? { id: r.assigned_to, full_name: r.assigned_name ?? null, role: '' }
-            : null,
+          assigned: r.assigned_to ? { id: r.assigned_to, full_name: r.assigned_name ?? null, role: '' } : null,
           last_message: r.last_message_body
             ? {
                 body: r.last_message_body,
@@ -569,9 +585,7 @@ export function useChat() {
       return b.latest_message_at.localeCompare(a.latest_message_at)
     })
     for (const g of list) {
-      g.conversations.sort((a, b) =>
-        (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''),
-      )
+      g.conversations.sort((a, b) => (b.last_message_at ?? '').localeCompare(a.last_message_at ?? ''))
     }
     return list
   }
@@ -579,10 +593,7 @@ export function useChat() {
   // -------------------------------------------------------------------
   // 关闭/重开会话 (staff): 更新 chat_conversations.status
   // -------------------------------------------------------------------
-  const setConversationStatus = async (
-    conversationId: string,
-    nextStatus: ChatConversationStatus,
-  ): Promise<void> => {
+  const setConversationStatus = async (conversationId: string, nextStatus: ChatConversationStatus): Promise<void> => {
     const { error } = await (supabase.from('chat_conversations') as any)
       .update({ status: nextStatus })
       .eq('id', conversationId)
@@ -593,10 +604,7 @@ export function useChat() {
   // -------------------------------------------------------------------
   // 指派 / 改变 assigned_to
   // -------------------------------------------------------------------
-  const assignConversation = async (
-    conversationId: string,
-    staffUserId: string | null,
-  ): Promise<void> => {
+  const assignConversation = async (conversationId: string, staffUserId: string | null): Promise<void> => {
     const { error } = await (supabase.from('chat_conversations') as any)
       .update({ assigned_to: staffUserId })
       .eq('id', conversationId)
@@ -628,54 +636,91 @@ export function useChat() {
     subject_order_id?: string | null
   }): Promise<ChatConversation> => {
     const subject = params.subject_order_id ?? null
-    // 1. 查是否已存在
-    let q = supabase
-      .from('chat_conversations')
-      .select(CONV_SELECT)
-      .eq('account_id', params.account_id)
-      .eq('status', 'open')
-    if (subject) {
-      q = q.eq('subject_order_id', subject)
-    } else {
-      q = q.is('subject_order_id', null)
+    const key = ensureConvKey(params.account_id, subject)
+
+    // 0. in-flight dedup: 同 (account, subject) 并发调用复用同一 promise
+    //    修复 ChatWindow + ChatPanel 同时 mount 导致的双 INSERT race
+    const inflight = ensureConversationInFlight.get(key)
+    if (inflight) return inflight
+
+    const p = (async (): Promise<ChatConversation> => {
+      // 1. 查是否已存在
+      let q = supabase
+        .from('chat_conversations')
+        .select(CONV_SELECT)
+        .eq('account_id', params.account_id)
+        .eq('status', 'open')
+      if (subject) {
+        q = q.eq('subject_order_id', subject)
+      } else {
+        q = q.is('subject_order_id', null)
+      }
+      const { data: existing } = await q.maybeSingle()
+      if (existing) return existing as ChatConversation
+
+      // 2. 创建（带 race 兜底：23505 时说明另一个客户端刚插过，再查一次返回它的 row）
+      const { data: created, error: cErr } = await supabase
+        .from('chat_conversations')
+        .insert({
+          account_id: params.account_id,
+          subject_order_id: subject,
+          status: 'open',
+        } as any)
+        .select(CONV_SELECT)
+        .single()
+      if (cErr) {
+        // 23505 (uq_chat_conv_order) — partial unique 触发了，说明 race 时另一个赢家刚 insert
+        // 再读一次，用赢家的 row
+        if (cErr.code === '23505') {
+          const { data: raced } = await supabase
+            .from('chat_conversations')
+            .select(CONV_SELECT)
+            .eq('account_id', params.account_id)
+            .eq('status', 'open')
+            .eq('subject_order_id', subject as any)
+            .maybeSingle()
+          if (raced) return raced as ChatConversation
+        }
+        throw cErr
+      }
+
+      // 3. 加入会话成员 (客户自己 + 当前 staff 员工)
+      const me = await getCurrentUser()
+      if (!me) throw new Error('未登录')
+      const { data: myRow } = (await supabase.from('users').select('role').eq('id', me.id).single()) as {
+        data: { role: string } | null
+      }
+      const memberType: ChatMemberType = myRow?.role === 'customer' ? 'customer' : 'staff'
+
+      // 注: 当前架构中'客户'的 auth.uid() 对应父账号的 user_id, 一个客户登录态
+      // 全程只有 1 个 auth user (多人共享一个父账号登录). 客户自己不必再插
+      // 'siblings'. staff 端会在 OrderDetailPage 调用 ensureConversation 时
+      // 把当前 staff 也加入.
+      //
+      // 用 upsert + onConflict (conversation_id,user_id) where left_at is null 幂等：
+      //   - 同 staff 切换账号后再次 ensure 同一 conv（已写过成员）→ 不报 23505
+      //   - 同一 staff 两个 ChatPanel 并发跑 → 一个赢家插，另一个 upsert no-op
+      const memberRows: { conversation_id: string; user_id: string; member_type: ChatMemberType }[] = [
+        { conversation_id: (created as any).id, user_id: me.id, member_type: memberType },
+      ]
+      const { error: mErr } = await supabase
+        .from('chat_conversation_members')
+        .upsert(memberRows as any, { onConflict: 'conversation_id,user_id', ignoreDuplicates: true })
+      if (mErr) {
+        // 兜底：忽略 partial unique (left_at is null) 冲突，因为 upsert 已处理
+        if (mErr.code !== '23505') throw mErr
+      }
+
+      await invalidateList()
+      return created as ChatConversation
+    })()
+
+    ensureConversationInFlight.set(key, p)
+    try {
+      return await p
+    } finally {
+      ensureConversationInFlight.delete(key)
     }
-    const { data: existing } = await q.maybeSingle()
-    if (existing) return existing as ChatConversation
-
-    // 2. 创建
-    const { data: created, error: cErr } = await supabase
-      .from('chat_conversations')
-      .insert({
-        account_id: params.account_id,
-        subject_order_id: subject,
-        status: 'open',
-      } as any)
-      .select(CONV_SELECT)
-      .single()
-    if (cErr) throw cErr
-
-    // 3. 加入会话成员 (客户自己 + 当前 staff 员工)
-    const me = await getCurrentUser()
-    if (!me) throw new Error('未登录')
-    const { data: myRow } = await supabase.from('users').select('role').eq('id', me.id).single() as { data: { role: string } | null }
-    const memberType: ChatMemberType = myRow?.role === 'customer' ? 'customer' : 'staff'
-
-    // 客户的 user_id 通常指向父账号; 但 staff (admin/checker) 才显式插入
-    const memberRows: { conversation_id: string; user_id: string; member_type: ChatMemberType }[] = [
-      { conversation_id: (created as any).id, user_id: me.id, member_type: memberType },
-    ]
-
-    // 注: 当前架构中'客户'的 auth.uid() 对应父账号的 user_id, 一个客户登录态
-    // 全程只有 1 个 auth user (多人共享一个父账号登录). 客户自己不必再插
-    // 'siblings'. staff 端会在 OrderDetailPage 调用 ensureConversation 时
-    // 把当前 staff 也加入.
-    const { error: mErr } = await supabase
-      .from('chat_conversation_members')
-      .insert(memberRows as any)
-    if (mErr) throw mErr
-
-    await invalidateList()
-    return created as ChatConversation
   }
 
   // -------------------------------------------------------------------
@@ -689,11 +734,13 @@ export function useChat() {
     return getOrSetInFlight(membersCache, conversationId, async () => {
       const { data, error } = await supabase
         .from('chat_conversation_members')
-        .select(`
+        .select(
+          `
           id, conversation_id, user_id, member_type,
           last_read_message_id, last_read_at, joined_at, left_at,
           user:users!chat_conversation_members_user_id_fkey(id, full_name, role, account_id)
-        `)
+        `,
+        )
         .eq('conversation_id', conversationId)
         .is('left_at', null)
       if (error) throw error
@@ -726,11 +773,13 @@ export function useChat() {
       return getOrSetInFlight(messagesCache, conversationId, async () => {
         const { data, error } = await supabase
           .from('chat_messages')
-          .select(`
+          .select(
+            `
             id, conversation_id, sender_id, message_type, message_kind, body,
             client_message_id, reply_to_id, created_at, edited_at, deleted_at,
             sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-          `)
+          `,
+          )
           .eq('conversation_id', conversationId)
           .is('deleted_at', null)
           .order('created_at', { ascending: false })
@@ -759,11 +808,13 @@ export function useChat() {
 
     const { data, error } = await supabase
       .from('chat_messages')
-      .select(`
+      .select(
+        `
         id, conversation_id, sender_id, message_type, message_kind, body,
         client_message_id, reply_to_id, created_at, edited_at, deleted_at,
         sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-      `)
+      `,
+      )
       .eq('conversation_id', conversationId)
       .is('deleted_at', null)
       .lt('created_at', beforeAt)
@@ -779,15 +830,20 @@ export function useChat() {
   const fetchMessageCount = async (conversationId: string): Promise<number> => {
     const cached = getCached(conversationMessageCounts, conversationId, MESSAGE_COUNT_TTL_MS)
     if (cached !== undefined) return cached
-    return getOrSetInFlight(conversationMessageCounts, conversationId, async () => {
-      const { count, error } = await supabase
-        .from('chat_messages')
-        .select('*', { count: 'exact', head: true })
-        .eq('conversation_id', conversationId)
-        .is('deleted_at', null)
-      if (error) throw error
-      return count ?? 0
-    }, MESSAGE_COUNT_TTL_MS)
+    return getOrSetInFlight(
+      conversationMessageCounts,
+      conversationId,
+      async () => {
+        const { count, error } = await supabase
+          .from('chat_messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('conversation_id', conversationId)
+          .is('deleted_at', null)
+        if (error) throw error
+        return count ?? 0
+      },
+      MESSAGE_COUNT_TTL_MS,
+    )
   }
 
   // -------------------------------------------------------------------
@@ -815,22 +871,26 @@ export function useChat() {
         client_message_id: clientMessageId,
         reply_to_id: replyToId,
       } as any)
-      .select(`
+      .select(
+        `
         id, conversation_id, sender_id, message_type, message_kind, body,
         client_message_id, reply_to_id, created_at, edited_at, deleted_at,
         sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-      `)
+      `,
+      )
       .single()
     if (error) {
       // 重复 client_message_id → idempotent: 返回已存在的那条
       if ((error as any).code === '23505') {
         const { data: existing } = await supabase
           .from('chat_messages')
-          .select(`
+          .select(
+            `
             id, conversation_id, sender_id, message_type, message_kind, body,
             client_message_id, reply_to_id, created_at, edited_at, deleted_at,
             sender:users!chat_messages_sender_id_fkey(id, full_name, role)
-          `)
+          `,
+          )
           .eq('sender_id', me.id)
           .eq('client_message_id', clientMessageId)
           .maybeSingle()
@@ -844,7 +904,10 @@ export function useChat() {
   // -------------------------------------------------------------------
   // M2: 拉一个会话的所有附件 (单 batch 内联)
   // -------------------------------------------------------------------
-  const fetchAttachments = async (messageIds: string[], options?: { skipCache?: boolean }): Promise<Record<string, ChatMessageAttachment[]>> => {
+  const fetchAttachments = async (
+    messageIds: string[],
+    options?: { skipCache?: boolean },
+  ): Promise<Record<string, ChatMessageAttachment[]>> => {
     if (messageIds.length === 0) return {}
 
     // 优先从缓存逐个获取
@@ -903,7 +966,10 @@ export function useChat() {
   // -------------------------------------------------------------------
   // M2: 拉 metadata (订单卡片 / 自定义 payload)
   // ---------------------------------------------------------------------
-  const fetchMetadata = async (messageIds: string[], options?: { skipCache?: boolean }): Promise<Record<string, ChatMessageMetadata>> => {
+  const fetchMetadata = async (
+    messageIds: string[],
+    options?: { skipCache?: boolean },
+  ): Promise<Record<string, ChatMessageMetadata>> => {
     if (messageIds.length === 0) return {}
 
     // 优先从缓存逐个获取
@@ -968,14 +1034,11 @@ export function useChat() {
     orderId: string,
     clientMessageId: string = uuid(),
   ): Promise<{ messageId: string }> => {
-    const { data, error } = await (supabase as any).rpc(
-      'rpc_chat_create_order_card_message',
-      {
-        p_conversation: conversationId,
-        p_order_id: orderId,
-        p_client_message_id: clientMessageId,
-      },
-    )
+    const { data, error } = await (supabase as any).rpc('rpc_chat_create_order_card_message', {
+      p_conversation: conversationId,
+      p_order_id: orderId,
+      p_client_message_id: clientMessageId,
+    })
     if (error) throw error
     const row = Array.isArray(data) ? data[0] : data
     return { messageId: row?.message_id }
@@ -984,10 +1047,7 @@ export function useChat() {
   // -------------------------------------------------------------------
   // M1 batch: 批量关闭 / 重开
   // -------------------------------------------------------------------
-  const batchSetStatus = async (
-    conversationIds: string[],
-    nextStatus: ChatConversationStatus,
-  ): Promise<void> => {
+  const batchSetStatus = async (conversationIds: string[], nextStatus: ChatConversationStatus): Promise<void> => {
     if (conversationIds.length === 0) return
     const { error } = await (supabase.from('chat_conversations') as any)
       .update({ status: nextStatus })
@@ -996,10 +1056,7 @@ export function useChat() {
     invalidateList()
   }
 
-  const batchReassign = async (
-    conversationIds: string[],
-    staffUserId: string | null,
-  ): Promise<void> => {
+  const batchReassign = async (conversationIds: string[], staffUserId: string | null): Promise<void> => {
     if (conversationIds.length === 0) return
     const { error } = await (supabase.from('chat_conversations') as any)
       .update({ assigned_to: staffUserId })
@@ -1012,11 +1069,10 @@ export function useChat() {
   // 标记已读 (RPC: 精确化位点 + 写 per-message read punct)
   // -------------------------------------------------------------------
   const markRead = async (conversationId: string, messageId: string): Promise<void> => {
-    const { error } = await (supabase as any)
-      .rpc('rpc_chat_mark_read', {
-        p_conversation: conversationId,
-        p_message_id: messageId,
-      })
+    const { error } = await (supabase as any).rpc('rpc_chat_mark_read', {
+      p_conversation: conversationId,
+      p_message_id: messageId,
+    })
     if (error) {
       // 兜底: 走老逻辑, 不阻塞 UI
       const me = await getCurrentUser()
@@ -1042,13 +1098,15 @@ export function useChat() {
     if (!me) return
     const nowIso = new Date().toISOString()
     const expires = new Date(Date.now() + 6_000).toISOString()
-    const { error } = await (supabase.from('chat_typing') as any)
-      .upsert({
+    const { error } = await (supabase.from('chat_typing') as any).upsert(
+      {
         conversation_id: conversationId,
         user_id: me.id,
         started_at: nowIso,
         expires_at: expires,
-      }, { onConflict: 'conversation_id,user_id' })
+      },
+      { onConflict: 'conversation_id,user_id' },
+    )
     if (error && typeof console !== 'undefined') {
       console.warn('[chat] notifyTyping failed', error)
     }
@@ -1063,41 +1121,46 @@ export function useChat() {
     const cached = getCached(typingCache, conversationId, TYPING_CACHE_TTL_MS)
     if (cached) return cached
 
-    return getOrSetInFlight(typingCache, conversationId, async () => {
-      const me = await getCurrentUser()
-      const { data, error } = await supabase
-        .from('chat_typing')
-        .select(`
+    return getOrSetInFlight(
+      typingCache,
+      conversationId,
+      async () => {
+        const me = await getCurrentUser()
+        const { data, error } = await supabase
+          .from('chat_typing')
+          .select(
+            `
           user_id,
           user:users!chat_typing_user_id_fkey(id, full_name, role)
-        `)
-        .eq('conversation_id', conversationId)
-        .gt('expires_at', new Date().toISOString())
-      if (error) return []
-      const list = (data ?? []) as any[]
-      return list
-        .filter((r) => r.user_id !== me?.id)
-        .map((r) => ({ user_id: r.user_id, full_name: r.user?.full_name ?? null }))
-    }, TYPING_CACHE_TTL_MS)
+        `,
+          )
+          .eq('conversation_id', conversationId)
+          .gt('expires_at', new Date().toISOString())
+        if (error) return []
+        const list = (data ?? []) as any[]
+        return list
+          .filter((r) => r.user_id !== me?.id)
+          .map((r) => ({ user_id: r.user_id, full_name: r.user?.full_name ?? null }))
+      },
+      TYPING_CACHE_TTL_MS,
+    )
   }
 
   // -------------------------------------------------------------------
   // Phase 3.5: 编辑 / 撤回
   // ---------------------------------------------------------------------
   const editMessage = async (messageId: string, newBody: string): Promise<void> => {
-    const { error } = await (supabase as any)
-      .rpc('rpc_chat_edit_message', {
-        p_message_id: messageId,
-        p_new_body: newBody,
-      })
+    const { error } = await (supabase as any).rpc('rpc_chat_edit_message', {
+      p_message_id: messageId,
+      p_new_body: newBody,
+    })
     if (error) throw error
   }
 
   const deleteMessage = async (messageId: string): Promise<void> => {
-    const { error } = await (supabase as any)
-      .rpc('rpc_chat_soft_delete_message', {
-        p_message_id: messageId,
-      })
+    const { error } = await (supabase as any).rpc('rpc_chat_soft_delete_message', {
+      p_message_id: messageId,
+    })
     if (error) throw error
   }
 
@@ -1105,23 +1168,18 @@ export function useChat() {
   // Phase 3.5: 客服接管 / 转接
   // ---------------------------------------------------------------------
   const joinConversation = async (conversationId: string): Promise<void> => {
-    const { error } = await (supabase as any)
-      .rpc('rpc_chat_join_conversation', {
-        p_conversation: conversationId,
-      })
+    const { error } = await (supabase as any).rpc('rpc_chat_join_conversation', {
+      p_conversation: conversationId,
+    })
     if (error) throw error
     invalidateList()
   }
 
-  const transferConversation = async (
-    conversationId: string,
-    toStaffId: string | null,
-  ): Promise<void> => {
-    const { error } = await (supabase as any)
-      .rpc('rpc_chat_transfer_conversation', {
-        p_conversation: conversationId,
-        p_to_staff_id: toStaffId,
-      })
+  const transferConversation = async (conversationId: string, toStaffId: string | null): Promise<void> => {
+    const { error } = await (supabase as any).rpc('rpc_chat_transfer_conversation', {
+      p_conversation: conversationId,
+      p_to_staff_id: toStaffId,
+    })
     if (error) throw error
     invalidateList()
   }
@@ -1132,12 +1190,11 @@ export function useChat() {
     body: string,
     meta?: Record<string, any> | null,
   ): Promise<string> => {
-    const { data, error } = await (supabase as any)
-      .rpc('rpc_chat_post_system_message', {
-        p_conversation: conversationId,
-        p_body: body,
-        p_meta: meta ?? null,
-      })
+    const { data, error } = await (supabase as any).rpc('rpc_chat_post_system_message', {
+      p_conversation: conversationId,
+      p_body: body,
+      p_meta: meta ?? null,
+    })
     if (error) throw error
     invalidateList()
     return data as string
@@ -1146,17 +1203,12 @@ export function useChat() {
   // -------------------------------------------------------------------
   // Phase 3: 消息搜索 (staff 偏多)
   // ---------------------------------------------------------------------
-  const searchMessages = async (
-    keyword: string,
-    accountId?: string | null,
-    limit = 50,
-  ): Promise<ChatSearchHit[]> => {
-    const { data, error } = await (supabase as any)
-      .rpc('rpc_chat_search_messages', {
-        p_keyword: keyword,
-        p_account_id: accountId ?? null,
-        p_limit: limit,
-      })
+  const searchMessages = async (keyword: string, accountId?: string | null, limit = 50): Promise<ChatSearchHit[]> => {
+    const { data, error } = await (supabase as any).rpc('rpc_chat_search_messages', {
+      p_keyword: keyword,
+      p_account_id: accountId ?? null,
+      p_limit: limit,
+    })
     if (error) throw error
     return (data ?? []) as ChatSearchHit[]
   }
@@ -1169,14 +1221,12 @@ export function useChat() {
     return throttledHeartbeat(async () => {
       const me = await getCurrentUser()
       if (!me) return
-      const { error } = await supabase
-        .from('chat_presence')
-        .upsert({
-          user_id: me.id,
-          device_id: deviceId,
-          status,
-          last_seen_at: new Date().toISOString(),
-        } as any)
+      const { error } = await supabase.from('chat_presence').upsert({
+        user_id: me.id,
+        device_id: deviceId,
+        status,
+        last_seen_at: new Date().toISOString(),
+      } as any)
       if (error) {
         // 心跳失败不阻塞 UI
         if (typeof console !== 'undefined') console.warn('[chat] heartbeat failed', error)
@@ -1188,10 +1238,12 @@ export function useChat() {
     if (userIds.length === 0) return []
     const { data, error } = await supabase
       .from('chat_presence')
-      .select(`
+      .select(
+        `
         user_id, device_id, status, last_seen_at, updated_at,
         user:users!chat_presence_user_id_fkey(id, full_name, role, account_id)
-      `)
+      `,
+      )
       .in('user_id', userIds)
     if (error) throw error
     return (data ?? []) as ChatPresence[]
@@ -1250,7 +1302,12 @@ export function useChat() {
       )
       .on(
         'postgres_changes' as any,
-        { event: '*', schema: 'public', table: 'chat_conversation_members', filter: `conversation_id=eq.${conversationId}` },
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_conversation_members',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
         (payload: any) => {
           const m = payload?.new as ChatMember | null
           if (m) {
@@ -1275,7 +1332,9 @@ export function useChat() {
           // 真正等待 channel 断开（避免下次重新订阅时残留回调）
           await channel.unsubscribe()
           supabase.removeChannel(channel)
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       },
     }
   }
