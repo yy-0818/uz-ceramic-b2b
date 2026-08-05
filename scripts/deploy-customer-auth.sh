@@ -66,9 +66,9 @@ fi
 }
 log "✓ 迁移完成"
 
-# ---------- 3. 部署 3 个 Edge Functions ----------
+# ---------- 3. 部署 5 个 Edge Functions ----------
 log "▶ 3. 部署 Edge Functions"
-for func in complete-invite reset-customer-password bind-customer-email; do
+for func in complete-invite reset-customer-password bind-customer-email create-staff-user change-own-password reset-staff-password; do
   log "  → $func"
   supabase functions deploy "$func" --project-ref "$PROJECT_REF" 2>&1 | sed 's/^/    /'
 done
