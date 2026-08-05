@@ -386,24 +386,20 @@ const openParentEdit = (p: Account) => {
   openMenuId.value = null
   parentEditOpen.value = true
 }
-const submitParent = async ({
-  form,
-}: {
-  form: { account_name: string; account_type: AccountType; login_email: string }
-}) => {
+const submitParent = async ({ form }: { form: { account_name: string; login_email: string } }) => {
   loading.value = true
   error.value = null
   try {
     if (parentEditTarget.value) {
+      // 编辑模式: 父账号不下单, 不改 account_type (DB 保留原值)
       await acc.updateParent(parentEditTarget.value.id, {
         account_name: form.account_name,
-        account_type: form.account_type,
         login_email: form.login_email || null,
       } as any)
     } else {
+      // 新建模式: createParent 内部硬编码 '1_public' 占位
       await acc.createParent({
         account_name: form.account_name,
-        account_type: form.account_type,
         login_email: form.login_email || null,
       } as any)
     }

@@ -46,18 +46,18 @@ export interface Account {
   balance: number
   status: AccountStatus
   is_main: boolean
-  login_email?: string | null   // 客户登录邮箱（迁移 0006 加）
-  user_id?: string | null       // 关联到 auth.users.id（迁移 0006 加）
+  login_email?: string | null // 客户登录邮箱（迁移 0006 加）
+  user_id?: string | null // 关联到 auth.users.id（迁移 0006 加）
   created_at: string
   updated_at: string
 }
 
 export interface ExcelRow {
-  category: string       // 类别（如 "贾汉"）
-  inn: string            // 税号（如 "202021513"，'-'/'0' 视为空）
-  name: string           // 客户名称（如 "1账户 I客户 ASM"）
-  type: AccountType      // 解析后已是 AccountType
-  status: AccountStatus  // 解析后已是 AccountStatus
+  category: string // 类别（如 "贾汉"）
+  inn: string // 税号（如 "202021513"，'-'/'0' 视为空）
+  name: string // 客户名称（如 "1账户 I客户 ASM"）
+  type: AccountType // 解析后已是 AccountType
+  status: AccountStatus // 解析后已是 AccountStatus
 }
 
 export interface ImportPreview {
@@ -101,7 +101,10 @@ function pickParentType(rows: ExcelRow[]): AccountType {
   let best: AccountType = '1_public'
   let bestN = -1
   for (const t of order) {
-    if (counts[t] > bestN) { best = t; bestN = counts[t] }
+    if (counts[t] > bestN) {
+      best = t
+      bestN = counts[t]
+    }
   }
   return best
 }
@@ -145,15 +148,15 @@ export function resetAccounts() {
 }
 
 export function useAccounts() {
-
   /** 拉所有父 + 子，按 parent 聚合 */
   const fetchTree = async (): Promise<{ parents: Account[]; subs: Account[] }> => {
     loading.value = true
-    const { data, error: e } = await supabase
-      .from('accounts')
-      .select('*')
-      .order('created_at', { ascending: false })
-    if (e) { error.value = e.message; loading.value = false; return { parents: [], subs: [] } }
+    const { data, error: e } = await supabase.from('accounts').select('*').order('created_at', { ascending: false })
+    if (e) {
+      error.value = e.message
+      loading.value = false
+      return { parents: [], subs: [] }
+    }
     const all = (data ?? []) as Account[]
     const parents = all.filter((a) => a.parent_id === null)
     const subs = all.filter((a) => a.parent_id !== null)
@@ -162,19 +165,17 @@ export function useAccounts() {
     return { parents, subs }
   }
 
-  /** 新建父账号（按 category 去重：同名父已存在则跳过） */
-  const createParent = async (params: {
-    account_name: string
-    account_type: AccountType
-    login_email?: string | null
-  }) => {
+  /** 新建父账号 (按 category 去重: 同名父已存在则跳过)
+   *  父账号是管理账号, 不参与下单. 1公户/2现金/3出口 类别由子账号决定.
+   *  父账号的 account_type 在 DB 仍保留 (NOT NULL), 这里硬编码 '1_public' 占位. */
+  const createParent = async (params: { account_name: string; login_email?: string | null }) => {
     loading.value = true
     try {
       const { data, error: e } = await (supabase.from('accounts') as any)
         .insert({
           parent_id: null,
           account_name: params.account_name,
-          account_type: params.account_type,
+          account_type: '1_public' as AccountType,
           company_name: params.account_name,
           address: '-',
           bank: '-',
@@ -200,9 +201,7 @@ export function useAccounts() {
   const updateParent = async (id: string, patch: Partial<Account>) => {
     loading.value = true
     try {
-      const { error: e } = await (supabase.from('accounts') as any)
-        .update(patch)
-        .eq('id', id)
+      const { error: e } = await (supabase.from('accounts') as any).update(patch).eq('id', id)
       if (e) throw e
     } finally {
       loading.value = false
@@ -256,9 +255,7 @@ export function useAccounts() {
   const updateSub = async (id: string, patch: Partial<Account>) => {
     loading.value = true
     try {
-      const { error: e } = await (supabase.from('accounts') as any)
-        .update(patch)
-        .eq('id', id)
+      const { error: e } = await (supabase.from('accounts') as any).update(patch).eq('id', id)
       if (e) throw e
       // 改完后清缓存，下次 fetchSubAccounts 会重新拉
       for (const [parentId, subs] of subCache) {
@@ -274,13 +271,9 @@ export function useAccounts() {
     loading.value = true
     try {
       // 1. 全置 false
-      await (supabase.from('accounts') as any)
-        .update({ is_main: false })
-        .eq('parent_id', parentId)
+      await (supabase.from('accounts') as any).update({ is_main: false }).eq('parent_id', parentId)
       // 2. 选中置 true
-      const { error: e } = await (supabase.from('accounts') as any)
-        .update({ is_main: true })
-        .eq('id', subId)
+      const { error: e } = await (supabase.from('accounts') as any).update({ is_main: true }).eq('id', subId)
       if (e) throw e
       subCache.delete(parentId)
     } finally {
@@ -297,7 +290,10 @@ export function useAccounts() {
       .eq('parent_id', parentId)
       .order('is_main', { ascending: false })
       .order('account_name')
-    if (e) { error.value = e.message; return [] }
+    if (e) {
+      error.value = e.message
+      return []
+    }
     const result = (data ?? []) as Account[]
     subCache.set(parentId, result)
     return result
@@ -315,7 +311,10 @@ export function useAccounts() {
       .is('parent_id', null)
       .eq('status', 'active')
       .order('account_name')
-    if (e) { error.value = e.message; return [] }
+    if (e) {
+      error.value = e.message
+      return []
+    }
     return (data ?? []) as Account[]
   }
 
@@ -337,10 +336,7 @@ export function useAccounts() {
     loading.value = true
     try {
       // 1. 先查所有已存在的父（同名 → 复用 id）
-      const { data: existing, error: exErr } = await supabase
-        .from('accounts')
-        .select('*')
-        .is('parent_id', null)
+      const { data: existing, error: exErr } = await supabase.from('accounts').select('*').is('parent_id', null)
       if (exErr) throw exErr
       const byName = new Map<string, Account>()
       for (const a of (existing ?? []) as Account[]) {
@@ -351,7 +347,7 @@ export function useAccounts() {
       // 2. 缺的父 → 插入
       for (const p of preview.parents) {
         if (byName.has(p.category)) continue
-        const created = await createParent({ account_name: p.category, account_type: p.type })
+        const created = await createParent({ account_name: p.category })
         byName.set(p.category, created)
         parentsAdded.push(created)
       }
@@ -367,10 +363,7 @@ export function useAccounts() {
       }
 
       // 3a. 拉当前所有子账号（按父聚合）以做 diff
-      const { data: allSubs, error: subsErr } = await supabase
-        .from('accounts')
-        .select('*')
-        .not('parent_id', 'is', null)
+      const { data: allSubs, error: subsErr } = await supabase.from('accounts').select('*').not('parent_id', 'is', null)
       if (subsErr) throw subsErr
       const existingByParent = new Map<string, Map<string, Account>>()
       for (const s of (allSubs ?? []) as Account[]) {
@@ -438,9 +431,7 @@ export function useAccounts() {
           }
           // 为正确性逐条 update
           for (const r of slice) {
-            const { error: e } = await (supabase.from('accounts') as any)
-              .update(r.patch)
-              .eq('id', r.id)
+            const { error: e } = await (supabase.from('accounts') as any).update(r.patch).eq('id', r.id)
             if (e) throw e
             subsUpdated += 1
           }
@@ -462,9 +453,9 @@ export function useAccounts() {
       const M_CHUNK = 200
       for (let i = 0; i < mappingRows.length; i += M_CHUNK) {
         const slice = mappingRows.slice(i, i + M_CHUNK)
-        const { error: e } = await (supabase
-          .from('customer_group_mappings') as any)
-          .upsert(slice, { onConflict: 'customer_group,account_id' })
+        const { error: e } = await (supabase.from('customer_group_mappings') as any).upsert(slice, {
+          onConflict: 'customer_group,account_id',
+        })
         if (e) throw e
         mappingsAdded += slice.length
       }
@@ -482,19 +473,23 @@ export function useAccounts() {
 
   /** 拉所有 stock_groups（向后兼容名）；推荐用 useStockGroups.fetchAll */
   const fetchProductCategories = async (): Promise<string[]> => {
-    const { data, error: e } = await supabase
-      .from('stock_groups')
-      .select('code')
-      .order('code')
+    const { data, error: e } = await supabase.from('stock_groups').select('code').order('code')
     if (e) return []
     return ((data ?? []) as Array<{ code: string }>).map((r) => r.code)
   }
 
   return {
-    items, loading, error,
+    items,
+    loading,
+    error,
     fetchTree,
-    createParent, updateParent, toggleParentStatus,
-    createSub, updateSub, setMain, fetchSubAccounts,
+    createParent,
+    updateParent,
+    toggleParentStatus,
+    createSub,
+    updateSub,
+    setMain,
+    fetchSubAccounts,
     listParents,
     importFromExcel,
     fetchProductCategories,
