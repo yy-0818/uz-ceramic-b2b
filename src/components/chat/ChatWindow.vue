@@ -44,7 +44,7 @@ const subjectOrderId = ref<string | null>(props.subjectOrderId ?? null)
 const accountId = ref<string | null>(props.accountId ?? null)
 const currentPath = ref(typeof window !== 'undefined' ? window.location.pathname : '/')
 let poll: number | undefined
-let routeObserver: any = null
+const routeObserver: any = null
 
 const hideFloat = computed(() => {
   const p = currentPath.value

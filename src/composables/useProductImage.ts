@@ -74,7 +74,7 @@ export async function uploadProductImage(
     .getPublicUrl(path)
 
   const publicUrl = data.publicUrl
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const { error: dbErr } = await (supabase as any)
     .from('products')
     .update({ image_url: publicUrl })
@@ -91,7 +91,7 @@ export async function removeProductImage(productId: string): Promise<void> {
       .from('product-images')
       .remove([`products/${productId}.${ext}`])
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const { error: dbErr } = await (supabase as any)
     .from('products')
     .update({ image_url: null })

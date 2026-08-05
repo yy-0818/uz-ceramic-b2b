@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# husky commit-msg / pre-commit hook
+# 开发同事装了 husky install 后会自动链到这里
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 仅对暂存文件跑 lint+format，不影响其它
+pnpm exec lint-staged --quiet

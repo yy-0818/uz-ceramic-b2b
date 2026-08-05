@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Job 1: 类型检查 + 单元测试 + 打包（无 ESLint，等 P1-1）
+    # Job 1: 类型检查 + 单元测试 + 打包（无 ESLint，等 P1-1）
   build:
     name: Type-check, Test, Build
     runs-on: ubuntu-latest
@@ -34,6 +34,13 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Lint (警告而非阻断)
+        # 渐进式：lint 先不阻断，让团队有时间清理遗留
+        run: npm run lint:check
+
+      - name: Format check
+        run: npm run format:check
 
       - name: Build
         env:

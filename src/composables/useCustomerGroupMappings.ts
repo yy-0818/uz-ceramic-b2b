@@ -50,7 +50,7 @@ export function useCustomerGroupMappings() {
     if (rows.length === 0) return 0
     const { error: e, count } = await supabase
       .from('customer_group_mappings')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       .upsert(rows as any, { onConflict: 'customer_group,account_id', count: 'exact' })
     if (e) { error.value = e.message; throw e }
     return count ?? rows.length

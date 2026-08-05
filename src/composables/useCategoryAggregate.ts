@@ -64,7 +64,7 @@ export function aggregate(items: ProductCandidate[]): CategoryAgg[] {
       else pa.colors.push({ code: c.colorCode, boxes: c.boxes })
     }
     for (const [pref, pa] of prefMap) {
-      let exist = agg.prefixes.find((x) => x.prefix === pref)
+      const exist = agg.prefixes.find((x) => x.prefix === pref)
       if (exist) {
         exist.boxes += pa.boxes
         for (const cc of pa.colors) {

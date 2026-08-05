@@ -173,7 +173,7 @@ export async function attachToOrder(
     caption: a.caption ?? null,
     uploaded_by: params.uploadedBy ?? null,
   }))
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const { error } = await (supabase as any)
     .from('order_attachments')
     .insert(rows)

@@ -200,14 +200,14 @@ export function useOrders() {
     if (to === 'shipped')    patch.shipped_by   = (await supabase.auth.getUser()).data.user?.id
 
     // Supabase v2 类型在 Update 含可选字段时与 Partial<Row> 兼容性有限，此处做一次明确断言
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { error: e } = await (supabase.from('orders') as any).update(patch).eq('id', orderId)
     if (e) throw e
   }
 
   /** 审核员改价（更新 order_items.unit_price） */
   const updateItemPrice = async (itemId: string, unitPrice: number) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { error: e } = await (supabase.from('order_items') as any).update({ unit_price: unitPrice }).eq('id', itemId)
     if (e) throw e
   }
@@ -215,7 +215,7 @@ export function useOrders() {
   /** 审核员改量（更新 order_items.boxes） */
   const updateItemBoxes = async (itemId: string, boxes: number) => {
     if (boxes <= 0) throw new Error('箱数必须 > 0')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const { error: e } = await (supabase.from('order_items') as any).update({ boxes }).eq('id', itemId)
     if (e) throw e
   }

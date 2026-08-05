@@ -106,7 +106,7 @@ export function useAccountProducts() {
     if (assignments.length === 0) return 0
     const { error: e, count } = await supabase
       .from('account_products')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       .upsert(assignments as any, { onConflict: 'account_id,product_id', count: 'exact' })
     if (e) { error.value = e.message; throw e }
     return count ?? assignments.length
@@ -117,7 +117,7 @@ export function useAccountProducts() {
     const { error: e } = await supabase
       .from('account_products')
       .upsert(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         { account_id: accountId, product_id: productId, is_visible: visible } as any,
         { onConflict: 'account_id,product_id' },
       )

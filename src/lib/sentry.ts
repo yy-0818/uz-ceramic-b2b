@@ -31,7 +31,6 @@ export function initSentry({ app, router }: InitOptions): void {
   if (!dsn) {
     // 没有 DSN 时 dev-only console 提示（用户主动开启 debug 时显示）
     if (typeof localStorage !== 'undefined' && localStorage.getItem('app:sentry-debug') === '1') {
-      // eslint-disable-next-line no-console
       console.warn('[sentry] VITE_SENTRY_DSN 未配置，Sentry 已禁用')
     }
     return

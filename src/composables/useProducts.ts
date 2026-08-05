@@ -84,7 +84,7 @@ export function useProducts() {
     if (rows.length === 0) return []
     const { data, error: e } = await supabase
       .from('products')
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       .upsert(rows as any, { onConflict: 'model' })
       .select('*')
     if (e) { error.value = e.message; throw e }
@@ -175,7 +175,7 @@ export function useProducts() {
         const slice = colorRows.slice(i, i + CHUNK)
         const { error: cErr, data: cData } = await supabase
           .from('stock_colors')
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           .upsert(slice as any, { onConflict: 'product_id,color_code,stock_level' })
           .select('id')
         if (cErr) { error.value = cErr.message; throw cErr }
@@ -214,7 +214,7 @@ export function useProducts() {
           const slice = apRows.slice(i, i + CHUNK)
           const { error: apErr } = await supabase
             .from('account_products')
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             
             .upsert(slice as any, { onConflict: 'account_id,product_id' })
           if (apErr) { error.value = apErr.message; throw apErr }
         }

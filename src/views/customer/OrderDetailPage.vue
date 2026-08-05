@@ -92,7 +92,7 @@ const onImgError = async (att: OrderAttachmentRow) => {
   }
   // 诊断: 打印 path 和 public URL 到 console
   const publicUrl = attachmentPublicUrl(att.storage_path)
-  // eslint-disable-next-line no-console
+   
   console.warn('[attachment] public URL 加载失败:', {
     storage_path: att.storage_path,
     publicUrl,
@@ -101,11 +101,11 @@ const onImgError = async (att: OrderAttachmentRow) => {
   })
   const signed = await attachmentSignedUrl(att.storage_path)
   if (signed) {
-    // eslint-disable-next-line no-console
+     
     console.info('[attachment] signed URL 兜底成功:', att.storage_path)
     urlMap.value = { ...urlMap.value, [att.id]: signed }
   } else {
-    // eslint-disable-next-line no-console
+     
     console.error(
       '[attachment] signed URL 也失败 — storage 对象已物理丢失:',
       att.storage_path,
