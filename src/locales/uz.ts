@@ -589,4 +589,30 @@ export default {
       },
     },
   },
+
+  // Xodimlar boshqaruvi (admin panel)
+  staff: {
+    title: 'Xodimlar',
+    createBtn: 'Yangi xodim',
+    createTitle: 'Xodim hisobini yaratish',
+    empty: 'Xodimlar yo‘q',
+    active: 'Faol',
+    inactive: 'O‘chirilgan',
+    passwordMismatch: 'Parollar mos kelmadi',
+    createFail: 'Yaratib bo‘lmadi',
+    field: {
+      email: 'Kirish emaili',
+      password: 'Boshlang‘ich parol',
+      password2: 'Parolni tasdiqlang',
+      full_name: 'F.I.Sh.',
+      phone: 'Telefon',
+      role: 'Rol',
+    },
+    role: {
+      admin: 'Administrator',
+      checker: 'Tekshiruvchi (buyurtma rasmiylashtiruvchi)',
+      warehouse: 'Ombor',
+      finance: 'Moliya',
+    },
+  },
 }

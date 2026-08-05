@@ -764,4 +764,30 @@ export default {
       },
     },
   },
+
+  // 员工账号管理（admin 后台）
+  staff: {
+    title: '员工账号管理',
+    createBtn: '新建员工',
+    createTitle: '新建员工账号',
+    empty: '暂无员工',
+    active: '活跃',
+    inactive: '停用',
+    passwordMismatch: '两次密码不一致',
+    createFail: '创建失败',
+    field: {
+      email: '登录邮箱',
+      password: '初始密码',
+      password2: '确认密码',
+      full_name: '姓名',
+      phone: '电话',
+      role: '角色',
+    },
+    role: {
+      admin: '管理员',
+      checker: '审核员（开单员）',
+      warehouse: '仓库',
+      finance: '财务',
+    },
+  },
 }

@@ -44,6 +44,8 @@ const routes: RouteRecordRaw[] = [
         meta: { roles: ['admin'] } },
       { path: 'admin/accounts', name: 'admin.accounts', component: () => import('@/views/admin/AccountsAdminPage.vue'),
         meta: { roles: ['admin'] } },
+      { path: 'admin/staff', name: 'admin.staff', component: () => import('@/views/admin/StaffManagementPage.vue'),
+        meta: { roles: ['admin'] } },
       { path: 'admin/accounts/import', name: 'admin.accounts.import', component: () => import('@/views/admin/AccountsImportPage.vue'),
         meta: { roles: ['admin'] } },
 

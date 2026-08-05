@@ -20,3 +20,7 @@ verify_jwt = true
 
 [functions.bind-customer-email]
 verify_jwt = true
+
+# create-staff-user：admin 已登录态调用，前端带 admin JWT 即可
+[functions.create-staff-user]
+verify_jwt = true

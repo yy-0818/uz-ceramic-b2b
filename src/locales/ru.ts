@@ -589,4 +589,30 @@ export default {
       },
     },
   },
+
+  // Управление сотрудниками (админ-панель)
+  staff: {
+    title: 'Сотрудники',
+    createBtn: 'Новый сотрудник',
+    createTitle: 'Создать аккаунт сотрудника',
+    empty: 'Нет сотрудников',
+    active: 'Активен',
+    inactive: 'Отключён',
+    passwordMismatch: 'Пароли не совпадают',
+    createFail: 'Не удалось создать',
+    field: {
+      email: 'Email для входа',
+      password: 'Начальный пароль',
+      password2: 'Подтвердите пароль',
+      full_name: 'ФИО',
+      phone: 'Телефон',
+      role: 'Роль',
+    },
+    role: {
+      admin: 'Администратор',
+      checker: 'Проверяющий (оформитель)',
+      warehouse: 'Склад',
+      finance: 'Финансы',
+    },
+  },
 }
