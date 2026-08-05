@@ -840,8 +840,10 @@ const goBack = () => {
           <button
             class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="
-              openAssign(currentMenuParent)
-              closeMenu()
+              () => {
+                openAssign(currentMenuParent!)
+                closeMenu()
+              }
             "
           >
             <Tag class="h-4 w-4 text-muted-foreground" />
@@ -850,8 +852,10 @@ const goBack = () => {
           <button
             class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
             @click="
-              openSubCreate(currentMenuParent)
-              closeMenu()
+              () => {
+                openSubCreate(currentMenuParent!)
+                closeMenu()
+              }
             "
           >
             <Plus class="h-4 w-4 text-muted-foreground" />
@@ -862,8 +866,10 @@ const goBack = () => {
         <button
           class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="
-            openParentEdit(currentMenuParent)
-            closeMenu()
+            () => {
+              openParentEdit(currentMenuParent!)
+              closeMenu()
+            }
           "
         >
           <Edit class="h-4 w-4 text-muted-foreground" />
@@ -872,8 +878,10 @@ const goBack = () => {
         <button
           class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="
-            openInvite(currentMenuParent)
-            closeMenu()
+            () => {
+              openInvite(currentMenuParent!)
+              closeMenu()
+            }
           "
         >
           <Mail class="h-4 w-4 text-muted-foreground" />
@@ -882,8 +890,10 @@ const goBack = () => {
         <button
           class="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
           @click="
-            openReset(currentMenuParent)
-            closeMenu()
+            () => {
+              openReset(currentMenuParent!)
+              closeMenu()
+            }
           "
         >
           <KeyRound class="h-4 w-4 text-muted-foreground" />
@@ -893,8 +903,10 @@ const goBack = () => {
         <button
           class="w-full text-left px-3 py-2 text-sm hover:bg-destructive/10 text-destructive flex items-center gap-2"
           @click="
-            toggleParent(currentMenuParent)
-            closeMenu()
+            () => {
+              toggleParent(currentMenuParent!)
+              closeMenu()
+            }
           "
         >
           <PowerOff v-if="currentMenuParent.status === 'active'" class="h-4 w-4" />
@@ -969,9 +981,11 @@ const goBack = () => {
           size="sm"
           variant="outline"
           @click="
-            search = ''
-            typeFilter = 'all'
-            statusFilter = 'all'
+            () => {
+              search = ''
+              typeFilter = 'all'
+              statusFilter = 'all'
+            }
           "
         >
           {{ t('admin.accounts.clearFilter') }}
