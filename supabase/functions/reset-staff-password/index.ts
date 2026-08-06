@@ -33,30 +33,45 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } },
     )
 
-    // 1. 校验目标用户存在 + role 是 staff
-    const { data: profile, error: pErr } = await supabaseAdmin
-      .from('users')
-      .select('role, email')
-      .eq('id', user_id)
-      .single()
-    if (pErr || !profile) return json({ error: '用户不存在' }, 404)
-    if (!STAFF_ROLES.includes(profile.role)) {
+    // 1. 先用 getUserById 可靠地确认 auth user 存在（GoTrue API, bypass RLS）
+    const { data: userData, error: uErr } = await supabaseAdmin.auth.admin.getUserById(user_id)
+    if (uErr || !userData?.user) {
+      console.log('[reset-staff-password] getUserById failed:', uErr?.message)
+      return json({ error: 'auth 用户不存在' }, 404)
+    }
+
+    // 2. 查 public.users 获取 role（用于判断是否是员工账号）
+    //    注意：PostgREST 查询可能因 RLS 返回空（服务角色 key 在某些配置下也会被 RLS 影响）
+    //    → 用 maybeSingle(), 空结果不抛异常
+    let role: string | null = null
+    try {
+      const { data: profile, error: pErr } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', user_id)
+        .maybeSingle()
+      if (pErr) {
+        console.log('[reset-staff-password] users table query error:', pErr.message)
+      }
+      role = profile?.role ?? null
+    } catch (e) {
+      console.log('[reset-staff-password] users table exception:', String(e))
+    }
+
+    // 3. role 决定是否允许重置:
+    //    - 空/null（RLS 查不到）→ 视为非员工账号，拒绝（安全优先）
+    //    - staff role → 允许
+    if (!role || !STAFF_ROLES.includes(role)) {
       return json({ error: '只能重置员工账号 (admin/checker/warehouse/finance)' }, 400)
     }
 
-    // 2. 拿到 email（返回给前端显示）
-    const { data: userData, error: uErr } = await supabaseAdmin.auth.admin.getUserById(user_id)
-    if (uErr || !userData?.user) return json({ error: 'auth user not found' }, 404)
-    const email = userData.user.email ?? profile.email
-
-    // 3. 生成临时密码
+    // 4. 生成临时密码 + 改密码
+    const email = userData.user.email
     const tempPassword = generatePassword()
-
-    // 4. 改密码
     const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(user_id, { password: tempPassword })
     if (updErr) return json({ error: updErr.message }, 500)
 
-    return json({ ok: true, temp_password: tempPassword, email })
+    return json({ ok: true, temp_password: tempPassword, email: email ?? undefined })
   } catch (e: any) {
     return json({ error: String(e?.message ?? e) }, 500)
   }
@@ -77,8 +92,12 @@ async function requireAdmin(req: Request): Promise<{ ok: true } | { ok: false; r
   if (error || !data?.user) {
     return { ok: false, response: json({ error: 'invalid token' }, 401) }
   }
-  const { data: profile } = await supabaseAdmin.from('users').select('role').eq('id', data.user.id).single()
-  if (profile?.role !== 'admin') {
+  const { data: profile } = await supabaseAdmin.from('users').select('role').eq('id', data.user.id).maybeSingle()
+  if (!profile) {
+    console.log('[reset-staff-password] requireAdmin: caller profile not found in users table, role unknown')
+    return { ok: false, response: json({ error: 'caller profile not found' }, 401) }
+  }
+  if (profile.role !== 'admin') {
     return { ok: false, response: json({ error: 'admin only' }, 403) }
   }
   return { ok: true }
