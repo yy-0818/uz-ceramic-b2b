@@ -51,6 +51,11 @@ const { t } = useI18n()
 const { appUser } = useAuth()
 const chat = useChat()
 
+// 内部员工 IM 公共账号 (account_id = 0000...0000)
+// 所有 staff 用户的 users.account_id 都指向这里, 用于 staff 互相发消息
+// 这些会话不应该出现在客服工作台 (会污染客服工单列表)
+const INTERNAL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000000'
+
 type FilterValue = ChatConversationStatus | 'all'
 const filter = ref<FilterValue>('open')
 // 对话列表搜索
@@ -94,6 +99,15 @@ watch(searchMsgKw, (kw) => {
 const expandedGroupId = ref<string | null>(null)
 const selected = ref<ChatConversation | null>(null)
 
+// 左侧 tab: 'customer' = 客户工单列表, 'internal' = 员工 IM 列表
+const sidebarTab = ref<'customer' | 'internal'>('customer')
+
+// 内部 IM 公共账号的分组 (从所有分组里筛出 _internal)
+const internalGroup = computed(() => {
+  const all = chat.groupByAccount()
+  return all.find((g) => g.account_id === INTERNAL_ACCOUNT_ID) ?? null
+})
+
 // M1 batch
 const selectMode = ref(false)
 const selectedIds = ref<Set<string>>(new Set())
@@ -115,7 +129,10 @@ const onPickSearchHit = async (hit: ChatSearchHit) => {
 }
 
 const groups = computed(() => {
-  const list = chat.groupByAccount()
+  // 过滤内部 IM 公共账号 (_internal) — 这些是员工互相发消息的会话,
+  // 不属于客服工单, 不应在工作台显示
+  const allList = chat.groupByAccount()
+  const list = allList.filter((g) => g.account_id !== INTERNAL_ACCOUNT_ID)
   if (!searchConv.value.trim()) return list
   const q = searchConv.value.trim().toLowerCase()
   return list
@@ -217,7 +234,27 @@ const onUnassign = async () => {
 }
 
 let heartbeatTimer: number | undefined
-let chatChannel: any = null
+// 用 polling 替代 supabase realtime 的 postgres_changes,
+// 因为 auth session 切换 + 同名 channel 在 socket pool 复用时, 会
+// 触发 'cannot add postgres_changes callbacks after subscribe()' 错误
+let pollTimer: number | undefined
+
+function startListPolling() {
+  stopListPolling()
+  pollTimer = window.setInterval(() => {
+    chat.invalidateList()
+    fetchList().catch(() => {
+      /* ignore */
+    })
+  }, 8_000)
+}
+
+function stopListPolling() {
+  if (pollTimer) {
+    window.clearInterval(pollTimer)
+    pollTimer = undefined
+  }
+}
 
 onMounted(async () => {
   await fetchList()
@@ -231,46 +268,15 @@ onMounted(async () => {
       /* ignore */
     })
   }, 30_000)
-  // Realtime: messages / conversations / members 变化都刷一次列表
-  const { supabase } = await import('@/lib/supabase')
-  chatChannel = supabase
-    .channel('staff-chat-list')
-    .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'chat_messages' }, () => {
-      chat.invalidateList()
-      fetchList().catch(() => {
-        /* ignore */
-      })
-    })
-    .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'chat_conversations' }, () => {
-      chat.invalidateList()
-      fetchList().catch(() => {
-        /* ignore */
-      })
-    })
-    .on('postgres_changes' as any, { event: '*', schema: 'public', table: 'chat_conversation_members' }, () => {
-      chat.invalidateList()
-      fetchList().catch(() => {
-        /* ignore */
-      })
-    })
-    .subscribe()
+  startListPolling()
 })
 
-onBeforeUnmount(() => {
+onBeforeUnmount(async () => {
+  stopListPolling()
   if (heartbeatTimer) window.clearInterval(heartbeatTimer)
   chat.heartbeat('web', 'offline').catch(() => {
     /* ignore */
   })
-  // channel 可能是异步订阅还没完成, 通过 supabase API 全局清这一条
-  if (chatChannel) {
-    import('@/lib/supabase').then(({ supabase }) => {
-      try {
-        supabase.removeChannel(chatChannel)
-      } catch {
-        /* ignore */
-      }
-    })
-  }
 })
 
 const totalUnread = computed(() => chat.conversations.value.reduce((s, c) => s + (c.unread_count ?? 0), 0))
@@ -499,76 +505,143 @@ const titleOf = (c: ChatConversation) => {
     <div
       class="rounded-2xl border bg-card overflow-hidden h-[calc(100dvh-260px)] min-h-[520px] grid grid-cols-1 md:grid-cols-[260px_280px_1fr]"
     >
-      <!-- 左: 客户分组 -->
+      <!-- 左: 客户分组 (tab: 客户工单 / 员工 IM) -->
       <aside
         class="h-full overflow-y-auto border-r bg-muted/20"
         :class="[selected ? 'hidden md:block' : '', expandedGroupId ? 'hidden md:block' : '']"
       >
-        <div class="sticky top-0 z-10 bg-background/95 backdrop-blur px-3 py-2 border-b flex items-center gap-2">
-          <Inbox class="h-4 w-4 text-primary" />
-          <span class="text-sm font-semibold flex-1">
-            {{ t('chat.staffGroups') }}
-            <span class="text-[10px] text-muted-foreground ml-1">({{ groups.length }})</span>
-          </span>
+        <!-- tab 切换 -->
+        <div class="sticky top-0 z-10 bg-background/95 backdrop-blur border-b">
+          <div class="flex">
+            <button
+              type="button"
+              class="flex-1 px-3 py-2 text-xs font-medium border-b-2 transition"
+              :class="
+                sidebarTab === 'customer'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              "
+              @click="sidebarTab = 'customer'"
+            >
+              <Inbox class="inline h-3.5 w-3.5 mr-1" />
+              {{ t('chat.staffGroups') }}
+              <span class="text-[10px] ml-1">({{ groups.length }})</span>
+            </button>
+            <button
+              type="button"
+              class="flex-1 px-3 py-2 text-xs font-medium border-b-2 transition"
+              :class="
+                sidebarTab === 'internal'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              "
+              @click="sidebarTab = 'internal'"
+            >
+              <MessageSquarePlus class="inline h-3.5 w-3.5 mr-1" />
+              {{ t('chat.internalIM') }}
+              <span class="text-[10px] ml-1">({{ internalGroup ? internalGroup.conversations.length : 0 }})</span>
+            </button>
+          </div>
         </div>
-        <div
-          v-if="chat.loadingList.value && groups.length === 0"
-          class="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground"
-        >
-          <Loader2 class="h-4 w-4 animate-spin" />
-          {{ t('chat.loadingAccounts') }}
-        </div>
-        <div v-else-if="groups.length === 0" class="text-center px-4 py-10 text-xs text-muted-foreground">
-          <p class="font-semibold text-foreground">{{ t('chat.noConversation') }}</p>
-        </div>
-        <ul v-else class="divide-y">
-          <li
-            v-for="g in groups"
-            :key="g.account_id"
-            class="px-3 py-2.5 cursor-pointer hover:bg-muted/60 transition"
-            :class="expandedGroupId === g.account_id ? 'bg-primary/10' : ''"
-            @click="onToggleGroup(g.account_id)"
+
+        <!-- 客户工单列表 -->
+        <template v-if="sidebarTab === 'customer'">
+          <div
+            v-if="chat.loadingList.value && groups.length === 0"
+            class="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground"
           >
-            <div class="flex items-center gap-2">
-              <ChatAvatar :name="g.account_name" :role="'customer'" size="sm" />
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-1">
-                  <span class="text-sm font-medium truncate flex-1">
-                    {{ g.account_name }}
-                  </span>
-                  <span class="text-[10px] text-muted-foreground tabular-nums">
-                    {{ relativeTime(g.latest_message_at) }}
-                  </span>
+            <Loader2 class="h-4 w-4 animate-spin" />
+            {{ t('chat.loadingAccounts') }}
+          </div>
+          <div v-else-if="groups.length === 0" class="text-center px-4 py-10 text-xs text-muted-foreground">
+            <p class="font-semibold text-foreground">{{ t('chat.noConversation') }}</p>
+          </div>
+          <ul v-else class="divide-y">
+            <li
+              v-for="g in groups"
+              :key="g.account_id"
+              class="px-3 py-2.5 cursor-pointer hover:bg-muted/60 transition"
+              :class="expandedGroupId === g.account_id ? 'bg-primary/10' : ''"
+              @click="onToggleGroup(g.account_id)"
+            >
+              <div class="flex items-center gap-2">
+                <ChatAvatar :name="g.account_name" :role="'customer'" size="sm" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1">
+                    <span class="text-sm font-medium truncate flex-1">
+                      {{ g.account_name }}
+                    </span>
+                    <span class="text-[10px] text-muted-foreground tabular-nums">
+                      {{ relativeTime(g.latest_message_at) }}
+                    </span>
+                  </div>
+                  <p class="text-[11px] text-muted-foreground truncate">
+                    {{ g.company_name || `${g.conversations.length} 会话` }}
+                  </p>
                 </div>
-                <p class="text-[11px] text-muted-foreground truncate">
-                  {{ g.company_name || `${g.conversations.length} 会话` }}
-                </p>
+                <Badge v-if="g.total_unread > 0" variant="default" class="text-[10px] tabular-nums">
+                  {{ g.total_unread }}
+                </Badge>
+                <!-- selectMode 时显示"全选客户" -->
+                <button
+                  v-if="selectMode"
+                  class="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-muted"
+                  :title="t('chat.selectAllInGroup')"
+                  @click.stop="
+                    () => {
+                      g.conversations.forEach((c) => selectedIds.add(c.id))
+                      selectedIds = new Set(selectedIds)
+                    }
+                  "
+                >
+                  <CheckSquare class="h-4 w-4 text-primary" />
+                </button>
+                <ChevronRight
+                  v-if="!selectMode"
+                  class="h-3.5 w-3.5 text-muted-foreground"
+                  :class="expandedGroupId === g.account_id ? 'rotate-90 transition' : 'transition'"
+                />
               </div>
-              <Badge v-if="g.total_unread > 0" variant="default" class="text-[10px] tabular-nums">
-                {{ g.total_unread }}
-              </Badge>
-              <!-- selectMode 时显示"全选客户" -->
-              <button
-                v-if="selectMode"
-                class="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-muted"
-                :title="t('chat.selectAllInGroup')"
-                @click.stop="
-                  () => {
-                    g.conversations.forEach((c) => selectedIds.add(c.id))
-                    selectedIds = new Set(selectedIds)
-                  }
-                "
-              >
-                <CheckSquare class="h-4 w-4 text-primary" />
-              </button>
-              <ChevronRight
-                v-if="!selectMode"
-                class="h-3.5 w-3.5 text-muted-foreground"
-                :class="expandedGroupId === g.account_id ? 'rotate-90 transition' : 'transition'"
-              />
-            </div>
-          </li>
-        </ul>
+            </li>
+          </ul>
+        </template>
+
+        <!-- 员工 IM 列表 (内部 _internal 账号) -->
+        <template v-else>
+          <div v-if="!internalGroup" class="text-center px-4 py-10 text-xs text-muted-foreground space-y-2">
+            <p class="font-semibold text-foreground">{{ t('chat.internalIM') }}</p>
+            <p>{{ t('chat.internalIMHint') }}</p>
+          </div>
+          <ul v-else class="divide-y">
+            <li
+              v-for="c in internalGroup.conversations"
+              :key="c.id"
+              class="px-3 py-2.5 cursor-pointer hover:bg-muted/60 transition"
+              :class="selected?.id === c.id ? 'bg-primary/10' : ''"
+              @click="onPickConversation(c)"
+            >
+              <div class="flex items-center gap-2">
+                <ChatAvatar :name="c.subject_order?.order_no ?? internalGroup.account_name" :role="'staff'" size="sm" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1">
+                    <span class="text-sm font-medium truncate flex-1">
+                      {{ c.subject_order?.order_no ? `# ${c.subject_order.order_no}` : t('chat.generalConsult') }}
+                    </span>
+                    <span class="text-[10px] text-muted-foreground tabular-nums">
+                      {{ relativeTime(c.last_message_at) }}
+                    </span>
+                  </div>
+                  <p class="text-[11px] text-muted-foreground truncate">
+                    {{ c.last_message?.body ?? t('chat.emptyMessages') }}
+                  </p>
+                </div>
+                <Badge v-if="(c.unread_count ?? 0) > 0" variant="default" class="text-[10px] tabular-nums">
+                  {{ c.unread_count }}
+                </Badge>
+              </div>
+            </li>
+          </ul>
+        </template>
       </aside>
 
       <!-- 中: 当前分组的会话列表 -->

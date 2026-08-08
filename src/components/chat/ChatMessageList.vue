@@ -113,73 +113,62 @@ defineExpose({ messagesContainer, scrollToBottom })
 </script>
 
 <template>
-  <div
-    ref="messagesContainer"
-    class="flex-1 overflow-y-auto px-2 sm:px-3 py-3 space-y-1"
-  >
-    <!-- 顶部加载更多指示器 -->
-    <div
-      v-if="loadingMore"
-      class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"
-    >
-      <Loader2 class="h-3.5 w-3.5 animate-spin" />
-      {{ t('chat.loadingMore') }}
-    </div>
-    <div
-      v-else-if="hasMore && messages.length > 0"
-      class="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60"
-    >
-      <ArrowUp class="h-3 w-3 mr-1" />
-      {{ t('chat.scrollForMore') }}
-    </div>
-    <div
-      v-else-if="!hasMore && messages.length > 0"
-      class="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60"
-    >
-      {{ t('chat.noMoreMessages') }}
-    </div>
-
-    <div v-if="loading" class="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
-      <Loader2 class="h-4 w-4 animate-spin" />
-      {{ t('chat.loading') }}
-    </div>
-    <div v-else-if="loadError" class="text-xs text-destructive text-center py-10">
-      {{ loadError }}
-    </div>
-    <template v-else>
-      <div
-        v-if="messages.length === 0"
-        class="text-center text-xs text-muted-foreground py-10"
-      >
-        {{ t('chat.emptyMessages') }}
+  <div class="relative flex-1 min-h-0 flex flex-col">
+    <div ref="messagesContainer" class="flex-1 overflow-y-auto px-2 sm:px-3 py-3 space-y-1">
+      <!-- 顶部加载更多指示器 -->
+      <div v-if="loadingMore" class="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
+        <Loader2 class="h-3.5 w-3.5 animate-spin" />
+        {{ t('chat.loadingMore') }}
       </div>
-      <template v-for="(row, i) in rows" :key="i">
-        <ChatDateDivider v-if="row.kind === 'date'" :iso="row.iso" />
-        <ChatBubble
-          v-else-if="row.kind === 'msg'"
-          :message="row.message"
-          :align="isMyMessage(row.message) ? 'end' : 'start'"
-          :delivery="row.delivery"
-          :failure-text="row.failure"
-          :attachments="attachmentsByMessage[row.message.id]"
-          :signed-urls="signedUrls"
-          :order-card="orderCardInfoFor(row.message)"
-          :reply-to="replyFor(row.message)"
-          :search-q="searchQ"
-          :reactions="reactionsByMessage?.[row.message.id]"
-          @reply="emit('reply', $event)"
-          @retry="row.delivery === 'failed' && emit('retry', row.message.client_message_id)"
-          @edit="emit('edit', row.message)"
-          @remove="emit('remove', row.message)"
-          @copy="emit('copy', $event)"
-          @toggle-reaction="(m, e) => emit('toggleReaction', m, e)"
-        />
-        <ChatTyping
-          v-else-if="row.kind === 'typing'"
-          :who="typingUsers[0]?.full_name"
-          role="staff"
-        />
+      <div
+        v-else-if="hasMore && messages.length > 0"
+        class="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60"
+      >
+        <ArrowUp class="h-3 w-3 mr-1" />
+        {{ t('chat.scrollForMore') }}
+      </div>
+      <div
+        v-else-if="!hasMore && messages.length > 0"
+        class="flex items-center justify-center py-2 text-[10px] text-muted-foreground/60"
+      >
+        {{ t('chat.noMoreMessages') }}
+      </div>
+
+      <div v-if="loading" class="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground">
+        <Loader2 class="h-4 w-4 animate-spin" />
+        {{ t('chat.loading') }}
+      </div>
+      <div v-else-if="loadError" class="text-xs text-destructive text-center py-10">
+        {{ loadError }}
+      </div>
+      <template v-else>
+        <template
+          v-for="(row, i) in rows"
+          :key="row.kind === 'msg' ? row.message.id : row.kind === 'date' ? `date-${row.iso}` : `typing-${i}`"
+        >
+          <ChatDateDivider v-if="row.kind === 'date'" :iso="row.iso" />
+          <ChatBubble
+            v-else-if="row.kind === 'msg'"
+            :message="row.message"
+            :align="isMyMessage(row.message) ? 'end' : 'start'"
+            :delivery="row.delivery"
+            :failure-text="row.failure"
+            :attachments="attachmentsByMessage[row.message.id]"
+            :signed-urls="signedUrls"
+            :order-card="orderCardInfoFor(row.message)"
+            :reply-to="replyFor(row.message)"
+            :search-q="searchQ"
+            :reactions="reactionsByMessage?.[row.message.id]"
+            @reply="emit('reply', $event)"
+            @retry="row.delivery === 'failed' && emit('retry', row.message.client_message_id)"
+            @edit="emit('edit', row.message)"
+            @remove="emit('remove', row.message)"
+            @copy="emit('copy', $event)"
+            @toggle-reaction="(m, e) => emit('toggleReaction', m, e)"
+          />
+          <ChatTyping v-else-if="row.kind === 'typing'" :who="typingUsers[0]?.full_name" role="staff" />
+        </template>
       </template>
-    </template>
+    </div>
   </div>
 </template>

@@ -13,6 +13,9 @@ import { Loader2, ArrowLeft, ExternalLink, Wifi, WifiOff, Package, ArrowRightLef
 import { useI18n } from '@/lib/i18n'
 import {
   useChat,
+  peekMessagesCache,
+  peekMembersCache,
+  waitMessagesInFlight,
   type ChatMessage,
   type ChatMember,
   type ChatConversation,
@@ -75,7 +78,7 @@ const reactionsComposable = useMessageReactions()
 const conversation = ref<ChatConversation | null>(null)
 const members = ref<ChatMember[]>([])
 const messages = ref<ChatMessage[]>([])
-const loading = ref(false)
+const loading = ref(true) // 默认 loading=true: 避免首次渲染显示"暂无消息"导致的闪烁
 const loadError = ref<string | null>(null)
 const connection = ref<'online' | 'reconnecting' | 'offline'>(navigator.onLine ? 'online' : 'offline')
 const lastMessageId = ref<string | null>(null)
@@ -195,7 +198,8 @@ const rows = computed<Row[]>(() => {
   }
   // M2: pending images 作为 'pending' 状态的 image message
   for (const u of pendingUploads.value) {
-    pushDate(new Date().toISOString())
+    const nowIso = new Date().toISOString()
+    pushDate(nowIso)
     const mm: ChatMessage = {
       id: u.clientMessageId,
       conversation_id: conversation.value?.id ?? '',
@@ -205,7 +209,7 @@ const rows = computed<Row[]>(() => {
       body: '[图片]',
       client_message_id: u.clientMessageId,
       reply_to_id: null,
-      created_at: new Date().toISOString(),
+      created_at: nowIso,
       edited_at: null,
       deleted_at: null,
       sender: {
@@ -214,16 +218,8 @@ const rows = computed<Row[]>(() => {
         role: appUser.value?.role ?? 'customer',
       },
     }
-    const fakeAtt: ChatMessageAttachment = {
-      id: u.clientMessageId,
-      message_id: u.clientMessageId,
-      storage_path: u.clientMessageId, // dummy path, 但 pending 时不显示图
-      mime: u.file.type,
-      size_bytes: u.file.size,
-      width: null,
-      height: null,
-    }
-    attachmentsByMessage.value[u.clientMessageId] = [fakeAtt]
+    // 注意: 不要在 computed 内写 reactive 状态 (会触发循环依赖 + 抖动)
+    // fakeAtt placeholder 在 onPickImage 已经写入 attachmentsByMessage
     out.push({
       kind: 'msg',
       message: mm,
@@ -238,57 +234,50 @@ const rows = computed<Row[]>(() => {
 function readDelivery(m: ChatMessage): 'sent' | 'read' {
   if (!appUser.value) return 'sent'
   // 自己的消息不应该因为自己已读就显示为"已读"
-  // 这里需要查找"对方"成员的 last_read_message_id
+  // 这里需要查找"对方"成员的已读位置
   // 如果只有自己一个成员（如 staff 看到自己发的消息），则只显示"已发送"
   const others = members.value.filter((mm) => mm.user_id !== appUser.value!.id)
   // 没有对方成员 → 对方还没加入会话 → 只显示"已发送"
   if (others.length === 0) return 'sent'
   // 只要任一对方成员读到了这条消息，就算"已读"
-  return others.some((other) => other.last_read_message_id && other.last_read_message_id >= m.id) ? 'read' : 'sent'
+  // 关键: 不能用 last_read_message_id 直接字典序比较 UUID
+  // - UUID 不是时间序, 字典序与 created_at 不一致
+  // - 必须用 last_read_at (时间戳) 与 m.created_at 比较
+  // - 如果 last_read_at 缺失 (RPC 失败时没更新), 退回用消息 id 找 created_at
+  const lastReadAtById = new Map(messages.value.map((mm) => [mm.id, mm.created_at]))
+  const msgCreated = new Date(m.created_at).getTime()
+  return others.some((other) => {
+    if (other.last_read_at) {
+      return new Date(other.last_read_at).getTime() >= msgCreated
+    }
+    // fallback: last_read_message_id 对应消息的 created_at
+    const refCreated = other.last_read_message_id ? lastReadAtById.get(other.last_read_message_id) : null
+    if (refCreated) {
+      return new Date(refCreated).getTime() >= msgCreated
+    }
+    return false
+  })
+    ? 'read'
+    : 'sent'
 }
 
-let unsub: (() => Promise<void>) | null = null
-let typingChannel: any = null
 let openInFlight: Promise<void> | null = null
 let openingConversationId: string | null = null
 
-/**
- * 同步 unsubscribed channel. supabase realtime 的 unsubscribe/removeChannel 异步, 必须 await
- * 才能避免 "cannot add postgres_changes callbacks ... after subscribe()"
- */
 const safeUnsub = async () => {
-  const u = unsub
-  unsub = null
-  if (u) {
-    // 真正等待 channel 断开（sub 返回的 unsubscribe 是 async）
-    try {
-      await u()
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const tc = typingChannel
-  typingChannel = null
-  if (tc) {
-    try {
-      const removed = await supabase.removeChannel(tc)
-      await removed
-    } catch {
-      /* ignore */
-    }
-  }
+  // 不再使用 realtime postgres_changes, 这里仅保留 hook 点 (兼容旧逻辑)
+  // 轮询 timer 由 onBeforeUnmount 里 stopConversationPolling / stopTypingPolling 控制
 }
 
-const openConversation = async (opts?: { skipCache?: boolean }) => {
+const openConversation = async (opts?: { skipCache?: boolean; silent?: boolean }) => {
   // mutex: 同一会话并发请求直接复用
   const targetId = props.accountId ?? ''
   if (openInFlight && openingConversationId === targetId) {
     return openInFlight
   }
   const p = (async () => {
-    loading.value = true
     loadError.value = null
+    let loadingTimer: number | undefined
     try {
       await safeUnsub()
 
@@ -297,6 +286,49 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
         subject_order_id: props.subjectOrderId ?? null,
       })
       conversation.value = conv
+
+      // 等 in-flight 预热完成 (ChatListPage 切会话时会主动调用 fetchMessages 预热)
+      // 这样后续 peekMessagesCache 才能命中. 超时 2000ms 不再等待, 避免阻塞 UI
+      // - 2000ms 是因为 8 个会话并联预热时 RPC roundtrip 累积可能超过 1s
+      await waitMessagesInFlight(conv.id, 2000)
+
+      // Fast path: 缓存命中 → 直接渲染, 不显示 loading, 避免抖动
+      // 关键: 不预先 loading=true, 而是先尝试命中缓存.
+      // 不再订阅 realtime postgres_changes (auth 切换 + 同 topic channel 复用
+      // 会触发 'cannot add postgres_changes callbacks after subscribe()');
+      // 改用本地 4 秒轮询保持新消息 + typing.
+      if (!opts?.skipCache) {
+        const cachedMs = peekMessagesCache(conv.id)
+        const cachedMems = peekMembersCache(conv.id)
+        if (cachedMs && cachedMems) {
+          messages.value = cachedMs
+          members.value = cachedMems
+          lastMessageId.value = cachedMs.length > 0 ? cachedMs[cachedMs.length - 1].id : null
+          hasMore.value = cachedMs.length >= PAGE_SIZE
+          loading.value = false
+          loadingMore.value = false
+          await subscribeTyping(conv.id)
+          scrollToBottom()
+          startConversationPolling(conv.id)
+          // 标记已读 (fire-and-forget, 触发乐观更新让侧边栏未读归零)
+          if (lastMessageId.value) {
+            chat.markRead(conv.id, lastMessageId.value).catch(() => {
+              /* ignore */
+            })
+          }
+          // 后台静默刷新 (拉新未读 / reactions 等), 不重置 UI
+          void refreshInBackground(conv.id, lastMessageId.value)
+          return
+        }
+      }
+
+      // 缓存未命中, 延迟 120ms 才显示 loading, 避免网络快时 loading 一闪
+      // 期间如果 silent=false, 用户看到的是"旧内容保留 + loading 不出现 → 新内容到达"
+      if (!opts?.silent) {
+        loadingTimer = window.setTimeout(() => {
+          loading.value = true
+        }, 120)
+      }
 
       // Staff 接管: admin/checker 直接点开任意会话就能看 / 参与。
       //   - 原因: chat_messages / chat_conversation_members 的 SELECT RLS
@@ -349,64 +381,15 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
           /* ignore */
         })
       }
-      const sub = chat.subscribeConversation(
-        conv.id,
-        (msg) => {
-          if (msg.sender_id === appUser.value?.id) {
-            const idx = pending.value.findIndex((p) => p.client_message_id === msg.client_message_id)
-            if (idx !== -1) pending.value.splice(idx, 1)
-            const uidx = pendingUploads.value.findIndex((u) => u.clientMessageId === msg.client_message_id)
-            if (uidx !== -1) {
-              const u = pendingUploads.value[uidx]
-              pendingUploads.value.splice(uidx, 1)
-              attachmentsByMessage.value[u.clientMessageId] = undefined as any
-            }
-            // 注意：不要为自己发的消息调 markRead
-            // 避免自己发出去的消息立即显示为"已读"
-            if (messages.value.some((mm) => mm.id === msg.id)) return
-            messages.value.push(msg)
-            lastMessageId.value = msg.id
-            reloadExtras([msg.id])
-            scrollToBottom()
-            return
-          }
-          // 对方发的消息：推入列表 + 标记已读
-          if (messages.value.some((mm) => mm.id === msg.id)) return
-          messages.value.push(msg)
-          lastMessageId.value = msg.id
-          reloadExtras([msg.id])
-          chat.markRead(conv.id, msg.id).catch(() => {
-            /* ignore */
-          })
-          scrollToBottom()
-        },
-        (member) => {
-          const idx = members.value.findIndex((m) => m.id === member.id)
-          if (idx === -1) members.value.push(member)
-          else members.value[idx] = member
-        },
-        (updated) => {
-          // M3.5: UPDATE 事件 (撤回 / 编辑). 替换本地消息
-          const idx = messages.value.findIndex((mm) => mm.id === updated.id)
-          if (idx !== -1) {
-            messages.value[idx] = updated
-          } else {
-            messages.value.push(updated)
-          }
-          // 编辑中被撤回 → 清掉编辑态
-          if (editingMessage.value?.id === updated.id && updated.deleted_at) {
-            editingMessage.value = null
-            editDraft.value = ''
-          }
-        },
-      )
-      unsub = sub.unsubscribe
-      // Phase 3: 订阅 chat_typing (在主 channel 之后, 不会冲突)
+      // Phase 3: 订阅 chat_typing
       await subscribeTyping(conv.id)
+      // 启动会话消息轮询 (替代 postgres_changes realtime, 避免 socket pool 复用冲突)
+      startConversationPolling(conv.id)
       scrollToBottom()
     } catch (e: any) {
       loadError.value = e?.message ?? String(e)
     } finally {
+      if (loadingTimer) window.clearTimeout(loadingTimer)
       loading.value = false
       openingConversationId = null
       openInFlight = null
@@ -417,29 +400,138 @@ const openConversation = async (opts?: { skipCache?: boolean }) => {
   return p
 }
 
-const subscribeTyping = async (conversationId: string) => {
-  const tc = typingChannel
-  typingChannel = null
-  if (tc) {
+/**
+ * 后台静默刷新: 缓存命中时, 不闪 loading, 后台拉取最新数据
+ * 更新 messages/members 但保留当前 UI 滚动位置
+ */
+async function refreshInBackground(conversationId: string, currentLastId: string | null) {
+  try {
+    const [ms, mems] = await Promise.all([
+      chat.fetchMessages(conversationId, { limit: PAGE_SIZE }, { skipCache: true }),
+      chat.fetchMembers(conversationId, { skipCache: true }),
+    ])
+    // 仅在数据变化时更新, 避免无谓的 reactive 触发
+    const last = ms.length > 0 ? ms[ms.length - 1].id : null
+    if (last !== currentLastId || ms.length !== messages.value.length) {
+      messages.value = ms
+      lastMessageId.value = last
+      hasMore.value = ms.length >= PAGE_SIZE
+    }
+    if (mems.length !== members.value.length) {
+      members.value = mems
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * 会话消息轮询: 每 4 秒拉一次最后一条消息时间之后的更新
+ * 替代 postgres_changes realtime, 避免 supabase-js socket pool 复用导致
+ * 'cannot add postgres_changes callbacks after subscribe()' 错误
+ */
+let messagePollTimer: number | undefined
+let polledConvId: string | null = null
+
+function startConversationPolling(conversationId: string) {
+  stopConversationPolling()
+  polledConvId = conversationId
+  messagePollTimer = window.setInterval(async () => {
+    if (!polledConvId || document.hidden) return
     try {
-      const removed = await supabase.removeChannel(tc)
-      await removed
+      // 拉最近的消息 (跳过缓存, 走 in-flight 去重),
+      // 拿到后只 append 新消息 + 处理 UPDATE (编辑/撤回)
+      const ms = await chat.fetchMessages(polledConvId, { limit: PAGE_SIZE }, { skipCache: true })
+      if (ms.length === 0) return
+      const lastCached = messages.value[messages.value.length - 1]
+      const lastFetched = ms[ms.length - 1]
+      // 拉到了更新 (最后一条 id 变化 或 数量变多)
+      if (lastCached && lastFetched.id !== lastCached.id) {
+        // 仅 append 比当前 lastCached 新的消息
+        const lastCachedIdx = ms.findIndex((m) => m.id === lastCached.id)
+        if (lastCachedIdx >= 0) {
+          const newer = ms.slice(lastCachedIdx + 1)
+          for (const m of newer) {
+            if (!messages.value.some((mm) => mm.id === m.id)) {
+              messages.value.push(m)
+              reloadExtras([m.id])
+            }
+          }
+          // 处理 UPDATE (编辑/撤回) - 与原 realtime 行为一致
+          for (let i = 0; i <= lastCachedIdx; i++) {
+            const m = ms[i]
+            const idx = messages.value.findIndex((mm) => mm.id === m.id)
+            if (idx !== -1 && JSON.stringify(messages.value[idx]) !== JSON.stringify(m)) {
+              messages.value[idx] = m
+              if (editingMessage.value?.id === m.id && m.deleted_at) {
+                editingMessage.value = null
+                editDraft.value = ''
+              }
+            }
+          }
+          lastMessageId.value = lastFetched.id
+          scrollToBottom()
+        }
+      }
+      // 拉取成员更新 (替换 member 状态: 已读位置 / last_seen 等)
+      const mems = await chat.fetchMembers(polledConvId, { skipCache: true })
+      if (mems.length > 0) {
+        // 只在有差异时替换, 避免无谓的 reactive 触发
+        let changed = false
+        for (const m of mems) {
+          const idx = members.value.findIndex((mm) => mm.id === m.id)
+          if (idx === -1) {
+            members.value.push(m)
+            changed = true
+          } else if (JSON.stringify(members.value[idx]) !== JSON.stringify(m)) {
+            members.value[idx] = m
+            changed = true
+          }
+        }
+        // 不主动 splice 移除成员 (polling 可能漏瞬态状态)
+      }
     } catch {
       /* ignore */
     }
+  }, 4000)
+}
+
+function stopConversationPolling() {
+  if (messagePollTimer) {
+    window.clearInterval(messagePollTimer)
+    messagePollTimer = undefined
   }
-  const channel = supabase
-    .channel(`chat:typing:${conversationId}`)
-    .on(
-      'postgres_changes' as any,
-      { event: '*', schema: 'public', table: 'chat_typing', filter: `conversation_id=eq.${conversationId}` },
-      () => {
-        refreshTyping(conversationId)
-      },
-    )
-    .subscribe()
-  typingChannel = channel
+  polledConvId = null
+}
+
+const subscribeTyping = async (conversationId: string) => {
+  // 替代 postgres_changes realtime: 3 秒轮询 typing 状态
+  // 避免 supabase-js socket pool 复用冲突
+  startTypingPolling(conversationId)
   await refreshTyping(conversationId)
+}
+
+let typingPollTimer: number | undefined
+let typedConvId: string | null = null
+
+function startTypingPolling(conversationId: string) {
+  stopTypingPolling()
+  typedConvId = conversationId
+  typingPollTimer = window.setInterval(() => {
+    if (typedConvId && !document.hidden) {
+      refreshTyping(typedConvId).catch(() => {
+        /* ignore */
+      })
+    }
+  }, 3000)
+}
+
+function stopTypingPolling() {
+  if (typingPollTimer) {
+    window.clearInterval(typingPollTimer)
+    typingPollTimer = undefined
+  }
+  typedConvId = null
 }
 
 const refreshTyping = async (conversationId: string) => {
@@ -490,6 +582,8 @@ onMounted(() => {
 })
 
 onBeforeUnmount(async () => {
+  stopConversationPolling()
+  stopTypingPolling()
   await safeUnsub()
   if (typingFetchTimer) window.clearInterval(typingFetchTimer)
   if (typingBroadcastTimer) window.clearInterval(typingBroadcastTimer)
@@ -524,18 +618,15 @@ function onDocClick(e: MouseEvent) {
 watch(
   () => [props.accountId, props.subjectOrderId],
   async () => {
+    // 不要立即清空 messages.value -- 保留旧内容直到新会话数据到达,
+    // 避免切会话时出现 '有数据 → empty → loading → 新数据' 的抖动
     conversation.value = null
-    messages.value = []
-    pending.value = []
-    pendingUploads.value = []
-    attachmentsByMessage.value = {}
-    metadataByMessage.value = {}
-    signedUrls.value = {}
     loadingMore.value = false
     hasMore.value = true
     await safeUnsub()
-    // 切换会话时强制跳过缓存（避免拿到旧会话的附件/元数据）
-    openConversation({ skipCache: true })
+    // 切换会话时不要 skipCache: 让 openConversation 尝试命中缓存快速渲染
+    // (cachedMs/cachedMems 仍然有效, 因为确保同一个 conv.id 在缓存中)
+    openConversation()
   },
 )
 

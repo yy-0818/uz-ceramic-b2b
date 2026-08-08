@@ -665,6 +665,8 @@ export default {
     loadingAccounts: '加载客户中',
     generalConsult: '一般咨询',
     staffGroups: '客户分组',
+    internalIM: '员工 IM',
+    internalIMHint: '内部员工互相对话（不进入客服工单）',
     toggleGroup: '展开/收起',
     confirmCloseConv: '关闭这个会话？关闭后客户需要重新开。',
     confirmReopenConv: '重新打开会话？',

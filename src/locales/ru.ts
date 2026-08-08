@@ -494,6 +494,8 @@ export default {
     loadingAccounts: 'Загрузка клиентов',
     generalConsult: 'Общая консультация',
     staffGroups: 'Группы клиентов',
+    internalIM: 'IM сотрудников',
+    internalIMHint: 'Внутренние диалоги сотрудников (не попадают в тикеты клиентов)',
     toggleGroup: 'Развернуть/Свернуть',
     confirmCloseConv: 'Закрыть этот чат? После закрытия клиенту нужно создать новый.',
     confirmReopenConv: 'Открыть этот чат снова?',

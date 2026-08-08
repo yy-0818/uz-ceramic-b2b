@@ -58,22 +58,32 @@ export interface AppUser {
 }
 
 export type Permission =
-  | 'order:create' | 'order:audit' | 'order:ship'
-  | 'invoice:accounting' | 'finance:view'
-  | 'product:import' | 'product:assign'
-  | 'account:manage' | 'user:manage'
+  | 'order:create'
+  | 'order:audit'
+  | 'order:ship'
+  | 'invoice:accounting'
+  | 'finance:view'
+  | 'product:import'
+  | 'product:assign'
+  | 'account:manage'
+  | 'user:manage'
 
 const rolePermissionMap: Record<UserRole, Permission[]> = {
   admin: [
-    'order:create','order:audit','order:ship',
-    'invoice:accounting','finance:view',
-    'product:import','product:assign',
-    'account:manage','user:manage',
+    'order:create',
+    'order:audit',
+    'order:ship',
+    'invoice:accounting',
+    'finance:view',
+    'product:import',
+    'product:assign',
+    'account:manage',
+    'user:manage',
   ],
-  checker:   ['order:audit', 'order:create'],
+  checker: ['order:audit', 'order:create'],
   warehouse: ['order:ship'],
-  finance:   ['invoice:accounting', 'finance:view'],
-  customer:  ['order:create'],
+  finance: ['invoice:accounting', 'finance:view'],
+  customer: ['order:create'],
   fin_customer: ['order:create'],
 }
 
@@ -99,12 +109,22 @@ export function useAuth() {
     if (authUser.value) await loadProfile(authUser.value.id)
     loading.value = false
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, _s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, _s) => {
       session.value = _s
       authUser.value = _s?.user ?? null
-      appUser.value = null
-      account.value = null
-      if (authUser.value) await loadProfile(authUser.value.id)
+      // 关键: 仅在 SIGNED_OUT 时清 appUser + account
+      // TOKEN_REFRESHED / USER_UPDATED / INITIAL_SESSION 等事件不应清,
+      // 否则会触发整页"重加载"假象 (详见 navItems 重算 / ChatWindow v-if 卸载)
+      if (event === 'SIGNED_OUT') {
+        appUser.value = null
+        account.value = null
+      }
+      // 仅当 profile 还没加载或 auth uid 变了才重新 loadProfile
+      if (authUser.value && (!appUser.value || appUser.value.id !== authUser.value.id)) {
+        appUser.value = null
+        account.value = null
+        await loadProfile(authUser.value.id)
+      }
     })
     authSub = sub.subscription
   }
@@ -112,13 +132,11 @@ export function useAuth() {
   const loadProfile = async (uid: string) => {
     try {
       // 1. 先尝试直接拿 users 行（内部员工路径）
-      let userRow = (await supabase
-        .from('users').select('*').eq('id', uid).single()).data as AppUser | null
+      let userRow = (await supabase.from('users').select('*').eq('id', uid).single()).data as AppUser | null
 
       // 2. 拿不到 → 客户登录路径：accounts.user_id = uid
       if (!userRow) {
-        const { data: accRow } = await supabase
-          .from('accounts').select('*').eq('user_id', uid).single()
+        const { data: accRow } = await supabase.from('accounts').select('*').eq('user_id', uid).single()
         if (accRow) {
           const a = accRow as any
           account.value = a as Account
@@ -152,7 +170,9 @@ export function useAuth() {
         throw new Error('未找到用户档案。请联系管理员。')
       }
       appUser.value = userRow
-      try { localStorage.setItem('appUser', JSON.stringify(userRow)) } catch {}
+      try {
+        localStorage.setItem('appUser', JSON.stringify(userRow))
+      } catch {}
       // Sentry: 同步 user context（错误归属到具体人）
       setUserContext({
         id: uid,
@@ -162,7 +182,10 @@ export function useAuth() {
       // 3. 拿父账号（兼容 customer 路径：acc 已经在前面拿到）
       if (!account.value) {
         const { data: accRow, error: aErr } = await supabase
-          .from('accounts').select('*').eq('id', (userRow as AppUser).account_id).single()
+          .from('accounts')
+          .select('*')
+          .eq('id', (userRow as AppUser).account_id)
+          .single()
         if (aErr) throw aErr
         account.value = accRow as Account
       }
@@ -178,7 +201,9 @@ export function useAuth() {
     try {
       const raw = localStorage.getItem('appUser')
       return raw ? (JSON.parse(raw) as AppUser) : null
-    } catch { return null }
+    } catch {
+      return null
+    }
   })()
   if (cachedUser && !appUser.value) appUser.value = cachedUser
 
@@ -193,7 +218,9 @@ export function useAuth() {
     await supabase.auth.signOut()
     appUser.value = null
     account.value = null
-    try { localStorage.removeItem('appUser') } catch {}
+    try {
+      localStorage.removeItem('appUser')
+    } catch {}
   }
 
   /** 是否拥有指定权限（支持数组表示 AND 关系） */
@@ -208,12 +235,25 @@ export function useAuth() {
   const isAdmin: ComputedRef<boolean> = computed(() => appUser.value?.role === 'admin')
   const role: ComputedRef<UserRole | null> = computed(() => appUser.value?.role ?? null)
 
-  onMounted(() => { init() })
-  onUnmounted(() => { authSub?.unsubscribe() })
+  onMounted(() => {
+    init()
+  })
+  onUnmounted(() => {
+    authSub?.unsubscribe()
+  })
 
   return {
-    session, authUser, appUser, account, loading, error,
-    isLoggedIn, isAdmin, role,
-    signIn, signOut, hasPermission,
+    session,
+    authUser,
+    appUser,
+    account,
+    loading,
+    error,
+    isLoggedIn,
+    isAdmin,
+    role,
+    signIn,
+    signOut,
+    hasPermission,
   }
 }

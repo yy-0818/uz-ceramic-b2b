@@ -283,6 +283,40 @@ export function invalidateConversationCache(conversationId: string): void {
 }
 
 /**
+ * 仅查看消息缓存 (不触发请求), 用于切换会话时立刻渲染,
+ * 避免 ChatMessageList 出现 loading → empty → messages 的抖动
+ */
+export function peekMessagesCache(conversationId: string): ChatMessage[] | undefined {
+  const entry = messagesCache.get(conversationId)
+  if (!entry || !isCacheValid(entry)) return undefined
+  return entry.data
+}
+
+export function peekMembersCache(conversationId: string): ChatMember[] | undefined {
+  const entry = membersCache.get(conversationId)
+  if (!entry || !isCacheValid(entry)) return undefined
+  return entry.data
+}
+
+/**
+ * 等待正在进行的同 convId 消息请求 in-flight promise 完成 (例如外部预热),
+ * 最多 maxMs, 让 ChatPanel openConversation 能复用 in-flight 数据并命中缓存
+ */
+export async function waitMessagesInFlight(conversationId: string, maxMs = 800): Promise<void> {
+  const entry = messagesCache.get(conversationId)
+  if (!entry?.inFlight) return
+  let timer: number | undefined
+  const timeoutP = new Promise<void>((resolve) => {
+    timer = window.setTimeout(resolve, maxMs)
+  })
+  try {
+    await Promise.race([entry.inFlight.catch(() => undefined), timeoutP])
+  } finally {
+    if (timer) window.clearTimeout(timer)
+  }
+}
+
+/**
  * 清空所有聊天缓存
  */
 export function clearChatCache(): void {
@@ -324,7 +358,8 @@ export function useChat() {
     if (!options?.skipCache) {
       const cached = getCached(conversationsCache, key, LIST_CACHE_TTL_MS)
       if (cached) {
-        conversations.value = cached
+        // 用 diff 合并: 如果引用相同, 不触发 reactive setter; 否则 diff 后替换
+        mergeConversationsDiff(cached)
         fetched.value = true
         return cached
       }
@@ -333,16 +368,15 @@ export function useChat() {
     // 复用正在请求中的 promise（防止 onMounted + watch immediate 重复触发）
     const entry = conversationsCache.get(key)
     if (entry?.inFlight) {
-      loadingList.value = true
+      // 不动 loadingList: 第一个调用方已经在 p 内部设了 true, 数据快到
+      // 反复切换会让 UI 闪 loading
       try {
         const data = await entry.inFlight
-        conversations.value = data
+        mergeConversationsDiff(data)
         fetched.value = true
         return data
       } catch {
         return []
-      } finally {
-        loadingList.value = false
       }
     }
 
@@ -388,26 +422,80 @@ export function useChat() {
         if (meId) {
           const { data: mems } = await supabase
             .from('chat_conversation_members')
-            .select('conversation_id, last_read_message_id, joined_at')
+            .select('conversation_id, last_read_message_id, last_read_at, joined_at')
             .eq('user_id', meId)
             .is('left_at', null)
             .in('conversation_id', ids)
-          const memMap = new Map<string, { last_read_message_id: string | null; joined_at: string }>()
+          const memMap = new Map<
+            string,
+            { last_read_message_id: string | null; last_read_at: string | null; joined_at: string }
+          >()
           for (const m of (mems ?? []) as any[]) {
-            memMap.set(m.conversation_id, { last_read_message_id: m.last_read_message_id, joined_at: m.joined_at })
+            memMap.set(m.conversation_id, {
+              last_read_message_id: m.last_read_message_id,
+              last_read_at: m.last_read_at,
+              joined_at: m.joined_at,
+            })
           }
 
-          const { data: unreadMsgs } = await supabase
-            .from('chat_messages')
-            .select('conversation_id, sender_id, created_at')
-            .in('conversation_id', ids)
-            .neq('sender_id', meId)
-            .is('deleted_at', null)
-          for (const u of (unreadMsgs ?? []) as any[]) {
-            const mem = memMap.get(u.conversation_id)
-            if (!mem) continue
-            if (new Date(u.created_at) > new Date(mem.joined_at)) {
-              unreadMap.set(u.conversation_id, (unreadMap.get(u.conversation_id) ?? 0) + 1)
+          // 未读 = 对方发的 (按 created_at > joined_at AND > last_read_at) 且未删除
+          // - 必须用 last_read_at 作为 cutoff: 用户 markRead 后这些消息不再算未读
+          // - 关键 bug 修复: 不能只用 joined_at, 否则 markRead 后未读不归零
+          // - last_read_at 缺失时 (历史数据), 用 last_read_message_id 找对应 created_at
+          type MemRow = { last_read_at: string | null; last_read_message_id: string | null }
+          const memsNeedingRef = ((mems ?? []) as MemRow[]).filter((m) => !m.last_read_at && m.last_read_message_id)
+          const refCreatedMap = new Map<string, string>()
+          if (memsNeedingRef.length > 0) {
+            const refIds = memsNeedingRef.map((m) => m.last_read_message_id)
+            const { data: refMsgs } = await supabase.from('chat_messages').select('id, created_at').in('id', refIds)
+            for (const r of (refMsgs ?? []) as any[]) {
+              refCreatedMap.set(r.id, r.created_at)
+            }
+          }
+
+          // 用 RPC 一次拿所有未读数 (精确, 走 SQL 端 last_read_at 比较)
+          // 兜底: 如果 RPC 不存在, 才走客户端拼接
+          try {
+            const { data: rpcUnread, error: rpcErr } = await (supabase as any).rpc('rpc_chat_unread_counts', {
+              p_conversation_ids: ids,
+            })
+            if (!rpcErr && rpcUnread) {
+              // RPC 返回 { conversation_id, unread_count } 数组
+              for (const r of rpcUnread as any[]) {
+                unreadMap.set(r.conversation_id, Number(r.unread_count ?? 0))
+              }
+            } else {
+              throw rpcErr
+            }
+          } catch {
+            // Fallback: 客户端拉 chat_messages 算未读
+            // 限 1000 条避免拉爆 (一个会话历史超过 1000 条消息也只显示 1000 内未读,
+            // 极端场景用户通过页面切换感知到, 不是数据库错误)
+            const { data: unreadMsgs } = await supabase
+              .from('chat_messages')
+              .select('conversation_id, sender_id, created_at')
+              .in('conversation_id', ids)
+              .neq('sender_id', meId)
+              .is('deleted_at', null)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            for (const u of (unreadMsgs ?? []) as any[]) {
+              const mem = memMap.get(u.conversation_id)
+              if (!mem) continue
+              const msgAt = new Date(u.created_at).getTime()
+              const joinedAt = new Date(mem.joined_at).getTime()
+              if (msgAt <= joinedAt) continue
+              // cutoff = max(joined_at, last_read_at || last_read_message_id 对应 created_at)
+              let cutoff = joinedAt
+              if (mem.last_read_at) {
+                cutoff = Math.max(cutoff, new Date(mem.last_read_at).getTime())
+              } else if (mem.last_read_message_id) {
+                const refCreated = refCreatedMap.get(mem.last_read_message_id)
+                if (refCreated) cutoff = Math.max(cutoff, new Date(refCreated).getTime())
+              }
+              if (msgAt > cutoff) {
+                unreadMap.set(u.conversation_id, (unreadMap.get(u.conversation_id) ?? 0) + 1)
+              }
             }
           }
         }
@@ -428,7 +516,9 @@ export function useChat() {
     conversationsCache.set(key, { data: conversations.value, timestamp: 0, inFlight: p })
     try {
       const rows = await p
-      conversations.value = rows
+      // diff 合并: 仅在数据有差异时才更新 reactive 数组,
+      // 避免每次轮询触发 ChatConversationList 整个列表重渲染 → 闪烁
+      mergeConversationsDiff(rows)
       fetched.value = true
       // 写入缓存
       conversationsCache.set(key, { data: rows, timestamp: Date.now() })
@@ -437,6 +527,74 @@ export function useChat() {
       conversationsCache.delete(key)
       fetched.value = true
       return []
+    }
+  }
+
+  /**
+   * diff 合并: 只在 id 出现 / 关键字段变化时才更新 conversations.value,
+   * 避免每次 6 秒轮询都触发整个列表重渲染 (UI 闪烁根因)
+   * - 定义在 useChat() 顶层, 让 fetchConversations / listAdminConversations 共用
+   */
+  const mergeConversationsDiff = (rows: ChatConversation[]) => {
+    const old = conversations.value
+    const oldMap = new Map(old.map((c) => [c.id, c]))
+    let changed = false
+    const next: ChatConversation[] = []
+    const seenIds = new Set<string>()
+    for (const r of rows) {
+      seenIds.add(r.id)
+      const o = oldMap.get(r.id)
+      if (!o) {
+        next.push(r)
+        changed = true
+        continue
+      }
+      // 关键字段: 排序顺序 / 未读 / 状态 / 最后消息时间 / 分配人 / 最后消息预览
+      // 只在这些变化时替换对象, 否则保持旧引用, 避免无谓的 reactive 触发
+      const sameKey =
+        o.last_message_at === r.last_message_at &&
+        o.unread_count === r.unread_count &&
+        o.status === r.status &&
+        o.assigned_to === r.assigned_to &&
+        o.last_message?.body === r.last_message?.body &&
+        o.last_message?.created_at === r.last_message?.created_at
+      if (sameKey) {
+        // 复用旧引用 (Vue 不会触发 setter)
+        next.push(o)
+      } else {
+        // 乐观更新保护: 如果 markRead 之后旧值 unread=0, 新值 unread>0
+        // 但 last_message_at 没变 → 说明没有新消息, 是 RPC 端 last_read_at
+        // 还没同步回来导致的回滚。保留旧 unread_count=0 (避免"未读一会儿
+        // 有一会儿消失")
+        if (
+          o.unread_count === 0 &&
+          (r.unread_count ?? 0) > 0 &&
+          o.last_message_at === r.last_message_at &&
+          o.status === r.status &&
+          o.assigned_to === r.assigned_to &&
+          o.last_message?.body === r.last_message?.body
+        ) {
+          next.push(o)
+          // 不视为 changed (不替换 reactive)
+        } else {
+          next.push(r)
+          changed = true
+        }
+      }
+    }
+    // 检测是否有会话被移除
+    if (!changed && old.length === rows.length) {
+      // 还要检查排序是否变了 (因为是按 last_message_at 排)
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] !== old[i]) {
+          changed = true
+          break
+        }
+      }
+    }
+    if (changed || next.length !== old.length) {
+      // 若长度不等或顺序变了 → 整组替换; 否则保留旧引用数组, 仅当差异时
+      conversations.value = next
     }
   }
 
@@ -465,7 +623,7 @@ export function useChat() {
     if (!options?.skipCache) {
       const cached = getCached(conversationsCache, key, LIST_CACHE_TTL_MS)
       if (cached) {
-        conversations.value = cached
+        mergeConversationsDiff(cached)
         fetched.value = true
         return cached
       }
@@ -474,16 +632,14 @@ export function useChat() {
     // 复用 in-flight
     const entry = conversationsCache.get(key)
     if (entry?.inFlight) {
-      loadingList.value = true
+      // 不动 loadingList: 第一个调用方已经在 p 内部设了 true
       try {
         const data = await entry.inFlight
-        conversations.value = data
+        mergeConversationsDiff(data)
         fetched.value = true
         return data
       } catch {
         return []
-      } finally {
-        loadingList.value = false
       }
     }
 
@@ -610,7 +766,8 @@ export function useChat() {
     conversationsCache.set(key, { data: conversations.value, timestamp: 0, inFlight: p })
     try {
       const out = await p
-      conversations.value = out
+      // diff 合并避免闪烁 (见 fetchConversations)
+      mergeConversationsDiff(out)
       fetched.value = true
       conversationsCache.set(key, { data: out, timestamp: Date.now() })
       return out
@@ -1164,8 +1321,17 @@ export function useChat() {
         .eq('user_id', me.id)
         .is('left_at', null)
     }
-    // 列表未读自动刷 (realtime 也会推, 这里触发 invalidate)
-    invalidateList()
+    // 乐观更新列表: 把当前会话的 unread_count 设为 0
+    // - 避免 invalidateList 触发新一次 DB 查询 (侧边栏重复加载的根因)
+    // - 6 秒轮询会合 naturally 与 RPC 返回值一致
+    const idx = conversations.value.findIndex((c) => c.id === conversationId)
+    if (idx >= 0) {
+      const cur = conversations.value[idx]
+      if (cur.unread_count !== 0) {
+        // 替换为新对象以保持 reactive 触发
+        conversations.value[idx] = { ...cur, unread_count: 0 }
+      }
+    }
   }
 
   // -------------------------------------------------------------------
@@ -1452,5 +1618,8 @@ export function useChat() {
     subscribeConversation,
     invalidateList,
     invalidateCache: invalidateConversationCache,
+    peekMessagesCache,
+    peekMembersCache,
+    waitMessagesInFlight,
   }
 }

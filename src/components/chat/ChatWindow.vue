@@ -121,9 +121,14 @@ const onPopState = () => {
 }
 
 onMounted(async () => {
-  await chat.fetchConversations().catch(() => {
-    /* ignore */
-  })
+  // 仅在 conversations 完全没拉过时拉一次 (chat.conversations.value.length === 0)
+  // ChatListPage 挂载时会主动拉 + 6s 轮询, 避免 ChatWindow 与之并发触发
+  // AppLayout 在用户登录后第一个进入的页面挂载时, ChatWindow 是唯一的数据源
+  if (chat.conversations.value.length === 0) {
+    await chat.fetchConversations().catch(() => {
+      /* ignore */
+    })
+  }
   // 启动心跳：30s 一次（统一节流，避免多个组件重复打心跳）
   chat.heartbeat('web', 'online').catch(() => {
     /* ignore */

@@ -492,6 +492,8 @@ export default {
     loadingAccounts: 'Mijozlar yuklanmoqda',
     generalConsult: 'Umumiy maslahat',
     staffGroups: 'Mijoz guruhlari',
+    internalIM: 'Xodimlar IM',
+    internalIMHint: 'Ichki xodimlar o‘rtasidagi suhbatlar (mijoz tiktetiga kirmaydi)',
     toggleGroup: "Yig'ish/Yoyish",
     confirmCloseConv: 'Bu chatni yopmoqchimisiz? Yopilgach mijoz yangi chat ochishi kerak.',
     confirmReopenConv: 'Bu chatni qayta ochmoqchimisiz?',

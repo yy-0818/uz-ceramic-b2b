@@ -27,43 +27,15 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'select': [conversation: ChatConversation]
+  select: [conversation: ChatConversation]
   'new-conversation': []
 }>()
 
-const channelSub = ref<{ unsubscribe: () => void } | null>(null)
+// 列表数据由父组件 (ChatListPage / StaffChatWorkspacePage) 负责拉取 + 6 秒轮询
+// 避免两个组件同时拉取导致重复请求 + 重复渲染
+// 这里只读取 chat.conversations 渲染列表
 
-onMounted(async () => {
-  await chat.fetchConversations()
-  // 订阅 realtime 让列表自动刷新
-  channelSub.value = (await import('@/lib/supabase')).supabase
-    .channel('chat-list')
-    .on(
-      'postgres_changes' as any,
-      { event: '*', schema: 'public', table: 'chat_messages' },
-      () => {
-        chat.invalidateList()
-        chat.fetchConversations().catch(() => { /* ignore */ })
-      },
-    )
-    .on(
-      'postgres_changes' as any,
-      { event: '*', schema: 'public', table: 'chat_conversation_members' },
-      () => {
-        chat.invalidateList()
-        chat.fetchConversations().catch(() => { /* ignore */ })
-      },
-    )
-    .subscribe()
-})
-
-onBeforeUnmount(() => {
-  channelSub.value?.unsubscribe()
-})
-
-const totalUnread = computed(() =>
-  chat.conversations.value.reduce((s, c) => s + (c.unread_count ?? 0), 0),
-)
+const totalUnread = computed(() => chat.conversations.value.reduce((s, c) => s + (c.unread_count ?? 0), 0))
 
 const searchQ = ref('')
 let searchTimer: number | undefined
@@ -112,12 +84,7 @@ const title = (c: ChatConversation) =>
         <Badge v-if="totalUnread > 0" variant="default" class="text-[10px]">
           {{ totalUnread }}
         </Badge>
-        <Button
-          size="icon"
-          variant="ghost"
-          :title="t('chat.newConversation')"
-          @click="emit('new-conversation')"
-        >
+        <Button size="icon" variant="ghost" :title="t('chat.newConversation')" @click="emit('new-conversation')">
           <Plus class="h-4 w-4" />
         </Button>
       </div>
@@ -147,12 +114,7 @@ const title = (c: ChatConversation) =>
       >
         <p class="font-semibold text-foreground">{{ t('chat.empty') }}</p>
         <p>{{ t('chat.emptyHint') }}</p>
-        <Button
-          size="sm"
-          variant="outline"
-          class="mt-2"
-          @click="emit('new-conversation')"
-        >
+        <Button size="sm" variant="outline" class="mt-2" @click="emit('new-conversation')">
           {{ t('chat.newConversation') }}
         </Button>
       </div>
@@ -182,18 +144,14 @@ const title = (c: ChatConversation) =>
               <p class="text-[11px] text-muted-foreground truncate">
                 {{
                   c.last_message
-                    ? (c.last_message.message_type === 'text'
-                        ? c.last_message.body
-                        : t('chat.systemOnline'))
+                    ? c.last_message.message_type === 'text'
+                      ? c.last_message.body
+                      : t('chat.systemOnline')
                     : t('chat.emptyMessages')
                 }}
               </p>
             </div>
-            <Badge
-              v-if="(c.unread_count ?? 0) > 0"
-              variant="default"
-              class="text-[10px] tabular-nums ml-1"
-            >
+            <Badge v-if="(c.unread_count ?? 0) > 0" variant="default" class="text-[10px] tabular-nums ml-1">
               {{ c.unread_count }}
             </Badge>
           </div>
